@@ -18,6 +18,15 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          build-args: RUST_TARGET=x86_64-unknown-linux-musl
+          platforms: linux/amd64
           push: true
           tags: avoonix/fuzzle-bot:latest
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          build-args: RUST_TARGET=aarch64-unknown-linux-musl
+          platforms: linux/arm64
+          push: true
+          tags: avoonix/fuzzle-bot-aarch64:latest
