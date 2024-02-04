@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "select * from sticker where id in (select sticker_id from sticker_user where user_id = ?1) LIMIT ?2 OFFSET ?3",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "set_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "file_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "file_hash",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "emoji",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c6f7a7b30d8d8fd0d1e8c05c5c86d947ac1f191c728ce9409d5950e033b84403"
+}

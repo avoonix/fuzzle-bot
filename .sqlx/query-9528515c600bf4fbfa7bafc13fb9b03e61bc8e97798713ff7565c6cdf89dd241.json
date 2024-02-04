@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE user SET blacklist = json_insert(blacklist, '$[#]', ?1) WHERE id = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "9528515c600bf4fbfa7bafc13fb9b03e61bc8e97798713ff7565c6cdf89dd241"
+}

@@ -1,0 +1,17 @@
+msrv = "1.75"
+
+disallowed-methods = [
+    { path = "teloxide::prelude::Requester::send_message", reason = "use send_markdown instead" },
+    { path = "teloxide::prelude::Requester::edit_message_text", reason = "use edit_message_markdown instead" },
+    { path = "teloxide_core::payloads::send_document::SendDocumentSetters::caption", reason = "use markdown_caption instead" },
+
+    { path = "teloxide::prelude::Requester::send_photo", reason = "if this method is required, create a method that only accepts markdown instead" },
+    { path = "teloxide::prelude::Requester::send_video", reason = "if this method is required, create a method that only accepts markdown instead" },
+    { path = "teloxide::prelude::Requester::send_audio", reason = "if this method is required, create a method that only accepts markdown instead" },
+    { path = "teloxide::prelude::Requester::send_animation", reason = "if this method is required, create a method that only accepts markdown instead" },
+    { path = "teloxide::prelude::Requester::send_voice", reason = "if this method is required, create a method that only accepts markdown instead" },
+    { path = "teloxide::prelude::Requester::send_poll", reason = "if this method is required, create a method that only accepts markdown instead" },
+    { path = "teloxide::prelude::Requester::edit_message_text_inline", reason = "if this method is required, create a method that only accepts markdown instead" },
+    { path = "teloxide::prelude::Requester::edit_message_caption", reason = "if this method is required, create a method that only accepts markdown instead" },
+    { path = "teloxide::prelude::Requester::edit_message_caption_inline", reason = "if this method is required, create a method that only accepts markdown instead" }
+]

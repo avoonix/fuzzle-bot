@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO visual_hash (id) VALUES (?1) ON CONFLICT(id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "55ed37f61da1ae7e8dac49ad1bd36c3f5621edd43ae22a0fad11c66a94116496"
+}

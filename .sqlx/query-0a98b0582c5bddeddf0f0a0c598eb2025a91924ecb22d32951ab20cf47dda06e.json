@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sticker (id, set_id, file_id, file_hash, emoji) VALUES (?1               , ?2         , ?3             , ?4       , ?5   )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "0a98b0582c5bddeddf0f0a0c598eb2025a91924ecb22d32951ab20cf47dda06e"
+}

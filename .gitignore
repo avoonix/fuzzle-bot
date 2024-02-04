@@ -1,0 +1,7 @@
+/target
+*.db
+*sqlite*
+*.sqb*
+config.toml
+container-data
+/tags

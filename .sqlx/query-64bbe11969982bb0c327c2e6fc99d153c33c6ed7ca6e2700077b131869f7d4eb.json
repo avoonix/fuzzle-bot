@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO user (id, blacklist) VALUES (?1, ?2)\n                                                ON CONFLICT(id) DO UPDATE SET interactions = interactions + 1\n                                                RETURNING *",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "blacklist",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "can_tag_stickers",
+        "ordinal": 2,
+        "type_info": "Bool"
+      },
+      {
+        "name": "can_tag_sets",
+        "ordinal": 3,
+        "type_info": "Bool"
+      },
+      {
+        "name": "interactions",
+        "ordinal": 4,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "64bbe11969982bb0c327c2e6fc99d153c33c6ed7ca6e2700077b131869f7d4eb"
+}

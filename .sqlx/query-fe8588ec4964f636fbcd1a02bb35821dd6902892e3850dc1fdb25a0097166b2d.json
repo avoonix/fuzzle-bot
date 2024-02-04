@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO file_hash_tag (file_hash, tag, added_by_user_id)\n                                           SELECT DISTINCT file_hash, ?1, ?2 FROM sticker WHERE set_id = ?3\n                                           ON CONFLICT (file_hash, tag) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "fe8588ec4964f636fbcd1a02bb35821dd6902892e3850dc1fdb25a0097166b2d"
+}

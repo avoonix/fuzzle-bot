@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sticker SET file_id = ?1 WHERE id = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "027c13e5e53438819bf0fa5f141e2ce80a86759ddcc8e7c7fbadba6b1732a034"
+}

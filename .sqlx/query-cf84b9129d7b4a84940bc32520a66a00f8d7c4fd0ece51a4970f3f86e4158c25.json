@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "select removed_by_user_id as user_id, count(*) as \"count: i64\" from file_hash_tag_history where julianday('now') - julianday(created_at) <= 1 group by removed_by_user_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "user_id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "count: i64",
+        "ordinal": 1,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "cf84b9129d7b4a84940bc32520a66a00f8d7c4fd0ece51a4970f3f86e4158c25"
+}

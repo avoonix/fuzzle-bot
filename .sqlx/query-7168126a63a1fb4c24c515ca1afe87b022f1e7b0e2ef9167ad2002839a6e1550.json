@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT file_hash, tag FROM file_hash_tag",
+  "describe": {
+    "columns": [
+      {
+        "name": "file_hash",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "tag",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "7168126a63a1fb4c24c515ca1afe87b022f1e7b0e2ef9167ad2002839a6e1550"
+}

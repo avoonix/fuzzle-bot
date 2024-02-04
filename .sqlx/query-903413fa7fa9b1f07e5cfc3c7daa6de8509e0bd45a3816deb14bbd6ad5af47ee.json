@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT tag, COUNT(*) AS count FROM file_hash_tag GROUP BY tag ORDER BY count DESC LIMIT ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "tag",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "count",
+        "ordinal": 1,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "903413fa7fa9b1f07e5cfc3c7daa6de8509e0bd45a3816deb14bbd6ad5af47ee"
+}

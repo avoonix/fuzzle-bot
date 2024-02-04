@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sticker_user (sticker_id, user_id, query) VALUES (?1, ?2, ?3)\n                                        ON CONFLICT(sticker_id, user_id) DO UPDATE SET query = ?3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "224c9d9550eafe1c0fe15ac03a2d1ae4cc0ad39326a1a60ebe314801328decd5"
+}

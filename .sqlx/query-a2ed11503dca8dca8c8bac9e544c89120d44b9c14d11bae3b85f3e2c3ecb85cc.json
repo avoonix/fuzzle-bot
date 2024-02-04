@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO file_hash_tag_history (file_hash, tag, removed_by_user_id, added_by_user_id)\n                      SELECT file_hash, tag, ?1, added_by_user_id FROM file_hash_tag WHERE tag = ?2 AND file_hash IN (SELECT file_hash FROM sticker WHERE set_id = ?3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a2ed11503dca8dca8c8bac9e544c89120d44b9c14d11bae3b85f3e2c3ecb85cc"
+}

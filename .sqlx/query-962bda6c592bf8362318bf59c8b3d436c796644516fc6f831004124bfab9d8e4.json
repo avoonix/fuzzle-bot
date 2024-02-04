@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT file_hash, visual_hash FROM file_hash_visual_hash",
+  "describe": {
+    "columns": [
+      {
+        "name": "file_hash",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "visual_hash",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "962bda6c592bf8362318bf59c8b3d436c796644516fc6f831004124bfab9d8e4"
+}

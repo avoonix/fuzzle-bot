@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT set_id FROM sticker WHERE id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "set_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5bf6643d04e7e8ac6789f52051b349fde85a44413f263728ba2708ea79f7b02c"
+}
