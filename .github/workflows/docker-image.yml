@@ -22,7 +22,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: avoonix/fuzzle-bot:latest
-      - name: Build and push
+      - name: Build and push (aarch64)
         uses: docker/build-push-action@v5
         with:
           context: .
