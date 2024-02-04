@@ -95,7 +95,7 @@ fn parse_remove_blacklist_data(input: &str) -> IResult<&str, CallbackData> {
 }
 
 fn parse_sticker_data(input: &str) -> IResult<&str, CallbackData> {
-    let (input, _) = tag("sticker")(input)?;
+    let (input, _) = tag("s")(input)?;
     let (input, _) = tag(";")(input)?;
     let (input, unique_id) = sticker_id_literal(input)?;
     let (input, _) = tag(";")(input)?;
