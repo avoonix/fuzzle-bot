@@ -6,7 +6,7 @@
 
 <a href="https://t.me/FuzzleBot" target="_blank" title="FuzzleBot on Telegram">
     <h1>
-        <img height="60" alt="FuzzleBot" src="readme-assets/FuzzleBot-heading.png">
+        <img height="100" alt="FuzzleBot" src="readme-assets/FuzzleBot-heading.png">
     </h1>
 </a>
 
@@ -20,6 +20,8 @@ I organize Telegram stickers with e621 tags.
 
 </div>
 
+<br>
+<br>
 
 <table>
 <tr>
@@ -38,6 +40,7 @@ I organize Telegram stickers with e621 tags.
 </tr>
 </table>
 
+<br>
 
 ![--------](readme-assets/divider.png)
 
