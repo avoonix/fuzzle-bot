@@ -1,7 +1,7 @@
 use nom::branch::alt;
 use nom::bytes::complete::tag;
-use nom::combinator::opt;
 use nom::combinator::map;
+use nom::combinator::opt;
 use nom::multi::{many0, many1, separated_list0};
 use nom::sequence::{preceded, terminated};
 use nom::IResult;
@@ -14,8 +14,6 @@ pub enum SetOperation {
     Tag,
     Untag,
 }
-
-
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InlineQueryData {
@@ -32,7 +30,7 @@ pub enum InlineQueryDataMode {
         set_name: String,
         operation: SetOperation,
     },
-    Search {
+    StickerSearch {
         emoji: Option<Emoji>,
     },
     Blacklist,
@@ -51,7 +49,7 @@ impl InlineQueryData {
             tags: vec![],
         }
     }
-    
+
     #[must_use]
     pub fn blacklist_query(tags: Vec<String>) -> Self {
         Self {
@@ -74,10 +72,19 @@ impl InlineQueryData {
             tags,
         }
     }
+
     #[must_use]
     pub fn continuous_tag_mode(tags: Vec<String>, operation: SetOperation) -> Self {
         Self {
             mode: InlineQueryDataMode::ContinuousTagMode { operation },
+            tags,
+        }
+    }
+
+    #[must_use]
+    pub fn search(tags: Vec<String>) -> Self {
+        Self {
+            mode: InlineQueryDataMode::StickerSearch { emoji: None },
             tags,
         }
     }
@@ -112,13 +119,13 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
         map(tag("(-cont)"), |_| InlineQueryDataMode::ContinuousTagMode {
             operation: SetOperation::Untag,
         }),
-        map(tag(""), |_| InlineQueryDataMode::Search { emoji: None }),
+        map(tag(""), |_| InlineQueryDataMode::StickerSearch { emoji: None }),
     ))(input)?;
     let (input, _) = many0(tag(" "))(input)?;
     let (input, emoji) = opt(parse_emoji)(input)?;
     let (input, _) = many0(tag(" "))(input)?;
-    if matches!(mode, InlineQueryDataMode::Search { .. }) {
-        mode = InlineQueryDataMode::Search { emoji };
+    if matches!(mode, InlineQueryDataMode::StickerSearch { .. }) {
+        mode = InlineQueryDataMode::StickerSearch { emoji };
     }
     let (input, tags) = separated_list0(many1(tag(" ")), tag_literal)(input)?;
     Ok((
@@ -139,7 +146,9 @@ impl TryFrom<String> for InlineQueryData {
         if input.is_empty() {
             Ok(data)
         } else {
-            Err("invalid inline query: input not consumed".to_string())
+            Err(format!(
+                "invalid inline query: input not consumed ({input})"
+            ))
         }
     }
 }
@@ -149,7 +158,7 @@ impl Display for InlineQueryData {
         let tags = self.tags.join(" ");
         match &self.mode {
             InlineQueryDataMode::Sticker { unique_id } => write!(f, "(s:{unique_id}) {tags}"),
-            InlineQueryDataMode::Search { emoji } => {
+            InlineQueryDataMode::StickerSearch { emoji } => {
                 if let Some(emoji) = emoji {
                     write!(f, "{emoji}")?;
                 }
@@ -174,7 +183,7 @@ impl Display for InlineQueryData {
     }
 }
 
-#[cfg(test)] 
+#[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::Result;
@@ -190,11 +199,10 @@ mod tests {
 
     pub const fn tag_query(tags: Vec<String>, emoji: Option<Emoji>) -> InlineQueryData {
         InlineQueryData {
-            mode: InlineQueryDataMode::Search { emoji },
+            mode: InlineQueryDataMode::StickerSearch { emoji },
             tags,
         }
     }
-
 
     #[test]
     fn stringify_query() {
@@ -202,13 +210,12 @@ mod tests {
         assert_eq!(query.to_string(), "(s:asdf) ");
     }
 
-
     #[test]
     fn stringify_tag_query() {
         let query = sticker_query("asdf", vec!["male".to_string(), "female".to_string()]);
         assert_eq!(query.to_string(), "(s:asdf) male female");
     }
-#[test]
+    #[test]
     fn parse_query() -> Result<(), String> {
         let query = InlineQueryData::try_from("male female".to_string())?;
         assert_eq!(

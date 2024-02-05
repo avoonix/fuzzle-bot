@@ -63,14 +63,14 @@ impl Keyboard {
                 button_layout.push(vec![
                     "male".to_string(),
                     "female".to_string(),
-                    "ambigious".to_string(),
+                    "ambiguous_gender".to_string(),
                 ]);
             }
             _ => {
                 button_layout.push(vec![
                     "male".to_string(),
                     "female".to_string(),
-                    "ambigious".to_string(),
+                    "ambiguous_gender".to_string(),
                 ]);
                 button_layout.push(vec!["male/male".to_string(), "male/female".to_string()]);
                 button_layout.push(vec![

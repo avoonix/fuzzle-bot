@@ -1,8 +1,14 @@
 use std::sync::Arc;
 
-use crate::{tags::{tag_suggestions::defaults::suggest_default_tags, TagManager}, util::Emoji};
+use crate::{
+    tags::{
+        tag_suggestions::{defaults::suggest_default_tags, rules::get_default_rules},
+        TagManager,
+    },
+    util::Emoji,
+};
 
-use self::{implied::suggest_tags_by_reverse_implication, rules::TagSuggestionRules};
+use self::implied::suggest_tags_by_reverse_implication;
 
 mod defaults;
 mod implied;
@@ -14,6 +20,7 @@ pub use suggest_tags::suggest_tags;
 pub use tag_suggestion::ScoredTagSuggestion;
 
 pub fn suggest_tags_2(
+    // TODO: rename
     known_good_tags: &[String],
     tag_manager: Arc<TagManager>,
     emojis: Vec<Emoji>,
@@ -23,8 +30,7 @@ pub fn suggest_tags_2(
     // TODO: do not always re-parse
     // TODO: add rules for other emojis from other stickers in the set -> eg if many hugs, suggest
     // hug even thoug the current sticker does not have a hug emoji
-    let rules = TagSuggestionRules::parse_default()?;
-    dbg!("TODO: do not parse this every time!!");
+    let rules = get_default_rules();
     // TODO: use image based suggestions
     // , dynamic_image: &DynamicImage
     // .chain(suggest_tags_by_counting_pixel_colors(dynamic_image))

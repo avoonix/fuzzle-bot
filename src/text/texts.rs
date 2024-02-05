@@ -50,10 +50,15 @@ impl Text {
     }
 
     #[must_use]
+    pub fn switch_pm_text() -> String {
+        "Beep".to_string()
+    }
+
+    #[must_use]
     pub fn get_popular_tag_text(tags: Vec<PopularTag>) -> Markdown {
         let message = tags
             .into_iter()
-            .map(|tag| format!("{}: {}", tag.name, tag.count))
+            .map(|tag| format!("{}: {}", escape(&tag.name), tag.count))
             .collect_vec()
             .join("\n");
         Markdown::new(message)
@@ -158,9 +163,9 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
         Markdown::new(
     "Beep\\!
 
-I'm a bot that can help you find stickers by tags\\. 
+I'm a bot that can help you find stickers\\. It's basically e621, but with telegram stickers\\. To use me, press the \"Use me in a chat\" button below\\.
 
-If you send me some stickers in this chat, I will add them to the database\\! It would also be awesome if you help tagging :3".to_string()
+If you send me some stickers in this chat, I will add them to the database\\. Help with tagging is appreciated :3".to_string()
     )
     }
 

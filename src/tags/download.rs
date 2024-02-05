@@ -1,6 +1,5 @@
 use anyhow::Result;
 use flate2::read::GzDecoder;
-use log::info;
 use std::path::PathBuf;
 use std::{fs, io};
 use tokio::fs::{create_dir_all, File};
@@ -98,7 +97,6 @@ where
         kind.as_str(),
         current_date.as_str()
     );
-    info!("{:?}", path); // TODO: remove
     let mut rdr = get_csv_reader(path, url).await?;
     let mut tags = Vec::new();
     for result in rdr.deserialize() {

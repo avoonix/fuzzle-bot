@@ -3,6 +3,7 @@ use std::{fmt::Display, str::FromStr};
 #[derive(Debug, Clone, Copy)]
 pub enum StartParameter {
     Blacklist,
+    Greeting,
     Regular,
     Help,
 }
@@ -15,6 +16,7 @@ impl FromStr for StartParameter {
             "" => Ok(Self::Regular),
             "blacklist" => Ok(Self::Blacklist),
             "help" => Ok(Self::Help),
+            "beep" => Ok(Self::Greeting),
             _ => Err("invalid start parameter".to_string()),
         }
     }
@@ -26,6 +28,7 @@ impl Display for StartParameter {
             Self::Regular => write!(f, ""),
             Self::Blacklist => write!(f, "blacklist"),
             Self::Help => write!(f, "help"),
+            Self::Greeting => write!(f, "beep"),
         }
     }
 }

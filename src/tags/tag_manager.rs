@@ -96,7 +96,7 @@ impl TagManager {
                     tags.insert(tag.name, category);
                 }
                 Err(e) => {
-                    warn!("error adding tag {}: {}", tag.name, e);
+                    warn!("can't add tag {}: {}", tag.name, e);
                 }
             }
         }

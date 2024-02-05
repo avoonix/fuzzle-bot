@@ -91,11 +91,6 @@ impl TagSuggestionRules {
         })
     }
 
-    pub fn parse_default() -> anyhow::Result<Self> {
-        let res = Self::parse(include_str!("./rules.uwu"))?;
-        Ok(res)
-    }
-
     fn apply_string_rules(&self, set_title: &str, set_name: &str) -> Vec<String> {
         let mut tags: Vec<String> = Vec::new();
         let combined = format!("{set_name} {set_title}").to_lowercase();
@@ -161,6 +156,12 @@ impl TagSuggestionRules {
             })
             .collect_vec()
     }
+}
+
+#[cached::proc_macro::once]
+pub fn get_default_rules() -> TagSuggestionRules {
+    #[allow(clippy::expect_used)] // TODO: properly handle error?
+    TagSuggestionRules::parse(include_str!("./rules.uwu")).expect("default rules should parse")
 }
 
 const fn compute_score_for_suggestion_count(count: usize) -> f64 {
@@ -306,7 +307,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_default_rules_parse() -> anyhow::Result<()> {
-        let rules = TagSuggestionRules::parse_default()?;
+        let rules = get_default_rules();
         let tag_manager = get_default_tag_manager(std::env::temp_dir()).await?;
         // go through all tags and verify that they exist
         rules.emoji_rules.values().flatten().for_each(|tag| {

@@ -113,4 +113,13 @@ impl Database {
 
         Ok(())
     }
+
+    pub async fn clear_recently_used_stickers(&self, user_id: u64) -> Result<(), DatabaseError> {
+        let user_id = user_id as i64; // TODO: no convert
+        sqlx::query!("DELETE FROM sticker_user WHERE user_id = ?1", user_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
 }

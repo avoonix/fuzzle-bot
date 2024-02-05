@@ -14,20 +14,29 @@ use super::StartParameter;
 #[derive(BotCommands, Debug, Clone, Copy)]
 #[command(rename_rule = "lowercase", description = "Supported commands")]
 pub enum RegularCommand {
-    #[command(description = "display help text")]
-    Help,
-    #[command(description = "show welcome message")]
-    Start { start_parameter: StartParameter },
     #[command(description = "show settings")]
     Settings,
-    #[command(description = "list popular tags")]
-    PopularTags,
-    #[command(description = "general statistics")]
-    Stats,
+
     #[command(description = "get a random sticker that needs tagging")]
     TagMe,
+
     #[command(description = "tag multiple stickers with the same tag")]
     ContinuousTagMode,
+
+    #[command(description = "general statistics")]
+    Stats,
+
+    #[command(description = "list popular tags")]
+    PopularTags,
+
+    #[command(description = "clear recently used stickers")]
+    ClearRecentlyUsed,
+
+    #[command(description = "show welcome message")]
+    Start { start_parameter: StartParameter },
+
+    #[command(description = "display help text")]
+    Help,
 }
 
 impl RegularCommand {
@@ -57,7 +66,7 @@ impl RegularCommand {
                         .reply_markup(Keyboard::make_blacklist_keyboard(&blacklist))
                         .await?;
                 }
-                StartParameter::Regular => {
+                StartParameter::Regular | StartParameter::Greeting => {
                     bot.send_markdown(msg.chat.id, Text::get_start_text())
                         .reply_to_message_id(msg.id)
                         .allow_sending_without_reply(true)
@@ -123,14 +132,25 @@ impl RegularCommand {
                 )
                 .reply_markup(Keyboard::make_continuous_tag_keyboard())
                 .await?;
-            } // this kind of reply markup can be used to have users check the correctness of tags
-              // quickly
-              // .reply_markup(ReplyMarkup::keyboard(vec![
-              //                                     vec![
-              //     KeyboardButton::new("correct"),
-              //     KeyboardButton::new("incorrect"),
-              //                                     ],
-              // ]))
+            } 
+            Self::ClearRecentlyUsed => {
+                database.clear_recently_used_stickers(user.id().0).await?;
+                bot.send_markdown(
+                    msg.chat.id,
+                    Markdown::escaped("Cleared recently used stickers"),
+                )
+                .reply_to_message_id(msg.id)
+                .allow_sending_without_reply(true)
+                .await?;
+            }
+            // TODO: this kind of reply markup can be used to have users check the correctness of tags
+            // quickly
+            // .reply_markup(ReplyMarkup::keyboard(vec![
+            //                                     vec![
+            //     KeyboardButton::new("correct"),
+            //     KeyboardButton::new("incorrect"),
+            //                                     ],
+            // ]))
         }
 
         Ok(())

@@ -13,9 +13,8 @@ pub async fn get_default_tag_manager(dir: PathBuf) -> anyhow::Result<Arc<TagMana
     let tags = get_tags(dir.clone(), "https://e621.net");
     let aliases = get_tag_aliases(dir.clone(), "https://e621.net");
     let implications = get_tag_implications(dir.clone(), "https://e621.net");
-    clean_dir(dir).await?;
-
     let (tags, aliases, implications) = try_join!(tags, aliases, implications)?;
+    clean_dir(dir).await?;
 
     let tags = TagManager::new()
         .set_match_distance(0.7)

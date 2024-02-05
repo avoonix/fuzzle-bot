@@ -194,7 +194,7 @@ async fn send_report(database: Database, bot: Bot, admin_id: UserId) -> Result<(
     let taggings = database.get_user_tagging_stats_24_hours().await?;
     let age = stats
         .least_recently_fetched_set_age
-        .map_or("fetch error".to_string(), |age| {
+        .map_or("never".to_string(), |age| {
             format!("{}", age.num_hours())
         });
     let mut text = format!(

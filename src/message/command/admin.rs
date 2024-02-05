@@ -15,12 +15,12 @@ use super::user::RegularCommand;
 #[derive(BotCommands, Debug)]
 #[command(rename_rule = "lowercase", description = "Admin commands")]
 pub enum AdminCommand {
-    #[command(description = "ADMIN query the database")]
-    Query { query: String },
     #[command(description = "ADMIN ban a set (set name is case sensitive)")]
     BanSet { set_name: String },
+
     #[command(description = "ADMIN queue all sets for refetching")]
     RefetchAllSets,
+
     #[command(description = "ADMIN export json")]
     ExportJson,
 }
@@ -49,10 +49,6 @@ impl AdminCommand {
                     bot.send_markdown(msg.chat.id, Markdown::escaped("banned set"))
                         .await?;
                 }
-            }
-            Self::Query { query } => {
-                let result = database.run_arbitrary_query(query).await?;
-                println!("{result:#?}");
             }
             Self::RefetchAllSets => {
                 worker.refetch_all_sets().await;

@@ -45,30 +45,33 @@ async fn handle_sticker_tag_action(
                 database
                     .tag_sticker(unique_id.clone(), tags, Some(q.from.id.0))
                     .await?;
-                notification = (!implications.is_empty()).then(|| {
-                    format!(
-                        "{tag} implies {} (added automatically)",
-                        implications.join(", ")
-                    )
-                });
+                notification = if implications.is_empty() {
+                    "Saved!".to_string()
+                } else {
+                    format!("Saved! ({tag} implies {})", implications.join(", "))
+                };
             } else {
-                notification = None;
+                notification = "Invalid tag!".to_string();
             }
         }
         TagOperation::Untag(tag) => {
             database
                 .untag_sticker(unique_id.clone(), tag.clone(), q.from.id.0)
                 .await?;
-            notification = tag_manager.get_implications(&tag).and_then(|implications| {
-                if implications.is_empty() {
-                    None
-                } else {
-                    Some(format!(
-                        "{tag} implies {} (implications are not removed automatically)",
-                        implications.join(", ")
-                    ))
-                }
-            });
+            let implications = tag_manager.get_implications(&tag);
+            notification = implications.map_or_else(
+                || "Tag does not exist!".to_string(),
+                |implications| {
+                    if implications.is_empty() {
+                        "Removed!".to_string()
+                    } else {
+                        format!(
+                            "Removed just this tag! ({tag} implies {})",
+                            implications.join(", ")
+                        )
+                    }
+                },
+            );
         }
     }
 
@@ -82,7 +85,7 @@ async fn handle_sticker_tag_action(
         Some(set_name.clone()),
     ));
 
-    answer_callback_query(bot, q, None, keyboard, notification).await
+    answer_callback_query(bot, q, None, keyboard, Some(notification)).await
 }
 
 pub async fn callback_handler(
