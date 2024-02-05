@@ -44,7 +44,7 @@ I organize Telegram stickers with e621 tags.
 
 ![--------](readme-assets/divider.png)
 
-## 🐋 Usage
+## 🐋 Deployment
 
 The easiest way to deploy the bot yourself is with Docker compose.
 
@@ -74,9 +74,16 @@ This example configuration ensures the service is always running. To start or up
 Some useful commands:
 
 ```bash
-cargo run serve
-bacon clippy # has to be installed separately
-docker compose up --build -d
+cargo install sqlx-cli
+cargo install --locked bacon
+
+export DATABASE_URL=sqlite:mydb.sqlite # for sqlx
+
+cargo run serve --tag-dir-path ./tags --db-file-path mydb.sqlite --config-file-path config.toml
+bacon clippy
+
+sqlx db create
+sqlx migrate run # those two are usually not needed
 ```
 
 After running `serve` for the first time, a configuration file will be created where you can add your Telegram token and your account id (this account will be able to run admin-only commands).
@@ -90,7 +97,15 @@ If you have a more personal question, you can also contact me via telegram.
 
 ![--------](readme-assets/divider.png)
 
+## 💾 Sticker Sets
+
+Sets known to the bot are regularly crawled for sticker additions or deletions. 
+New sets are not found automatically and the bot relies on users adding sets and tagging stickers.
+So far, the majority of sets were gathered from sites/channesl like these: https://t.me/s/Fursticker, https://t.me/s/furrystickersfb, https://www.pulexart.com/stickers.html, and are not tagged.
+Sets can be submitted sending stickers directly or by forwarding stickers or messages containing `t.me/addstickers/<set>` links.
+
+![--------](readme-assets/divider.png)
+
 ## 🖹 License
 
 [GNU AFFERO GENERAL PUBLIC LICENSE Version 3, 19 November 2007](https://www.gnu.org/licenses/agpl-3.0.txt)
-
