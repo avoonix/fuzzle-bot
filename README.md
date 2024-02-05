@@ -38,6 +38,32 @@ I organize Telegram stickers with e621 tags.
 </tr>
 </table>
 
+
+![--------](readme-assets/divider.png)
+
+## 🐋 Usage
+
+The easiest way to deploy the bot yourself is with Docker compose.
+
+```yml
+version: '3.8'
+services:
+  fuzzle:
+    image: ghcr.io/avoonix/fuzzle-bot:latest # or latest-aarch64 for arm
+    pull_policy: always
+    command: serve
+    environment:
+      - FUZZLE_TAG_DIR_PATH=/data/tags
+      - FUZZLE_DB_FILE_PATH=/data/db.sqlite
+      - FUZZLE_CONFIG_FILE_PATH=/config/config.toml
+    volumes:
+      - ./container-data:/data
+      - ./config:/config
+    restart: always
+```
+
+This example configuration ensures the service is always running. To start or update the service, use `docker compose up -d`. Keep in mind that it will sometimes be necessary to manually run migrations, as SQLite does not support many ALTER TABLE statements.
+
 ![--------](readme-assets/divider.png)
 
 ## 🌈 Development
