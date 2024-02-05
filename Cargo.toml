@@ -97,3 +97,4 @@ rustdct = "0.7.1"
 sqlx = { version = "0.7.3", default-features = false, features = ["macros", "migrate", "sqlx-macros", "sqlite", "runtime-tokio", "chrono"] }
 emojis = "0.6.1"
 thiserror = "1.0.56"
+cached = "0.48.1"
