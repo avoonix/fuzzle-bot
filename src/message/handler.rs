@@ -105,7 +105,7 @@ pub async fn message_handler(
             match RegularCommand::parse(text, bot_user) {
                 Ok(command) => {
                     command
-                        .execute(bot, msg, tag_manager, database, user)
+                        .execute(bot, msg, tag_manager, database, user, config)
                         .await?;
                 }
                 Err(err) => {

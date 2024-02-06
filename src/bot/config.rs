@@ -9,6 +9,7 @@ pub struct Config {
     pub telegram: Telegram,
     pub worker: Worker,
     pub default_blacklist: Vec<String>,
+    pub greeting_sticker_id: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -43,6 +44,7 @@ impl Default for Config {
                 "gore".to_string(),
                 "scat".to_string(),
             ],
+            greeting_sticker_id: Some("AgADbRIAAhZaEFI".to_string()), // t.me/addstickers/FuzzleBot
         }
     }
 }
