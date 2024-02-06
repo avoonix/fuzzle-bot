@@ -1,3 +1,4 @@
+use chrono::Duration;
 use log::info;
 use teloxide::payloads::SendMessageSetters;
 use teloxide::types::InlineKeyboardButton;
@@ -118,13 +119,13 @@ async fn refetch_all_sets(
     admin_id: UserId,
 ) -> Result<(), BotError> {
     let start = chrono::Utc::now();
+    let mut last_update_sent = chrono::DateTime::<chrono::Utc>::MIN_UTC;
     let set_names = database.get_all_set_ids().await?;
     let total = set_names.len();
-    let updated_to_send: usize = 1.max(200.min(total / 10));
     let message = bot
         .send_markdown(
             admin_id,
-            Markdown::escaped(format!("Preparing to fetch {total} sticker sets")),
+            Markdown::escaped(format!("Fetching {total} sticker sets")),
         )
         .await?;
     let message_id = message.id;
@@ -138,8 +139,9 @@ async fn refetch_all_sets(
             worker.clone(),
         )
         .await?;
-        if i % (total / updated_to_send) == 0 {
-            let elapsed = chrono::Utc::now() - start;
+    let now = chrono::Utc::now();
+        if now - last_update_sent > Duration::seconds(10)  {
+            let elapsed = now - start;
             bot.edit_message_markdown(
                 admin_id,
                 message_id,
@@ -151,6 +153,7 @@ async fn refetch_all_sets(
                 )),
             )
             .await?;
+            last_update_sent = now;
         }
     }
     let elapsed = chrono::Utc::now() - start;
