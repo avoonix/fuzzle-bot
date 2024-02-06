@@ -3,7 +3,9 @@ use crate::database::Database;
 use crate::message::Keyboard;
 use crate::tags::{suggest_tags, TagManager};
 use crate::text::{Markdown, Text};
+use crate::Config;
 use anyhow::Result;
+use log::warn;
 use teloxide::types::{BotCommand, InputFile};
 
 use std::sync::Arc;
@@ -52,6 +54,7 @@ impl RegularCommand {
         tag_manager: Arc<TagManager>,
         database: Database,
         user: UserMeta,
+        config: Config,
     ) -> Result<()> {
         match self {
             Self::Help => {
@@ -67,12 +70,25 @@ impl RegularCommand {
                         .await?;
                 }
                 StartParameter::Regular | StartParameter::Greeting => {
+                    if let Some(greeting_sticker_id) = config.greeting_sticker_id {
+                        let sticker = database.get_sticker(greeting_sticker_id).await?;
+                        if let Some(sticker) = sticker {
+                            bot.send_sticker(msg.chat.id, InputFile::file_id(sticker.file_id))
+                                .disable_notification(true)
+                                .await?;
+                        } else {
+                            warn!("greeting sticker is not in database");
+                        }
+                    } else {
+                        warn!("greeting sticker id is not set");
+                    }
                     bot.send_markdown(msg.chat.id, Text::get_start_text())
                         .reply_to_message_id(msg.id)
                         .allow_sending_without_reply(true)
                         .await?;
                     bot.send_markdown(msg.chat.id, Text::get_main_text())
                         .reply_markup(Keyboard::make_main_keyboard())
+                        .disable_notification(true)
                         .await?;
                 }
                 StartParameter::Help => {
@@ -132,7 +148,7 @@ impl RegularCommand {
                 )
                 .reply_markup(Keyboard::make_continuous_tag_keyboard())
                 .await?;
-            } 
+            }
             Self::ClearRecentlyUsed => {
                 database.clear_recently_used_stickers(user.id().0).await?;
                 bot.send_markdown(
@@ -142,18 +158,16 @@ impl RegularCommand {
                 .reply_to_message_id(msg.id)
                 .allow_sending_without_reply(true)
                 .await?;
-            }
-            // TODO: this kind of reply markup can be used to have users check the correctness of tags
-            // quickly
-            // .reply_markup(ReplyMarkup::keyboard(vec![
-            //                                     vec![
-            //     KeyboardButton::new("correct"),
-            //     KeyboardButton::new("incorrect"),
-            //                                     ],
-            // ]))
+            } // TODO: this kind of reply markup can be used to have users check the correctness of tags
+              // quickly
+              // .reply_markup(ReplyMarkup::keyboard(vec![
+              //                                     vec![
+              //     KeyboardButton::new("correct"),
+              //     KeyboardButton::new("incorrect"),
+              //                                     ],
+              // ]))
         }
 
         Ok(())
     }
 }
-
