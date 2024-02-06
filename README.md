@@ -15,7 +15,7 @@ I organize Telegram stickers with e621 tags.
 <br>
 
 <a href="https://t.me/FuzzleBot" target="_blank" title="FuzzleBot on Telegram">
-    <img width="80%" alt="FuzzleBot description video" src="readme-assets/FuzzleBot-description-video.png">
+    <img width="80%" alt="FuzzleBot description video" src="readme-assets/FuzzleBot-description-video.webp">
 </a>
 
 </div>
