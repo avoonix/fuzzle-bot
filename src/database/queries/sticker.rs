@@ -431,7 +431,7 @@ impl Database {
         let offset = offset as i64;
         // TODO: sort by recently used, sort by favorites
         // TODO: pagination
-        let stickers = sqlx::query!("select * from sticker where id in (select sticker_id from sticker_user where user_id = ?1) LIMIT ?2 OFFSET ?3", user_id, limit, offset)
+        let stickers = sqlx::query!("SELECT sticker.* FROM sticker INNER JOIN sticker_user ON sticker_user.sticker_id = sticker.id WHERE sticker_user.user_id = ?1 ORDER BY last_used DESC LIMIT ?2 OFFSET ?3", user_id, limit, offset)
             .fetch_all(&self.pool)
             .await?;
 

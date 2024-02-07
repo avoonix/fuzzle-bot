@@ -24,8 +24,13 @@
         "type_info": "Bool"
       },
       {
-        "name": "interactions",
+        "name": "created_at",
         "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "interactions",
+        "ordinal": 5,
         "type_info": "Int64"
       }
     ],
@@ -33,6 +38,7 @@
       "Right": 2
     },
     "nullable": [
+      false,
       false,
       false,
       false,

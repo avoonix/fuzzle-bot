@@ -1,8 +1,9 @@
 use itertools::Itertools;
 use log::{info, warn};
 use teloxide::{requests::Requester, types::UserId};
+use tokio::task;
 
-use crate::{bot::{Bot, BotError}, database::Database, util::Emoji, worker::WorkerPool};
+use crate::{bot::{Bot, BotError}, database::Database, util::{is_wrong_file_id_error, Emoji}, worker::WorkerPool};
 
 use super::{
     download::{fetch_sticker_file, FileKind},
@@ -130,7 +131,9 @@ async fn fetch_sticker_and_save_to_db(
     let (buf, file) = fetch_sticker_file(sticker.file.id.clone(), bot.clone()).await?;
     let file_kind = FileKind::from(file.path.as_str());
 
-    let (file_hash, visual_hash) = calculate_sticker_hash(buf, file_kind).await?;
+    let (file_hash, visual_hash) = task::spawn_blocking(move || {
+        calculate_sticker_hash(buf, file_kind)
+    }).await??;
 
     database.create_file(file_hash.clone()).await?;
     database
@@ -176,6 +179,9 @@ async fn fetch_sticker_set_and_save_to_db(
             Err(BotError::Timeout) => {
                 warn!("sticker fetch timed out, continuing");
             }
+            Err(BotError::Teloxide(teloxide::RequestError::Api(api_err))) if is_wrong_file_id_error(&api_err) => {
+                warn!("invalid file_id for a sticker, continuing");
+            },
             Err(other) => return Err(other),
             Ok(()) => {}
         }

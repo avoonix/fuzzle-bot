@@ -99,11 +99,14 @@ impl Text {
     }
 
     #[must_use]
-    pub fn get_info_text() -> Markdown {
+    pub fn infos() -> Markdown {
         Markdown::new(
         "*Tagging:*
-Tag what you see\\. This is the same policy as e621\\.
-Infos \\(e621 wiki\\): [twys](https://e621.net/wiki_pages/1684), [genders](https://e621.net/wiki_pages/3294), [checklist](https://e621.net/wiki_pages/310)",
+Tag what you see\\. This is the same policy as e621\\. Tags are saved immediately\\.
+Infos \\(e621 wiki\\): [twys](https://e621.net/wiki_pages/1684), [genders](https://e621.net/wiki_pages/3294), [checklist](https://e621.net/wiki_pages/310)
+
+*Problems or Suggestions:*
+Create an issue on [GitHub](https://github.com/avoonix/fuzzle-bot/issues)\\.",
     )
     }
 

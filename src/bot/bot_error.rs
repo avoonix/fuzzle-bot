@@ -64,3 +64,4 @@ impl_other_error!(std::io::Error);
 impl_other_error!(serde_json::Error);
 impl_other_error!(url::ParseError);
 impl_other_error!(std::fmt::Error);
+impl_other_error!(tokio::task::JoinError);

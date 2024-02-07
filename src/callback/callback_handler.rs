@@ -155,7 +155,7 @@ pub async fn callback_handler(
             answer_callback_query(
                 bot,
                 q,
-                Some(Text::get_info_text()),
+                Some(Text::infos()),
                 Some(Keyboard::make_info_keyboard()),
                 None,
             )
@@ -260,12 +260,7 @@ async fn answer_callback_query(
     };
     match result {
         Ok(_) => Ok(()),
-        Err(err) => {
-            if teloxide_error_can_safely_be_ignored(&err) {
-                Ok(())
-            } else {
-                Err(err.into())
-            }
-        }
+        Err(err) if teloxide_error_can_safely_be_ignored(&err) => Ok(()),
+        Err(err) => Err(err.into()),
     }
 }

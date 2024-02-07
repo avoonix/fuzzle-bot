@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "select * from sticker where id in (select sticker_id from sticker_user where user_id = ?1) LIMIT ?2 OFFSET ?3",
+  "query": "SELECT sticker.* FROM sticker INNER JOIN sticker_user ON sticker_user.sticker_id = sticker.id WHERE sticker_user.user_id = ?1 ORDER BY last_used DESC LIMIT ?2 OFFSET ?3",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,11 @@
         "name": "emoji",
         "ordinal": 4,
         "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 5,
+        "type_info": "Datetime"
       }
     ],
     "parameters": {
@@ -37,8 +42,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "c6f7a7b30d8d8fd0d1e8c05c5c86d947ac1f191c728ce9409d5950e033b84403"
+  "hash": "247592a57ae4e2a04de088703669a991d64187be6089c84c69de18b8eff926f4"
 }

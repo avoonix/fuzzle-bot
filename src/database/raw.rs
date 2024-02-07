@@ -1,7 +1,6 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-
-use super::User;
+use super::{SqlDateTime, User};
 
 #[derive(Debug, Serialize, Deserialize)]
 // #[derive(Serialize, Deserialize, FromRow)]
@@ -12,6 +11,7 @@ pub struct RawDatabaseUser {
     pub interactions: i64,
     pub can_tag_stickers: bool,
     pub can_tag_sets: bool,
+    pub created_at: SqlDateTime,
 }
 
 impl TryFrom<RawDatabaseUser> for User {
@@ -22,7 +22,7 @@ impl TryFrom<RawDatabaseUser> for User {
             id: value.id.try_into()?,
             blacklist: serde_json::from_str(&value.blacklist)?,
             can_tag_sets: value.can_tag_sets,
-            can_tag_stickers: value.can_tag_stickers
+            can_tag_stickers: value.can_tag_stickers,
         })
     }
 }

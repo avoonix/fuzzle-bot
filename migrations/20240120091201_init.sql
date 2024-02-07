@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS user (
     -- both tag permissions also allow untagging stickers/sets respectively
     can_tag_stickers BOOLEAN NOT NULL CHECK (can_tag_stickers IN (0, 1)) DEFAULT 1,
     can_tag_sets BOOLEAN NOT NULL CHECK (can_tag_sets IN (0, 1)) DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     interactions INTEGER NOT NULL DEFAULT 1
 );
 
@@ -15,7 +16,8 @@ CREATE TABLE IF NOT EXISTS sticker_set (
 );
 
 CREATE TABLE IF NOT EXISTS file_hash (
-    id TEXT NOT NULL PRIMARY KEY
+    id TEXT NOT NULL PRIMARY KEY,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS sticker (
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS sticker (
     file_id TEXT NOT NULL,
     file_hash TEXT NOT NULL,
     emoji TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(set_id) REFERENCES sticker_set(id) ON UPDATE RESTRICT ON DELETE CASCADE,
     FOREIGN KEY(file_hash) REFERENCES file_hash(id) ON UPDATE RESTRICT ON DELETE RESTRICT
 );

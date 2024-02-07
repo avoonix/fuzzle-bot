@@ -7,7 +7,7 @@ use super::download::FileKind;
 
 type Blake2b128 = Blake2b<U16>;
 
-pub async fn calculate_sticker_hash(
+pub fn calculate_sticker_hash(
     buf: Vec<u8>,
     file_kind: FileKind,
 ) -> Result<(String, Option<String>)> {
