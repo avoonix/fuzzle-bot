@@ -2,7 +2,6 @@ use std::fmt::Display;
 
 use teloxide::utils::markdown::escape;
 
-
 #[derive(Debug)]
 pub struct Markdown(String);
 

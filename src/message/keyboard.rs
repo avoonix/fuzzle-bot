@@ -1,10 +1,15 @@
+use std::collections::HashMap;
+
 use crate::{
+    bot::BotError,
     callback::CallbackData,
+    database::UserStats,
     inline::{InlineQueryData, SetOperation},
     tags::{self, all_count_tags, all_rating_tags, character_count, rating, Characters},
 };
 use itertools::Itertools;
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, LoginUrl};
+use url::Url;
 
 pub struct Keyboard;
 
@@ -94,7 +99,7 @@ impl Keyboard {
             button_layout.push(tags.iter().map(std::string::ToString::to_string).collect());
         }
 
-        let mut suggested_tags = suggested_tags
+        let suggested_tags = suggested_tags
             .iter()
             .filter(|tag| {
                 character_count(&(*tag).to_string()).is_none()
@@ -103,23 +108,6 @@ impl Keyboard {
             .filter(|tag| !button_layout.iter().flatten().any(|button| &button == tag))
             .cloned()
             .collect::<Vec<String>>();
-
-        if suggested_tags.len() < 10 {
-            // TODO: do this in suggest_tags
-            let common_tags = [
-                "young",
-                "gore",
-                "scat",
-                "watersports",
-                "diaper",
-                "vore",
-            ];
-            for tag in &common_tags {
-                if !suggested_tags.contains(&(*tag).to_string()) {
-                    suggested_tags.push((*tag).to_string());
-                }
-            }
-        }
 
         for tags in suggested_tags.chunks(2) {
             button_layout.push(tags.iter().map(std::string::ToString::to_string).collect());
@@ -157,13 +145,13 @@ impl Keyboard {
 
         keyboard.push(vec![InlineKeyboardButton::callback(
             "🔙 Settings",
-            CallbackData::Settings.to_string(),
+            CallbackData::Settings,
         )]);
 
         for tag in current_blacklist {
             keyboard.push(vec![InlineKeyboardButton::callback(
                 format!("Remove \"{tag}\""),
-                CallbackData::RemoveBlacklistedTag(tag.to_string()).to_string(),
+                CallbackData::RemoveBlacklistedTag(tag.to_string()),
             )]);
         }
 
@@ -205,7 +193,7 @@ impl Keyboard {
             ),
             InlineKeyboardButton::switch_inline_query_current_chat(
                 "Remove tags from the set",
-                InlineQueryData::set_operation(set_name, vec![], SetOperation::Untag).to_string(),
+                InlineQueryData::set_operation(set_name, vec![], SetOperation::Untag),
             ),
         ]];
 
@@ -216,8 +204,8 @@ impl Keyboard {
     pub fn make_main_keyboard() -> InlineKeyboardMarkup {
         let keyboard: Vec<Vec<InlineKeyboardButton>> = vec![
             vec![
-                InlineKeyboardButton::callback("Help", CallbackData::Help.to_string()),
-                InlineKeyboardButton::callback("Settings", CallbackData::Settings.to_string()),
+                InlineKeyboardButton::callback("Help", CallbackData::Help),
+                InlineKeyboardButton::callback("Settings", CallbackData::Settings),
             ],
             vec![InlineKeyboardButton::switch_inline_query(
                 "Use me in a chat",
@@ -232,7 +220,7 @@ impl Keyboard {
     pub fn make_info_keyboard() -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new([[InlineKeyboardButton::callback(
             "🔙 Help",
-            CallbackData::Help.to_string(),
+            CallbackData::Help,
         )]])
     }
 
@@ -241,11 +229,11 @@ impl Keyboard {
         InlineKeyboardMarkup::new([
             [InlineKeyboardButton::callback(
                 "🔙 Start",
-                CallbackData::Start.to_string(),
+                CallbackData::Start,
             )],
             [InlineKeyboardButton::callback(
                 "Other Info",
-                CallbackData::Info.to_string(),
+                CallbackData::Info,
             )],
         ])
     }
@@ -255,13 +243,58 @@ impl Keyboard {
         InlineKeyboardMarkup::new([
             [InlineKeyboardButton::callback(
                 "🔙 Start",
-                CallbackData::Start.to_string(),
+                CallbackData::Start,
             )],
             [InlineKeyboardButton::callback(
                 "Blacklist",
-                CallbackData::Blacklist.to_string(),
+                CallbackData::Blacklist,
             )],
         ])
+    }
+
+    #[must_use]
+    pub fn ui() -> Result<InlineKeyboardMarkup, BotError> {
+        Ok(InlineKeyboardMarkup::new([[InlineKeyboardButton::login(
+            "Open",
+            LoginUrl {
+                url: Url::parse("https://localhost-63243353-example.com/login")?,
+                forward_text: None,
+                bot_username: None,
+                request_write_access: None,
+            },
+        )]]))
+    }
+
+    #[must_use]
+    pub fn user_stats(user_id: u64) -> Result<InlineKeyboardMarkup, BotError> {
+        Ok(InlineKeyboardMarkup::new([[InlineKeyboardButton::url(
+            "Show User",
+            Url::parse(format!("tg://user?id={user_id}").as_str())?,
+        )]]))
+    }
+
+    #[must_use]
+    pub fn daily_report(
+        tagging_stats: HashMap<Option<i64>, UserStats>,
+    ) -> Result<InlineKeyboardMarkup, BotError> {
+        Ok(InlineKeyboardMarkup::new(
+            tagging_stats.into_iter().filter_map(
+                |(
+                    user_id,
+                    UserStats {
+                        added_tags,
+                        removed_tags,
+                    },
+                )| {
+                    user_id.map(|user_id| {
+                        vec![InlineKeyboardButton::callback(
+                            format!("{user_id}: +{added_tags} -{removed_tags}"),
+                            CallbackData::user_info(user_id as u64),
+                        )]
+                    })
+                },
+            ),
+        ))
     }
 }
 

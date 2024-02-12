@@ -26,7 +26,8 @@ pub enum Rating {
     Explicit,
 }
 
-#[must_use] pub fn character_count(tag: &str) -> Option<Characters> {
+#[must_use]
+pub fn character_count(tag: &str) -> Option<Characters> {
     match tag {
         ZERO_CHARACTERS => Some(Characters::Zero),
         ONE_CHARACTER => Some(Characters::One),
@@ -37,7 +38,8 @@ pub enum Rating {
     }
 }
 
-#[must_use] pub fn rating(tag: &str) -> Option<Rating> {
+#[must_use]
+pub fn rating(tag: &str) -> Option<Rating> {
     match tag {
         RATING_SAFE => Some(Rating::Safe),
         RATING_QUESTIONABLE => Some(Rating::Questionable),
@@ -46,12 +48,24 @@ pub enum Rating {
     }
 }
 
-#[must_use] pub fn all_count_tags() -> Vec<String> {
-    vec![ZERO_CHARACTERS.to_string(), ONE_CHARACTER.to_string(), TWO_CHARACTERS.to_string(), THREE_CHARACTERS.to_string(), MULTIPLE_CHARACTERS.to_string()]
+#[must_use]
+pub fn all_count_tags() -> Vec<String> {
+    vec![
+        ZERO_CHARACTERS.to_string(),
+        ONE_CHARACTER.to_string(),
+        TWO_CHARACTERS.to_string(),
+        THREE_CHARACTERS.to_string(),
+        MULTIPLE_CHARACTERS.to_string(),
+    ]
 }
 
-#[must_use] pub fn all_rating_tags() -> Vec<String> {
-    vec![RATING_SAFE.to_string(), RATING_QUESTIONABLE.to_string(), RATING_EXPLICIT.to_string()]
+#[must_use]
+pub fn all_rating_tags() -> Vec<String> {
+    vec![
+        RATING_SAFE.to_string(),
+        RATING_QUESTIONABLE.to_string(),
+        RATING_EXPLICIT.to_string(),
+    ]
 }
 
 impl Display for Characters {

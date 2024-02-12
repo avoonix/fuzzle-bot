@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT count(*) AS \"count: i64\" FROM file_hash_tag_history WHERE removed_by_user_id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "count: i64",
+        "ordinal": 0,
+        "type_info": "Int"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4a8440c036c502e206e2a5cc99e72390eff21d606396db0c88b6adf75daf33bb"
+}

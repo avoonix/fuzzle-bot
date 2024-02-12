@@ -1,5 +1,5 @@
-mod texts;
 mod markdown;
+mod texts;
 
-pub use texts::*;
 pub use markdown::*;
+pub use texts::*;

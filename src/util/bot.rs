@@ -15,7 +15,7 @@ pub fn is_wrong_file_id_error(err: &teloxide::ApiError) -> bool {
     match err {
         // some sticker packs have broken stickers
         teloxide::ApiError::Unknown(message)
-            if message == "Bad Request: wrong file_id or the file is temporarliy unavailable" =>
+            if message == "Bad Request: wrong file_id or the file is temporarily unavailable" =>
         {
             true
         }

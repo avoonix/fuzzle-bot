@@ -1,7 +1,9 @@
 use teloxide::prelude::*;
 
 use crate::{
-    bot::{BotError, UserMeta}, database::Database, worker::WorkerPool
+    bot::{BotError, UserMeta},
+    database::Database,
+    worker::WorkerPool,
 };
 
 use super::result_id::InlineQueryResultId;
@@ -10,7 +12,7 @@ pub async fn inline_result_handler(
     q: ChosenInlineResult,
     worker: WorkerPool,
     user: UserMeta,
-    database: Database
+    database: Database,
 ) -> Result<(), BotError> {
     let result = InlineQueryResultId::try_from(q.result_id)?;
     // let query = InlineQueryData::try_from(q.query.clone())?; // TODO: handle inline results
@@ -22,8 +24,10 @@ pub async fn inline_result_handler(
             worker
                 .process_set_of_sticker(Some(user.id()), sticker_unique_id.clone())
                 .await;
-            
-            database.add_recently_used_sticker(user.id().0, sticker_unique_id, q.query).await?;
+
+            database
+                .add_recently_used_sticker(user.id().0, sticker_unique_id, q.query)
+                .await?;
         }
         InlineQueryResultId::Tag(tag) => {}
     }

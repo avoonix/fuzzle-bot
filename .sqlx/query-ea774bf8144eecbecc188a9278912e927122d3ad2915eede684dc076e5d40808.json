@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT file_hash, visual_hash FROM file_hash_visual_hash",
+  "query": "SELECT id AS file_hash, visual_hash FROM file_analysis",
   "describe": {
     "columns": [
       {
@@ -19,8 +19,8 @@
     },
     "nullable": [
       false,
-      false
+      true
     ]
   },
-  "hash": "962bda6c592bf8362318bf59c8b3d436c796644516fc6f831004124bfab9d8e4"
+  "hash": "ea774bf8144eecbecc188a9278912e927122d3ad2915eede684dc076e5d40808"
 }

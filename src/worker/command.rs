@@ -11,9 +11,12 @@ use crate::bot::BotExt;
 use crate::callback::CallbackData;
 use crate::database::Database;
 use crate::message::send_database_export_to_chat;
+use crate::message::Keyboard;
+use crate::sticker::analyze_n_stickers;
 use crate::sticker::import_all_stickers_from_set;
 use crate::text::Markdown;
-use std::fmt::Write;
+use crate::text::Text;
+use crate::Paths;
 
 use super::WorkerPool;
 
@@ -67,7 +70,7 @@ async fn send_message_to_admin(
                 )])
                 .append_row(vec![InlineKeyboardButton::callback(
                     "Delete/Ban Set",
-                    CallbackData::remove_set(&set_name).to_string(),
+                    CallbackData::remove_set(&set_name),
                 )]);
             format!("Added Set {set_name} via URL") // TODO: pretty markdown formatting
         }
@@ -117,6 +120,7 @@ async fn refetch_all_sets(
     bot: Bot,
     worker: WorkerPool,
     admin_id: UserId,
+    paths: Paths,
 ) -> Result<(), BotError> {
     let start = chrono::Utc::now();
     let mut last_update_sent = chrono::DateTime::<chrono::Utc>::MIN_UTC;
@@ -139,8 +143,8 @@ async fn refetch_all_sets(
             worker.clone(),
         )
         .await?;
-    let now = chrono::Utc::now();
-        if now - last_update_sent > Duration::seconds(10)  {
+        let now = chrono::Utc::now();
+        if now - last_update_sent > Duration::seconds(10) {
             let elapsed = now - start;
             bot.edit_message_markdown(
                 admin_id,
@@ -167,6 +171,7 @@ async fn refetch_all_sets(
         )),
     )
     .await?;
+    analyze_n_stickers(database.clone(), bot.clone(), 10000, paths).await?;
     Ok(())
 }
 
@@ -175,6 +180,7 @@ async fn refetch_scheduled(
     database: Database,
     bot: Bot,
     worker: WorkerPool,
+    paths: Paths,
 ) -> Result<(), BotError> {
     let set_names = database.get_n_least_recently_fetched_set_ids(count).await?;
     for (i, set_name) in set_names.into_iter().enumerate() {
@@ -188,6 +194,7 @@ async fn refetch_scheduled(
         )
         .await?;
     }
+    analyze_n_stickers(database.clone(), bot.clone(), 100, paths).await?;
     Ok(())
 }
 
@@ -195,42 +202,14 @@ async fn send_report(database: Database, bot: Bot, admin_id: UserId) -> Result<(
     let counts = database.get_stats().await?;
     let stats = database.get_admin_stats().await?;
     let taggings = database.get_user_tagging_stats_24_hours().await?;
-    let age = stats
-        .least_recently_fetched_set_age
-        .map_or("never".to_string(), |age| {
-            format!("{}", age.num_hours())
-        });
-    let mut text = format!(
-        "Daily Report:
-- {} stickers ({} sets) with {} taggings
-- {} sets fetched within 24 hours
-- least recently fetched set age: {} hours
 
-user taggings (24 hours):
-",
-        counts.stickers,
-        counts.sets,
-        counts.taggings,
-        stats.number_of_sets_fetched_in_24_hours,
-        age
-    );
-    for (user, stats) in taggings {
-        match user {
-            None => writeln!(
-                text,
-                "- no user: {} added, {} removed",
-                stats.added_tags, stats.removed_tags
-            )?,
-            Some(user_id) => writeln!(
-                text,
-                "- user {}: {} added, {} removed",
-                user_id, stats.added_tags, stats.removed_tags
-            )?,
-        };
-        // TODO: add inline keyboard button for every user (until it reaches the telegram button limit)
-    }
-
-    let result = bot.send_markdown(admin_id, Markdown::escaped(text)).await?;
+    let result = bot
+        .send_markdown(
+            admin_id,
+            Text::daily_report(counts, stats, taggings.clone()),
+        )
+        .reply_markup(Keyboard::daily_report(taggings)?)
+        .await?;
     Ok(())
 }
 
@@ -241,6 +220,7 @@ impl Command {
         admin_id: UserId,
         worker: WorkerPool,
         database: Database,
+        paths: Paths,
     ) -> Result<(), BotError> {
         match self {
             Self::SendMessageToAdmin { msg, source_user } => {
@@ -268,9 +248,9 @@ impl Command {
             } => {
                 process_set_of_sticker(sticker_unique_id, source_user, database, bot, worker).await
             }
-            Self::RefetchAllSets => refetch_all_sets(database, bot, worker, admin_id).await,
+            Self::RefetchAllSets => refetch_all_sets(database, bot, worker, admin_id, paths).await,
             Self::RefetchScheduled { count } => {
-                refetch_scheduled(count, database, bot, worker).await
+                refetch_scheduled(count, database, bot, worker, paths).await
             }
             Self::SendReport => send_report(database, bot, admin_id).await,
             Self::SendExport => send_database_export_to_chat(admin_id.into(), database, bot).await,

@@ -1,7 +1,7 @@
-mod tag;
-mod user;
 mod misc;
 mod sticker;
+mod tag;
+mod user;
 
 use std::path::PathBuf;
 

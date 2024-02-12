@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT * FROM file_analysis WHERE visual_hash IS NULL ORDER BY random() LIMIT ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "thumbnail_file_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "visual_hash",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "2059858a7f3950908bc5e0c7944eccafc6890348a29ff2d2af28ce34b3220734"
+}

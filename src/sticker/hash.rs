@@ -1,18 +1,15 @@
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
-use blake2::{Blake2b, Digest, digest::consts::U16};
+use blake2::{digest::consts::U16, Blake2b, Digest};
 use itertools::Itertools;
 
 use super::download::FileKind;
 
 type Blake2b128 = Blake2b<U16>;
 
-pub fn calculate_sticker_hash(
-    buf: Vec<u8>,
-    file_kind: FileKind,
-) -> Result<(String, Option<String>)> {
+pub fn calculate_visual_hash(buf: Vec<u8>, file_kind: FileKind) -> Result<Option<String>> {
     let visual_hash = match file_kind {
-        FileKind::WebpOrPng => {
+        FileKind::Image => {
             let dynamic_image = image::load_from_memory(&buf)?;
             let dynamic_image =
                 dynamic_image.resize_exact(32, 32, image::imageops::FilterType::Gaussian);
@@ -59,23 +56,12 @@ pub fn calculate_sticker_hash(
         FileKind::Unknown => None,
     };
 
-    // output the iamge to /tmp for debugging // TODO: remove
-    // let mut f = std::fs::File::create(format!("/tmp/{}.webp", file_id))?;
-    // f.write_all(&buf)?;
+    Ok(visual_hash)
+}
 
-    // let buf = match FileKind::try_from(file.path.as_str()) {
-    //     Ok(FileKind::Webp) => {
-    //         let dynamic_image = image::load_from_memory(&buf)?;
-    //         dynamic_image.resize(128, 128, image::imageops::FilterType::Nearest).as_bytes().to_vec()
-    //     }
-    //     Err(e) => {
-    //         println!("unknown file type: {}", e);
-    //         buf
-    //     }
-    // };
-
+pub fn calculate_sticker_file_hash(buf: Vec<u8>, file_kind: FileKind) -> Result<String> {
     let hash = Blake2b128::digest(&buf);
-    Ok((general_purpose::URL_SAFE_NO_PAD.encode(hash), visual_hash))
+    Ok(general_purpose::URL_SAFE_NO_PAD.encode(hash))
 }
 
 fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>>

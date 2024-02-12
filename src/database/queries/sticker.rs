@@ -2,7 +2,11 @@ use itertools::Itertools;
 use sqlx::Row;
 
 use crate::{
-    database::{model::{Relationship, SavedSticker, SavedStickerSet}, query_builder::StickerTagQuery},
+    database::{
+        model::{Relationship, SavedSticker, SavedStickerSet},
+        query_builder::StickerTagQuery,
+        FileAnalysis,
+    },
     util::Emoji,
 };
 
@@ -69,11 +73,19 @@ impl Database {
         Ok(set)
     }
 
-    pub async fn update_sticker(&self, sticker_unique_id: String, file_id: String) -> Result<(), DatabaseError> {
+    pub async fn update_sticker(
+        &self,
+        sticker_unique_id: String,
+        file_id: String,
+    ) -> Result<(), DatabaseError> {
         // i dont think the other attributes can change without resulting in a different sticker_unique_id
-        sqlx::query!("UPDATE sticker SET file_id = ?1 WHERE id = ?2", file_id, sticker_unique_id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query!(
+            "UPDATE sticker SET file_id = ?1 WHERE id = ?2",
+            file_id,
+            sticker_unique_id
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -164,6 +176,7 @@ impl Database {
             .map(|sticker| SavedSticker {
                 file_id: sticker.file_id,
                 id: sticker.id,
+                file_hash: sticker.file_hash,
             })
             .collect_vec())
     }
@@ -179,6 +192,7 @@ impl Database {
         Ok(sticker.map(|sticker| SavedSticker {
             file_id: sticker.file_id,
             id: sticker.id,
+            file_hash: sticker.file_hash,
         }))
     }
 
@@ -193,18 +207,32 @@ impl Database {
         Ok(tags)
     }
 
-    pub async fn get_stickers_by_emoji(&self, emoji: Emoji, limit: usize, offset: usize) -> Result<Vec<SavedSticker>, DatabaseError> {
+    pub async fn get_stickers_by_emoji(
+        &self,
+        emoji: Emoji,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<SavedSticker>, DatabaseError> {
         let limit = limit as i64;
         let offset = offset as i64;
         let emoji = emoji.to_string();
-        let stickers = sqlx::query!("SELECT * FROM sticker WHERE emoji = ?1 LIMIT ?2 OFFSET ?3", emoji, limit, offset)
-            .fetch_all(&self.pool)
-            .await?;
+        let stickers = sqlx::query!(
+            "SELECT * FROM sticker WHERE emoji = ?1 LIMIT ?2 OFFSET ?3",
+            emoji,
+            limit,
+            offset
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
-        Ok(stickers.into_iter().map(|sticker| SavedSticker {
-            file_id: sticker.file_id,
-            id: sticker.id,
-        }).collect_vec())
+        Ok(stickers
+            .into_iter()
+            .map(|sticker| SavedSticker {
+                file_id: sticker.file_id,
+                id: sticker.id,
+                file_hash: sticker.file_hash,
+            })
+            .collect_vec())
     }
 
     pub async fn get_stickers_for_tag_query(
@@ -227,6 +255,7 @@ impl Database {
             .map(|row| SavedSticker {
                 file_id: row.get("file_id"),
                 id: row.get("id"),
+                file_hash: row.get("file_hash"),
             })
             .collect_vec())
     }
@@ -239,22 +268,24 @@ impl Database {
         Ok(sticker.map(|sticker| SavedSticker {
             file_id: sticker.file_id,
             id: sticker.id,
+            file_hash: sticker.file_hash,
         }))
     }
 
     pub async fn export_file_looks_like_visual_hash_relationships(
         &self,
     ) -> Result<Vec<Relationship>, DatabaseError> {
-        let relationships =
-            sqlx::query!("SELECT file_hash, visual_hash FROM file_hash_visual_hash")
-                .fetch_all(&self.pool)
-                .await?;
+        let relationships = sqlx::query!("SELECT id AS file_hash, visual_hash FROM file_analysis")
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(relationships
             .into_iter()
-            .map(|relationship| Relationship {
-                in_: relationship.file_hash,
-                out: relationship.visual_hash,
+            .filter_map(|relationship| {
+                relationship.visual_hash.map(|visual_hash| Relationship {
+                    in_: relationship.file_hash,
+                    out: visual_hash,
+                })
             })
             .collect_vec())
     }
@@ -336,9 +367,30 @@ impl Database {
         Ok(set_name)
     }
 
-    pub async fn create_visual_hash(&self, visual_hash: String) -> Result<(), DatabaseError> {
+    pub async fn update_thumbnail(
+        &self,
+        file_hash: String,
+        thumbnail_file_id: String,
+    ) -> Result<(), DatabaseError> {
         sqlx::query!(
-            "INSERT INTO visual_hash (id) VALUES (?1) ON CONFLICT(id) DO NOTHING",
+            "INSERT INTO file_analysis (id, thumbnail_file_id) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET thumbnail_file_id = ?2",
+            file_hash,
+            thumbnail_file_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_visual_hash(
+        &self,
+        file_hash: String,
+        visual_hash: String,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query!(
+            "INSERT INTO file_analysis (id, visual_hash) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET visual_hash = ?2",
+            file_hash,
             visual_hash
         )
         .execute(&self.pool)
@@ -347,21 +399,34 @@ impl Database {
         Ok(())
     }
 
-    pub async fn add_visual_hash(
+    pub async fn get_n_stickers_with_missing_analysis(
         &self,
-        file_hash: String,
-        visual_hash: String,
-    ) -> Result<(), DatabaseError> {
-        sqlx::query!(
-            "INSERT INTO file_hash_visual_hash (file_hash, visual_hash) VALUES (?1, ?2)
-                                         ON CONFLICT(file_hash, visual_hash) DO NOTHING",
-            file_hash,
-            visual_hash
+        n: i64,
+    ) -> Result<Vec<FileAnalysis>, DatabaseError> {
+        let analysis: Vec<FileAnalysis> = sqlx::query_as!(
+            FileAnalysis,
+            "SELECT * FROM file_analysis WHERE visual_hash IS NULL ORDER BY random() LIMIT ?1",
+            n
         )
-        .execute(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
 
-        Ok(())
+        Ok(analysis)
+    }
+
+    pub async fn get_analysis_for_sticker_id(
+        &self,
+        sticker_id: String,
+    ) -> Result<Option<FileAnalysis>, DatabaseError> {
+        let analysis: Option<FileAnalysis> = sqlx::query_as!(
+            FileAnalysis,
+            "SELECT * FROM file_analysis WHERE id = (SELECT file_hash FROM sticker WHERE id = ?1)",
+            sticker_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(analysis)
     }
 
     pub async fn ban_set(&self, set_name: String) -> Result<(), DatabaseError> {
@@ -389,15 +454,18 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_similar_stickers(&self, sticker_unique_id: String) -> Result<Vec<SavedSticker>, DatabaseError> {
+    pub async fn get_similar_stickers(
+        &self,
+        sticker_unique_id: String,
+    ) -> Result<Vec<SavedSticker>, DatabaseError> {
         // // get random similar stickers
         // let stickers = sqlx::query!("select * from sticker where file_hash in (select file_hash from file_hash_visual_hash where visual_hash = (
         //                         select visual_hash from file_hash_visual_hash group by visual_hash having count(*) > 1 order by random())) group by file_hash")
         //     .fetch_all(&self.pool)
         //     .await?;
 
-        let stickers = sqlx::query!("select * from sticker where id != ?1 and file_hash in (select file_hash from file_hash_visual_hash where visual_hash = (
-                                select visual_hash from file_hash_visual_hash where file_hash = (select file_hash from sticker where id = ?1))) group by file_hash", sticker_unique_id)
+        let stickers = sqlx::query!("select * from sticker where id != ?1 and file_hash in (select id from file_analysis where visual_hash = (
+                                select visual_hash from file_analysis where id = (select file_hash from sticker where id = ?1))) group by file_hash", sticker_unique_id)
             .fetch_all(&self.pool)
             .await?;
 
@@ -406,14 +474,16 @@ impl Database {
             .map(|sticker| SavedSticker {
                 file_id: sticker.file_id,
                 id: sticker.id,
+                file_hash: sticker.file_hash,
             })
             .collect_vec())
     }
 
-    pub async fn get_all_set_ids(
-        &self,
-    ) -> Result<Vec<String>, DatabaseError> {
-        let sets: Vec<SavedStickerSet> = sqlx::query_as!(SavedStickerSet, "SELECT * FROM sticker_set") .fetch_all(&self.pool) .await?;
+    pub async fn get_all_set_ids(&self) -> Result<Vec<String>, DatabaseError> {
+        let sets: Vec<SavedStickerSet> =
+            sqlx::query_as!(SavedStickerSet, "SELECT * FROM sticker_set")
+                .fetch_all(&self.pool)
+                .await?;
         Ok(sets.into_iter().map(|s| s.id).collect_vec())
     }
 
@@ -421,11 +491,22 @@ impl Database {
         &self,
         n: i64,
     ) -> Result<Vec<String>, DatabaseError> {
-        let sets: Vec<SavedStickerSet> = sqlx::query_as!(SavedStickerSet, "SELECT * FROM sticker_set order by last_fetched limit ?1", n) .fetch_all(&self.pool) .await?;
+        let sets: Vec<SavedStickerSet> = sqlx::query_as!(
+            SavedStickerSet,
+            "SELECT * FROM sticker_set order by last_fetched limit ?1",
+            n
+        )
+        .fetch_all(&self.pool)
+        .await?;
         Ok(sets.into_iter().map(|s| s.id).collect_vec())
     }
 
-    pub async fn get_recently_used_stickers(&self, user_id: u64, limit: usize, offset: usize) -> Result<Vec<SavedSticker>, DatabaseError> {
+    pub async fn get_recently_used_stickers(
+        &self,
+        user_id: u64,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<SavedSticker>, DatabaseError> {
         let user_id = user_id as i64; // TODO: no convert
         let limit = limit as i64;
         let offset = offset as i64;
@@ -440,8 +521,8 @@ impl Database {
             .map(|sticker| SavedSticker {
                 file_id: sticker.file_id,
                 id: sticker.id,
+                file_hash: sticker.file_hash,
             })
             .collect_vec())
     }
-
 }

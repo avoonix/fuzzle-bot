@@ -26,7 +26,7 @@ impl Database {
             .await?;
 
         match user {
-            Some(user) => Ok(serde_json::from_str(&user.blacklist).unwrap_or_default()), // TODO: no unwrap
+            Some(user) => Ok(serde_json::from_str(&user.blacklist)?),
             None => Ok(vec![]),
         }
     }
@@ -59,7 +59,7 @@ impl Database {
         blacklist: Vec<String>,
     ) -> Result<(), DatabaseError> {
         let user_id = user_id as i64; // TODO: no convert
-        let blacklist = serde_json::to_string(&blacklist).unwrap(); // TODO: no unwrap
+        let blacklist = serde_json::to_string(&blacklist)?;
         sqlx::query!(
             "UPDATE user SET blacklist = ?1 WHERE id = ?2",
             blacklist,
@@ -92,9 +92,13 @@ impl Database {
         Ok(exists)
     }
 
-    pub async fn add_user_if_not_exist(&self, user_id: u64, default_blacklist: Vec<String>) -> Result<User, DatabaseError> {
+    pub async fn add_user_if_not_exist(
+        &self,
+        user_id: u64,
+        default_blacklist: Vec<String>,
+    ) -> Result<User, DatabaseError> {
         let user_id = user_id as i64; // TODO: no convert
-        let default_blacklist = serde_json::to_string(&default_blacklist).unwrap(); // TODO: no unwrap
+        let default_blacklist = serde_json::to_string(&default_blacklist)?;
         let user = sqlx::query_as!(RawDatabaseUser, "INSERT INTO user (id, blacklist) VALUES (?1, ?2)
                                                 ON CONFLICT(id) DO UPDATE SET interactions = interactions + 1
                                                 RETURNING *", user_id, default_blacklist)
@@ -104,7 +108,12 @@ impl Database {
         Ok(user.try_into()?)
     }
 
-    pub async fn add_recently_used_sticker(&self, user_id: u64, sticker_unique_id: String, query: String) -> Result<(), DatabaseError> {
+    pub async fn add_recently_used_sticker(
+        &self,
+        user_id: u64,
+        sticker_unique_id: String,
+        query: String,
+    ) -> Result<(), DatabaseError> {
         let user_id = user_id as i64; // TODO: no convert
         sqlx::query!("INSERT INTO sticker_user (sticker_id, user_id, query) VALUES (?1, ?2, ?3)
                                         ON CONFLICT(sticker_id, user_id) DO UPDATE SET query = ?3, last_used = datetime('now')", sticker_unique_id, user_id, query)

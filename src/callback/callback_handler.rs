@@ -1,11 +1,15 @@
 use itertools::Itertools;
+use teloxide::dispatching::dialogue::GetChatId;
 use teloxide::payloads::AnswerCallbackQuerySetters;
 use teloxide::prelude::*;
-use teloxide::types::{InlineKeyboardMarkup, MediaKind, MessageCommon, MessageKind};
+use teloxide::types::{
+    InlineKeyboardButton, InlineKeyboardMarkup, MediaKind, MessageCommon, MessageKind,
+};
+use url::Url;
 
 use crate::bot::{Bot, BotError, BotExt, UserMeta};
 use crate::callback::TagOperation;
-use crate::database::Database;
+use crate::database::{AddedRemoved, Database};
 use crate::message::Keyboard;
 use crate::tags::{suggest_tags, TagManager};
 use crate::text::{Markdown, Text};
@@ -160,6 +164,20 @@ pub async fn callback_handler(
                 None,
             )
             .await
+        }
+        CallbackData::UserInfo(user_id) => {
+            if !user.is_admin {
+                return Ok(());
+            }
+            bot.answer_callback_query(&q.id).await?;
+
+            let user_stats = database.get_user_stats(user_id).await?;
+            // TODO: allow each user to view their own stats
+
+            bot.send_markdown(user.id(), Text::user_stats(user_stats, user_id))
+                .reply_markup(Keyboard::user_stats(user_id)?)
+                .await?;
+            Ok(())
         }
     }
 }

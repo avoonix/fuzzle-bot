@@ -1,5 +1,9 @@
+use std::collections::HashMap;
+
 use crate::database::model::Stats;
+use crate::database::AddedRemoved;
 use crate::database::AdminStats;
+use crate::database::FullUserStats;
 use crate::database::SqlDateTime;
 
 use super::DatabaseError;
@@ -48,6 +52,63 @@ impl Database {
                 .flatten()
                 .map(|time| now - time),
             number_of_sets_fetched_in_24_hours,
+        };
+        Ok(stats)
+    }
+
+    pub async fn get_user_stats(&self, user_id: u64) -> Result<FullUserStats, DatabaseError> {
+        let user_id = user_id as i64;
+
+        let added_result_24 = sqlx::query!("SELECT count(*) AS \"count: i64\" FROM file_hash_tag WHERE added_by_user_id = ?1 AND julianday('now') - julianday(created_at) <= 1", user_id)
+            .fetch_one(&self.pool)
+            .await?;
+        let removed_result_24 = sqlx::query!("SELECT count(*) AS \"count: i64\" FROM file_hash_tag_history WHERE removed_by_user_id = ?1 AND julianday('now') - julianday(created_at) <= 1", user_id)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let added_result = sqlx::query!(
+            "SELECT count(*) AS \"count: i64\" FROM file_hash_tag WHERE added_by_user_id = ?1",
+            user_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        let removed_result = sqlx::query!("SELECT count(*) AS \"count: i64\" FROM file_hash_tag_history WHERE removed_by_user_id = ?1", user_id)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let interactions = sqlx::query!("SELECT interactions FROM user WHERE id = ?1", user_id)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let affected_sets_24 = sqlx::query!("select 'tagged' as operation, set_id, count() as count from file_hash_tag left join sticker on sticker.file_hash = file_hash_tag.file_hash where file_hash_tag.added_by_user_id = ?1 AND julianday('now') - julianday(file_hash_tag.created_at) <= 1 group by set_id
+UNION
+select 'untagged' as operation, set_id, count() as count from file_hash_tag_history left join sticker on sticker.file_hash = file_hash_tag_history.file_hash where file_hash_tag_history.removed_by_user_id = ?1 AND julianday('now') - julianday(file_hash_tag_history.created_at) <= 1 group by set_id;", user_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut affected_24 = HashMap::new();
+
+        for affected in affected_sets_24 {
+            if let Some(set_id) = affected.set_id {
+                let entry = affected_24.entry(set_id).or_insert(AddedRemoved {
+                    added: 0,
+                    removed: 0,
+                });
+                match affected.operation.as_ref() {
+                    "tagged" => (*entry).added = affected.count,
+                    "untagged" => (*entry).removed = affected.count,
+                    _ => Err(anyhow::anyhow!("invalid operation {}", affected.operation))?,
+                }
+            }
+        }
+
+        let stats = FullUserStats {
+            interactions: interactions.interactions,
+            tagged_24hrs: added_result_24.count,
+            untagged_24hrs: removed_result_24.count,
+            total_tagged: added_result.count,
+            total_untagged: removed_result.count,
+            sets: affected_24,
         };
         Ok(stats)
     }

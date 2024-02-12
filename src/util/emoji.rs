@@ -3,7 +3,6 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Emoji(String);
 

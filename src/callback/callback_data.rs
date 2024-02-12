@@ -1,8 +1,8 @@
-use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::combinator::map;
 use nom::sequence::preceded;
 use nom::IResult;
+use nom::{branch::alt, character::complete::u64};
 use std::fmt::Display;
 
 use crate::util::{sticker_id_literal, tag_literal};
@@ -47,6 +47,7 @@ pub enum CallbackData {
     RemoveBlacklistedTag(String),
     Info,
     RemoveSet(String),
+    UserInfo(u64),
 }
 
 impl CallbackData {
@@ -65,6 +66,10 @@ impl CallbackData {
     pub fn remove_set(set_name: impl Into<String>) -> Self {
         Self::RemoveSet(set_name.into())
     }
+
+    pub fn user_info(user_id: impl Into<u64>) -> Self {
+        Self::UserInfo(user_id.into())
+    }
 }
 
 fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
@@ -77,7 +82,15 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
         parse_remove_blacklist_data,
         parse_sticker_data,
         parse_remove_set_data,
+        parse_user_info_data,
     ))(input)
+}
+
+fn parse_user_info_data(input: &str) -> IResult<&str, CallbackData> {
+    let (input, _) = tag("userinfo")(input)?;
+    let (input, _) = tag(";")(input)?;
+    let (input, user_id) = u64(input)?;
+    Ok((input, CallbackData::UserInfo(user_id)))
 }
 
 fn parse_remove_set_data(input: &str) -> IResult<&str, CallbackData> {
@@ -137,7 +150,14 @@ impl Display for CallbackData {
             Self::RemoveBlacklistedTag(tag) => write!(f, "removebl;{tag}"),
             Self::RemoveSet(set_name) => write!(f, "rmset;{set_name}"),
             Self::Info => write!(f, "info"),
+            Self::UserInfo(user_id) => write!(f, "userinfo;{user_id}"),
         }
+    }
+}
+
+impl From<CallbackData> for String {
+    fn from(value: CallbackData) -> Self {
+        value.to_string()
     }
 }
 

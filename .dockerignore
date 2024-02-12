@@ -7,3 +7,4 @@ Dockerfile
 *.sqb*
 tags
 container-data
+.git

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 use teloxide::types::UserId;
 
@@ -10,6 +12,28 @@ pub struct Config {
     pub worker: Worker,
     pub default_blacklist: Vec<String>,
     pub greeting_sticker_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Paths {
+    pub cache_dir_path: String,
+    pub db_file_path: String,
+    pub config_file_path: String,
+}
+
+impl Paths {
+    pub fn config(&self) -> PathBuf {
+        self.config_file_path.clone().into()
+    }
+    pub fn db(&self) -> PathBuf {
+        self.db_file_path.clone().into()
+    }
+    pub fn image_cache(&self) -> PathBuf {
+        format!("{}/images", self.cache_dir_path).into()
+    }
+    pub fn tag_cache(&self) -> PathBuf {
+        format!("{}/tags", self.cache_dir_path).into()
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

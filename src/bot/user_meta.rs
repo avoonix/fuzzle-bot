@@ -3,6 +3,8 @@ use crate::database::{Database, User};
 use crate::worker::{AdminMessage, WorkerPool};
 use teloxide::prelude::*;
 
+use super::BotError;
+
 #[derive(Clone, Debug)]
 pub struct UserMeta {
     pub user: User,
@@ -31,21 +33,32 @@ async fn _inject_user(
     config: Config,
     database: Database,
     worker: WorkerPool,
-) -> anyhow::Result<UserMeta> {
+) -> Result<UserMeta, BotError> {
     // TODO: possibly cache users? TODO: measure how long this function takes
     let Some(user) = update.user() else {
         return Err(anyhow::anyhow!("user missing from telegram update"))?;
     };
 
-    let user_exists = database.has_user(user.id.0).await?;
+    get_or_create_user(user.id, config, database, worker).await
+}
+
+pub async fn get_or_create_user(
+    user_id: UserId,
+    config: Config,
+    database: Database,
+    worker: WorkerPool,
+) -> Result<UserMeta, BotError> {
+    let user_exists = database.has_user(user_id.0).await?;
     if !user_exists {
         worker
-            .dispatch_message_to_admin(user.id, AdminMessage::NewUser)
+            .dispatch_message_to_admin(user_id, AdminMessage::NewUser)
             .await;
     }
 
-    let is_admin = user.id == config.get_admin_user_id();
-    let user = database.add_user_if_not_exist(user.id.0, config.default_blacklist).await?;
+    let is_admin = user_id == config.get_admin_user_id();
+    let user = database
+        .add_user_if_not_exist(user_id.0, config.default_blacklist)
+        .await?;
 
     // TODO: check if user is banned?
 

@@ -76,11 +76,21 @@ Some useful commands:
 ```bash
 cargo install sqlx-cli
 cargo install --locked bacon
+cargo install cargo-leptos
+rustup toolchain install nightly --allow-downgrade
+rustup target add wasm32-unknown-unknown
+
+cargo leptos watch
+
+cargo sqlx prepare -- --features ssr
 
 export DATABASE_URL=sqlite:mydb.sqlite # for sqlx
 
-cargo run serve --tag-dir-path ./tags --db-file-path mydb.sqlite --config-file-path config.toml
+# arguments won't work (yet); use environment variables to configure
+# cargo run serve --tag-dir-path ./tags --db-file-path mydb.sqlite --config-file-path config.toml
 bacon clippy
+cargo fmt
+leptosfmt ./**/*.rs
 
 sqlx db create
 sqlx migrate run # those two are usually not needed

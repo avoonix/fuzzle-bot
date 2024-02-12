@@ -1,8 +1,10 @@
-use std::iter::once;
+use std::{collections::HashMap, iter::once};
 
 use crate::{
     callback::TagOperation,
-    database::{PopularTag, SavedStickerSet, Stats},
+    database::{
+        AddedRemoved, AdminStats, FullUserStats, PopularTag, SavedStickerSet, Stats, UserStats,
+    },
     message::{
         admin_command_description, escape_sticker_unique_id_for_command, user_command_description,
     },
@@ -34,12 +36,10 @@ impl Text {
             user_command_description()
         })
     }
-    
+
     #[must_use]
     pub fn sticker_not_found() -> Markdown {
-        Markdown::new(
-            "Sticker not found",
-        )
+        Markdown::new("Sticker not found")
     }
 
     #[must_use]
@@ -69,8 +69,7 @@ impl Text {
         sets: Vec<SavedStickerSet>,
         sticker_unique_id: &str,
     ) -> Vec<Markdown> {
-        let escaped_sticker_id =
-            &escape_sticker_unique_id_for_command(sticker_unique_id);
+        let escaped_sticker_id = &escape_sticker_unique_id_for_command(sticker_unique_id);
         let lines = sets
             .into_iter()
             // TODO: separate function for generating message
@@ -148,8 +147,7 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
         sticker_unique_id: &str,
         emojis: Vec<Emoji>,
     ) -> Markdown {
-        let escaped_sticker_id =
-            &escape_sticker_unique_id_for_command(sticker_unique_id);
+        let escaped_sticker_id = &escape_sticker_unique_id_for_command(sticker_unique_id);
         Markdown::new(
     format!(
         "UwU you sent some stickers :3\nSet: {}\nSticker ID: {}\nEmojis: {}\nFind Sets: {}\nSet Operations: {}",
@@ -176,6 +174,77 @@ If you send me some stickers in this chat, I will add them to the database\\. He
     "Below are some things you can explore\\. You will also find some commands in the bot menu\\."
         .to_string()
     )
+    }
+
+    #[must_use]
+    pub fn daily_report(
+        counts: Stats,
+        stats: AdminStats,
+        taggings: HashMap<Option<i64>, UserStats>,
+    ) -> Markdown {
+        let age = stats
+            .least_recently_fetched_set_age
+            .map_or("never".to_string(), |age| {
+                format!("{} hours", age.num_hours())
+            });
+        let text = escape(&format!(
+            "Daily Report:
+- {} stickers ({} sets) with {} taggings
+- {} sets fetched within 24 hours
+- least recently fetched set age: {}
+
+user taggings (24 hours):",
+            counts.stickers,
+            counts.sets,
+            counts.taggings,
+            stats.number_of_sets_fetched_in_24_hours,
+            age
+        ));
+
+        let user_taggings = taggings
+            .into_iter()
+            .map(|(user_id, stats)| {
+                let user = match user_id {
+                    Some(user_id) => format!("user {user_id}"),
+                    None => "no user".to_string(),
+                };
+                escape(&format!(
+                    "- {user} (+{} -{})",
+                    stats.added_tags, stats.removed_tags
+                ))
+            })
+            .join("\n");
+
+        Markdown::new(format!("{text}\n{user_taggings}"))
+    }
+
+    #[must_use]
+    pub fn user_stats(user_stats: FullUserStats, user_id: u64) -> Markdown {
+        let mut set_str = String::new();
+        for (set_id, AddedRemoved { added, removed }) in user_stats.sets {
+            set_str.push_str(
+                format!(
+                    "{}: \\+{added} \\-{removed}\n",
+                    format_set_as_markdown_link(&set_id, &set_id)
+                )
+                .as_str(),
+            );
+        }
+
+        Markdown::new(format!(
+            "User: {user_id}
+Interactions: {}
+Total taggings: \\+{} \\-{}
+Taggings \\(24 hours\\): \\+{} \\-{}
+Taggings per set \\(24 hours\\):
+{}",
+            user_stats.interactions,
+            user_stats.total_tagged,
+            user_stats.total_untagged,
+            user_stats.tagged_24hrs,
+            user_stats.untagged_24hrs,
+            set_str
+        ))
     }
 
     #[must_use]

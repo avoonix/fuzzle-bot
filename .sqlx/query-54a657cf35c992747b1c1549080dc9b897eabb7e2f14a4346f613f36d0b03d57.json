@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "select * from sticker where id != ?1 and file_hash in (select file_hash from file_hash_visual_hash where visual_hash = (\n                                select visual_hash from file_hash_visual_hash where file_hash = (select file_hash from sticker where id = ?1))) group by file_hash",
+  "query": "select * from sticker where id != ?1 and file_hash in (select id from file_analysis where visual_hash = (\n                                select visual_hash from file_analysis where id = (select file_hash from sticker where id = ?1))) group by file_hash",
   "describe": {
     "columns": [
       {
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "9f72972acb68131f1cda0691e68cf377d217a7560213f36ac23b6fe740ecccae"
+  "hash": "54a657cf35c992747b1c1549080dc9b897eabb7e2f14a4346f613f36d0b03d57"
 }

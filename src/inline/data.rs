@@ -119,7 +119,9 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
         map(tag("(-cont)"), |_| InlineQueryDataMode::ContinuousTagMode {
             operation: SetOperation::Untag,
         }),
-        map(tag(""), |_| InlineQueryDataMode::StickerSearch { emoji: None }),
+        map(tag(""), |_| InlineQueryDataMode::StickerSearch {
+            emoji: None,
+        }),
     ))(input)?;
     let (input, _) = many0(tag(" "))(input)?;
     let (input, emoji) = opt(parse_emoji)(input)?;
@@ -183,6 +185,12 @@ impl Display for InlineQueryData {
     }
 }
 
+impl From<InlineQueryData> for String {
+    fn from(value: InlineQueryData) -> Self {
+        value.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,7 +236,10 @@ mod tests {
     #[test]
     fn parse_emoji_query() -> Result<(), String> {
         let query = InlineQueryData::try_from("🏳️‍🌈".to_string())?;
-        let flag = Emoji::parse("🏳️‍🌈").first().unwrap().to_owned();
+        let flag = Emoji::parse("🏳️‍🌈")
+            .first()
+            .expect("emoji to parse")
+            .to_owned();
         assert_eq!(query, tag_query(vec![], Some(flag)));
         Ok(())
     }

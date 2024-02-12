@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
 use nom::bytes::streaming::tag;
-use nom::{branch::alt, IResult};
 use nom::combinator::map;
 use nom::sequence::preceded;
+use nom::{branch::alt, IResult};
 
 use crate::util::{sticker_id_literal, tag_literal};
 
@@ -31,7 +31,7 @@ fn parse_result(input: &str) -> IResult<&str, InlineQueryResultId> {
     alt((
         map(
             preceded(tag("s:"), sticker_id_literal),
-                |sticker_unique_id| InlineQueryResultId::Sticker(sticker_unique_id.to_string()),
+            |sticker_unique_id| InlineQueryResultId::Sticker(sticker_unique_id.to_string()),
         ),
         map(preceded(tag("t:"), tag_literal), |tag| {
             InlineQueryResultId::Tag(tag.to_string())
@@ -47,4 +47,3 @@ impl Display for InlineQueryResultId {
         }
     }
 }
-

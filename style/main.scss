@@ -1,0 +1,8 @@
+body {
+	font-family: sans-serif;
+	text-align: center;
+}
+
+.sticker-grid-auto-fill {
+	grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+}

@@ -1,12 +1,12 @@
-mod queries;
 mod error;
-mod model;
-mod raw;
-mod query_builder;
 mod export;
+mod model;
+mod queries;
+mod query_builder;
+mod raw;
 
-pub use queries::Database;
-pub use model::*;
 pub use error::*;
+pub use model::*;
+pub use queries::Database;
 
 pub use export::*;

@@ -1,8 +1,12 @@
-/target
+pkg
+/target/
 *.db
 *sqlite*
 *.sqb*
 config.toml
 container-data
 /tags
-*.sql
+/*.sql
+**/*.rs.bk
+.secret*
+/cache

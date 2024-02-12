@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT * FROM file_analysis WHERE id = (SELECT file_hash FROM sticker WHERE id = ?1)",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "thumbnail_file_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "visual_hash",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "93f142c22ea995021f05cff152e7ca11c42342a6c00110b1b219b561fa721a67"
+}

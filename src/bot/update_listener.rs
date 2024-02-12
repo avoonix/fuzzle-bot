@@ -5,6 +5,7 @@ use crate::inline::{inline_query_handler, inline_result_handler};
 use crate::message::{list_visible_admin_commands, list_visible_user_commands, message_handler};
 use crate::tags::{get_default_tag_manager, TagManager};
 use crate::worker::WorkerPool;
+use crate::Paths;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,15 +25,12 @@ pub struct UpdateListener {
     bot: Bot,
     config: Config,
     database: Database,
+    paths: Paths,
 }
 
 impl UpdateListener {
-    pub async fn new(
-        config: Config,
-        tag_dir: PathBuf,
-        database_path: PathBuf,
-    ) -> Result<Self, anyhow::Error> {
-        let tags = get_default_tag_manager(tag_dir).await?;
+    pub async fn new(config: Config, paths: Paths) -> Result<Self, anyhow::Error> {
+        let tags = get_default_tag_manager(paths.tag_cache()).await?;
         let client = default_reqwest_settings()
             .timeout(Duration::from_secs(30))
             .build()?;
@@ -40,13 +38,14 @@ impl UpdateListener {
         let bot = teloxide::Bot::with_client(config.telegram.token.clone(), client)
             .throttle(Limits::default())
             .parse_mode(ParseMode::MarkdownV2);
-        let database = Database::new(database_path).await?;
+        let database = Database::new(paths.db()).await?;
 
         Ok(Self {
             tags,
             bot,
             config,
             database,
+            paths,
         })
     }
 
@@ -76,8 +75,18 @@ impl UpdateListener {
             self.database.clone(),
             self.config.worker.queue_length,
             self.config.worker.concurrency,
+            self.paths.clone(),
         )
         .await;
+
+        crate::web::server::setup(
+            self.config.clone(),
+            self.database.clone(),
+            self.tags.clone(),
+            worker.clone(),
+            self.bot.clone(),
+            self.paths.clone(),
+        );
 
         let handler: Handler<'_, _, Result<(), BotError>, _> = dptree::entry()
             .chain(dptree::filter_map_async(inject_user))
@@ -95,7 +104,8 @@ impl UpdateListener {
                 AllowedUpdate::CallbackQuery,
                 AllowedUpdate::MyChatMember,
             ])
-            .delete_webhook().await 
+            .delete_webhook()
+            .await
             .build();
 
         log::info!("Listening ...");
@@ -109,12 +119,15 @@ impl UpdateListener {
             .default_handler(|upd| async move {
                 log::warn!("Unhandled update: {:?}", upd);
             })
-            .error_handler(ErrorHandler::new( self.bot.clone(), self.config.get_admin_user_id()))
+            .error_handler(ErrorHandler::new(
+                self.bot.clone(),
+                self.config.get_admin_user_id(),
+            ))
             .enable_ctrlc_handler()
             .build()
             .dispatch_with_listener(
                 update_listener,
-                    LoggingErrorHandler::with_custom_text("UPDATE LISTENER ERROR"),
+                LoggingErrorHandler::with_custom_text("UPDATE LISTENER ERROR"),
             )
             .await;
         drop(handle);

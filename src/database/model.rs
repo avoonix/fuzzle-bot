@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
@@ -17,7 +19,6 @@ pub struct PopularTag {
     pub name: String,
     pub count: u64,
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, Default)]
 pub struct UserStats {
@@ -41,6 +42,13 @@ pub struct SavedStickerSet {
     pub created_at: SqlDateTime,
 }
 
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct FileAnalysis {
+    pub id: String,
+    pub thumbnail_file_id: Option<String>,
+    pub visual_hash: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Stats {
     pub sets: i64,
@@ -52,6 +60,22 @@ pub struct Stats {
 pub struct AdminStats {
     pub number_of_sets_fetched_in_24_hours: i64,
     pub least_recently_fetched_set_age: Option<Duration>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FullUserStats {
+    pub interactions: i64,
+    pub total_tagged: i64,
+    pub total_untagged: i64,
+    pub tagged_24hrs: i64,
+    pub untagged_24hrs: i64,
+    pub sets: HashMap<String, AddedRemoved>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AddedRemoved {
+    pub added: i64,
+    pub removed: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,4 +97,5 @@ pub struct Sticker<'a> {
 pub struct SavedSticker {
     pub id: String,
     pub file_id: String,
+    pub file_hash: String,
 }

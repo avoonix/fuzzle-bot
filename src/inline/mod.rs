@@ -4,5 +4,5 @@ mod result_handler;
 mod result_id;
 
 pub use data::*;
-pub use query_handler::inline_query_handler;
+pub use query_handler::{inline_query_handler, query_stickers};
 pub use result_handler::inline_result_handler;

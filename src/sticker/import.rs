@@ -3,11 +3,16 @@ use log::{info, warn};
 use teloxide::{requests::Requester, types::UserId};
 use tokio::task;
 
-use crate::{bot::{Bot, BotError}, database::Database, util::{is_wrong_file_id_error, Emoji}, worker::WorkerPool};
+use crate::{
+    bot::{Bot, BotError},
+    database::Database,
+    util::{is_wrong_file_id_error, Emoji},
+    worker::WorkerPool,
+};
 
 use super::{
     download::{fetch_sticker_file, FileKind},
-    hash::calculate_sticker_hash,
+    hash::calculate_sticker_file_hash,
 };
 
 // TODO: test sticker/sticker set deletion
@@ -131,9 +136,8 @@ async fn fetch_sticker_and_save_to_db(
     let (buf, file) = fetch_sticker_file(sticker.file.id.clone(), bot.clone()).await?;
     let file_kind = FileKind::from(file.path.as_str());
 
-    let (file_hash, visual_hash) = task::spawn_blocking(move || {
-        calculate_sticker_hash(buf, file_kind)
-    }).await??;
+    let file_hash =
+        task::spawn_blocking(move || calculate_sticker_file_hash(buf, file_kind)).await??;
 
     database.create_file(file_hash.clone()).await?;
     database
@@ -145,9 +149,8 @@ async fn fetch_sticker_and_save_to_db(
             file_hash.clone(),
         )
         .await?;
-    if let Some(visual_hash) = visual_hash {
-        database.create_visual_hash(visual_hash.clone()).await?;
-        database.add_visual_hash(file_hash, visual_hash).await?;
+    if let Some(thumb) = sticker.thumb {
+        database.update_thumbnail(file_hash, thumb.file.id).await?;
     }
     Ok(())
 }
@@ -156,7 +159,8 @@ async fn fetch_sticker_set_and_save_to_db(
     set: teloxide::types::StickerSet,
     bot: Bot,
     database: Database,
-) -> Result<(), BotError> { // TODO: result should be how many stickers were added/removed/updated
+) -> Result<(), BotError> {
+    // TODO: result should be how many stickers were added/removed/updated
     info!("fetching set {}", &set.name);
 
     database
@@ -172,24 +176,37 @@ async fn fetch_sticker_set_and_save_to_db(
 
     // todo: tag animated?
     for sticker in stickers_not_in_database_yet {
-        let result = fetch_sticker_and_save_to_db(sticker, set.name.clone(), bot.clone(), database.clone())
-            .await;
+        let result =
+            fetch_sticker_and_save_to_db(sticker, set.name.clone(), bot.clone(), database.clone())
+                .await;
 
         match result {
             Err(BotError::Timeout) => {
                 warn!("sticker fetch timed out, continuing");
             }
-            Err(BotError::Teloxide(teloxide::RequestError::Api(api_err))) if is_wrong_file_id_error(&api_err) => {
+            Err(BotError::Teloxide(teloxide::RequestError::Api(api_err)))
+                if is_wrong_file_id_error(&api_err) =>
+            {
                 warn!("invalid file_id for a sticker, continuing");
-            },
+            }
             Err(other) => return Err(other),
             Ok(()) => {}
         }
     }
     for sticker in saved_stickers.clone() {
-        let Some(s) = set.stickers.iter().find(|s| s.file.unique_id == sticker.id) else { continue };
+        let Some(s) = set.stickers.iter().find(|s| s.file.unique_id == sticker.id) else {
+            continue;
+        };
         if s.file.id != sticker.file_id {
-            database.update_sticker(sticker.id, s.file.id.clone()).await?;
+            database
+                .update_sticker(sticker.id, s.file.id.clone())
+                .await?;
+        }
+        if let Some(thumb) = s.thumb.clone() {
+            // TODO: check if thumbnail is already up to date
+            database
+                .update_thumbnail(sticker.file_hash, thumb.file.id)
+                .await?;
         }
     }
 

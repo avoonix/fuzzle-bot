@@ -1,6 +1,6 @@
 use crate::bot::Bot;
 use crate::bot::{BotError, UserMeta};
-use crate::database::Database;
+use crate::database::{Database, SavedSticker};
 use crate::inline::{InlineQueryData, InlineQueryDataMode, SetOperation};
 use crate::message::StartParameter;
 use crate::tags::TagManager;
@@ -32,18 +32,18 @@ fn create_query_article(
     tag: &str,
     command_str: &str,
     description: &str,
-) -> InlineQueryResult {
+) -> Result<InlineQueryResult, BotError> {
     let category = tag_manager.get_category(tag).unwrap_or_default();
     let color = category.to_color_name();
     let name = category.to_human_name();
     // TODO: do not rely on this service for images (base64 does not work)
     let thumbnail_url =
         format!("https://placehold.co/{THUMBNAIL_SIZE}/{color}/black.png?text={name}");
-    let thumbnail_url = Url::parse(&thumbnail_url).unwrap();
+    let thumbnail_url = Url::parse(&thumbnail_url)?;
 
     let content = InputMessageContent::Text(InputMessageContentText::new(command_str));
 
-    InlineQueryResultArticle::new(
+    Ok(InlineQueryResultArticle::new(
         InlineQueryResultId::Tag(tag.to_string()).to_string(),
         tag,
         content,
@@ -53,7 +53,7 @@ fn create_query_article(
     .thumb_height(THUMBNAIL_SIZE)
     .hide_url(true)
     .description(description)
-    .into()
+    .into())
 }
 
 async fn handle_set_query(
@@ -85,7 +85,7 @@ async fn handle_set_query(
             };
             create_query_article(tag_manager.clone(), &tag, &command, description)
         })
-        .collect_vec();
+        .collect::<Result<Vec<_>, _>>()?;
     bot.answer_inline_query(q.id, results.clone())
         .next_offset(next_inline_query_offset(results.len(), current_offset))
         .cache_time(60)
@@ -122,7 +122,7 @@ async fn handle_sticker_query(
                 "Tag this sticker",
             )
         })
-        .collect_vec();
+        .collect::<Result<Vec<_>, _>>()?;
     bot.answer_inline_query(q.id, results.clone())
         .next_offset(next_inline_query_offset(results.len(), current_offset))
         .cache_time(0)
@@ -130,34 +130,30 @@ async fn handle_sticker_query(
     Ok(())
 }
 
-async fn handle_sticker_search(
-    bot: Bot,
-    tag_manager: Arc<TagManager>,
-    current_offset: usize,
+pub async fn query_stickers(
     query: InlineQueryData,
     database: Database,
-    user: UserMeta,
     emoji: Option<Emoji>,
-    q: InlineQuery,
-    worker: WorkerPool,
-) -> Result<(), BotError> {
+    user: UserMeta,
+    tag_manager: Arc<TagManager>,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<SavedSticker>, BotError> {
     // TODO: fall back to default blacklist if blacklist is not set
     let query_empty = query.tags.is_empty();
 
     // TODO: give warning: querying by emoji is very limited (no blacklist, only single emoji)
 
     let stickers = if let Some(emoji) = emoji {
-        database
-            .get_stickers_by_emoji(emoji, INLINE_QUERY_LIMIT, current_offset)
-            .await?
+        database.get_stickers_by_emoji(emoji, limit, offset).await?
     } else if query_empty {
         let stickers = database
-            .get_recently_used_stickers(user.id().0, INLINE_QUERY_LIMIT, current_offset)
+            .get_recently_used_stickers(user.id().0, limit, offset)
             .await?;
         if stickers.is_empty() {
-            let blacklist = database.get_blacklist(q.from.id.0).await?;
+            let blacklist = database.get_blacklist(user.id().0).await?;
             database
-                .get_stickers_for_tag_query(vec![], blacklist, INLINE_QUERY_LIMIT, current_offset)
+                .get_stickers_for_tag_query(vec![], blacklist, limit, offset)
                 .await?
         } else {
             stickers
@@ -179,7 +175,7 @@ async fn handle_sticker_search(
         let tags_empty = tags.is_empty();
 
         let blacklist = database
-            .get_blacklist(q.from.id.0)
+            .get_blacklist(user.id().0)
             .await?
             .into_iter()
             .chain(query_blacklist)
@@ -194,15 +190,35 @@ async fn handle_sticker_search(
         // };
 
         // TODO: if tags are empty -> show the user's recently used or favorited (if implemented alread) stickers
-            database
-                .get_stickers_for_tag_query(
-                    tags.clone(),
-                    blacklist,
-                    INLINE_QUERY_LIMIT,
-                    current_offset,
-                )
-                .await?
+        database
+            .get_stickers_for_tag_query(tags.clone(), blacklist, limit, offset)
+            .await?
     };
+
+    Ok(stickers)
+}
+
+async fn handle_sticker_search(
+    bot: Bot,
+    tag_manager: Arc<TagManager>,
+    current_offset: usize,
+    query: InlineQueryData,
+    database: Database,
+    user: UserMeta,
+    emoji: Option<Emoji>,
+    q: InlineQuery,
+    worker: WorkerPool,
+) -> Result<(), BotError> {
+    let stickers = query_stickers(
+        query,
+        database,
+        emoji,
+        user.clone(),
+        tag_manager,
+        INLINE_QUERY_LIMIT,
+        current_offset,
+    )
+    .await?;
 
     if !stickers.is_empty() {
         let random_sticker = rand::random::<usize>() % stickers.len();
@@ -217,7 +233,7 @@ async fn handle_sticker_search(
 
     let result_empty = stickers.is_empty();
 
-    let sticker_result: Vec<InlineQueryResult> = stickers
+    let sticker_result = stickers
         .into_iter()
         .map(|sticker| {
             InlineQueryResultCachedSticker::new(
@@ -226,7 +242,7 @@ async fn handle_sticker_search(
             )
             .into()
         })
-        .collect();
+        .collect_vec();
 
     bot.answer_inline_query(q.id, sticker_result.clone())
         .next_offset(next_inline_query_offset(
@@ -268,7 +284,7 @@ async fn handle_blacklist_query(
                 "Blacklist this tag",
             )
         })
-        .collect_vec();
+        .collect::<Result<Vec<_>, _>>()?;
 
     bot.answer_inline_query(q.id, results.clone())
         .next_offset(next_inline_query_offset(results.len(), current_offset))
@@ -305,7 +321,7 @@ async fn handle_continuous_tag_query(
             };
             create_query_article(tag_manager.clone(), &tag, &command, description)
         })
-        .collect_vec();
+        .collect::<Result<Vec<_>, _>>()?;
 
     bot.answer_inline_query(q.id, results.clone())
         .next_offset(next_inline_query_offset(results.len(), current_offset))

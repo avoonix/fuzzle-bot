@@ -1,7 +1,7 @@
 use crate::bot::{Bot, BotExt, UserMeta};
 use crate::callback::TagOperation;
-use crate::inline::SetOperation;
 use crate::database::Database;
+use crate::inline::SetOperation;
 use crate::message::Keyboard;
 use crate::tags::{suggest_tags, TagManager};
 use crate::text::{Markdown, Text};
@@ -14,7 +14,6 @@ use std::sync::Arc;
 use teloxide::{prelude::*, utils::command::BotCommands};
 
 use super::unescape_sticker_unique_id_from_command;
-
 
 #[derive(BotCommands, Debug)]
 #[command(rename_rule = "lowercase", description = "Hidden commands")]
@@ -194,10 +193,7 @@ impl HiddenCommand {
             Self::TagContinuous { tag } => {
                 bot.send_markdown(
                     msg.chat.id,
-                    Text::get_continuous_tag_mode_text(
-                        TagOperation::Tag(tag),
-                        "Start".to_string(),
-                    ),
+                    Text::get_continuous_tag_mode_text(TagOperation::Tag(tag), "Start".to_string()),
                 )
                 .reply_markup(ReplyMarkup::ForceReply(
                     teloxide::types::ForceReply::new()

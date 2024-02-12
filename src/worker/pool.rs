@@ -14,6 +14,9 @@ use crate::bot::log_error_and_send_to_admin;
 use crate::bot::Bot;
 
 use crate::database::Database;
+use crate::sticker::analyze_n_stickers;
+use crate::sticker::calculate_visual_hash;
+use crate::Paths;
 
 use super::command::AdminMessage;
 use super::command::Command;
@@ -30,10 +33,13 @@ impl WorkerPool {
         database: Database,
         queue_length: usize,
         concurrency: usize,
+        paths: Paths,
     ) -> (tokio::task::JoinHandle<()>, Self) {
         let (tx, mut rx) = mpsc::channel(queue_length);
         let worker = Self { tx };
         let worker_clone = worker.clone();
+        let bot_clone = bot.clone();
+        let database_clone = database.clone();
         let semaphore = Arc::new(Semaphore::new(concurrency));
         let manager = tokio::spawn(async move {
             while let Some(cmd) = rx.recv().await {
@@ -41,8 +47,11 @@ impl WorkerPool {
                 let bot = bot.clone();
                 let worker = worker.clone();
                 let database = database.clone();
+                let paths = paths.clone();
                 tokio::spawn(async move {
-                    let result = cmd.execute(bot.clone(), admin_id, worker, database).await;
+                    let result = cmd
+                        .execute(bot.clone(), admin_id, worker, database, paths)
+                        .await;
                     match result {
                         Ok(()) => {}
                         Err(err) => log_error_and_send_to_admin(err, bot, admin_id).await,
@@ -52,36 +61,35 @@ impl WorkerPool {
             }
         });
 
+        // scheduled tasks
+        // TODO: make intervals and counts configurable
+
         let worker = worker_clone.clone();
         tokio::spawn(async move {
-            // scheduled tasks
-
-            let mut last_summary_sent = NaiveDateTime::MIN;
-            let mut last_backup_sent = chrono::Utc::now().naive_utc();
-
-            let interval = Duration::hours(4);
-            let count = 200; // fetching 200 sets every 4 hours is 8400 sets per week
-                             // TODO: make interval and count configurable
-
             loop {
-                let now = chrono::Utc::now().naive_utc();
-                if (now - last_summary_sent) > chrono::Duration::hours(24) {
-                    worker.tx.send(Command::SendReport).await.unwrap();
-                    last_summary_sent = now;
-                }
-
-                if (now - last_backup_sent) > chrono::Duration::days(7) {
-                    worker.tx.send(Command::SendExport).await.unwrap();
-                    last_backup_sent = now;
-                }
-
-                sleep(interval.to_std().unwrap()).await;
-
+                // fetching 200 sets every 4 hours is 8400 sets per week
+                sleep(Duration::hours(4).to_std().unwrap()).await;
                 worker
                     .tx
-                    .send(Command::RefetchScheduled { count })
+                    .send(Command::RefetchScheduled { count: 200 })
                     .await
                     .unwrap();
+            }
+        });
+
+        let worker = worker_clone.clone();
+        tokio::spawn(async move {
+            loop {
+                worker.tx.send(Command::SendReport).await.unwrap();
+                sleep(Duration::hours(24).to_std().unwrap()).await;
+            }
+        });
+
+        let worker = worker_clone.clone();
+        tokio::spawn(async move {
+            loop {
+                sleep(Duration::days(7).to_std().unwrap()).await;
+                worker.tx.send(Command::SendExport).await.unwrap();
             }
         });
 
@@ -116,5 +124,9 @@ impl WorkerPool {
 
     pub async fn refetch_all_sets(&self) {
         self.tx.send(Command::RefetchAllSets).await.unwrap();
+    }
+
+    pub async fn send_report(&self) {
+        self.tx.send(Command::SendReport).await.unwrap();
     }
 }

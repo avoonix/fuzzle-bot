@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use itertools::Itertools;
+use std::collections::HashMap;
 
 use crate::database::model::PopularTag;
 use crate::database::UserStats;
@@ -72,7 +72,10 @@ impl Database {
 
         Ok(tags
             .into_iter()
-            .map(|tag|  PopularTag{ name: tag.tag,  count: tag.count as u64})
+            .map(|tag| PopularTag {
+                name: tag.tag,
+                count: tag.count as u64,
+            })
             .collect_vec())
     }
 
@@ -93,7 +96,7 @@ impl Database {
             .rows_affected();
         // we only need to insert the history entry; a trigger will delete the tag relationship
 
-        // TODO: return a norowsaffected error and make the caller handle it -> in continuous tag mode, you can then inform the user that 
+        // TODO: return a norowsaffected error and make the caller handle it -> in continuous tag mode, you can then inform the user that
         // the tag already existed
 
         // if rows_affected != 1 {
@@ -130,7 +133,9 @@ impl Database {
             .collect_vec())
     }
 
-    pub async fn get_user_tagging_stats_24_hours(&self) -> Result<HashMap<Option<i64>, UserStats>, DatabaseError> {
+    pub async fn get_user_tagging_stats_24_hours(
+        &self,
+    ) -> Result<HashMap<Option<i64>, UserStats>, DatabaseError> {
         let added_result = sqlx::query!("select added_by_user_id as user_id, count(*) as \"count: i64\" from file_hash_tag where julianday('now') - julianday(created_at) <= 1 group by added_by_user_id")
             .fetch_all(&self.pool)
             .await?;

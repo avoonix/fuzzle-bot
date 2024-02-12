@@ -1,5 +1,6 @@
 use crate::bot::{Bot, BotError, BotExt, SendDocumentExt};
 use crate::database::{export_database, Database};
+use crate::message::Keyboard;
 use crate::text::Markdown;
 use crate::worker::WorkerPool;
 use flate2::read::GzEncoder;
@@ -23,6 +24,12 @@ pub enum AdminCommand {
 
     #[command(description = "ADMIN export json")]
     ExportJson,
+
+    #[command(description = "ADMIN send daily report immediately")]
+    Report,
+
+    #[command(description = "ADMIN ui")]
+    Ui,
 }
 
 impl AdminCommand {
@@ -55,6 +62,14 @@ impl AdminCommand {
             }
             Self::ExportJson => {
                 send_database_export_to_chat(msg.chat.id, database.clone(), bot.clone()).await?;
+            }
+            Self::Ui => {
+                bot.send_markdown(msg.chat.id, Markdown::escaped("Log in with this button"))
+                    .reply_markup(Keyboard::ui()?)
+                    .await?;
+            }
+            Self::Report => {
+                worker.send_report().await;
             }
         }
 

@@ -2,7 +2,7 @@ use regex::Regex;
 
 #[must_use]
 pub fn fix_underline_command_separator(text: &str) -> String {
-    let re = Regex::new(r"^/([A-Za-z]+)_").unwrap();
+    let re = Regex::new(r"^/([A-Za-z]+)_").expect("static regex to compile");
     re.replace(text, "/$1 ").to_string()
 }
 
