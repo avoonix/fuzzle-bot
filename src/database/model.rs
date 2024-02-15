@@ -46,7 +46,17 @@ pub struct SavedStickerSet {
 pub struct FileAnalysis {
     pub id: String,
     pub thumbnail_file_id: Option<String>,
-    pub visual_hash: Option<String>,
+    pub visual_hash: Option<Vec<u8>>,
+    pub histogram: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct FileAnalysisWithStickerId {
+    pub id: String,
+    pub thumbnail_file_id: Option<String>,
+    pub visual_hash: Option<Vec<u8>>,
+    pub histogram: Option<Vec<u8>>,
+    pub sticker_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]

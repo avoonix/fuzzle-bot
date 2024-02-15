@@ -17,6 +17,7 @@ pub fn App() -> impl IntoView {
             <main>
                 <Routes>
                     <Route path="" view=HomePage/>
+                    <Route path="/sticker/:sticker_id" view=StickerPage/>
                     <Route path="/*any" view=NotFound/>
                 </Routes>
             </main>

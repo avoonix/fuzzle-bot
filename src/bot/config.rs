@@ -12,6 +12,7 @@ pub struct Config {
     pub worker: Worker,
     pub default_blacklist: Vec<String>,
     pub greeting_sticker_id: Option<String>,
+    pub domain_name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -68,7 +69,8 @@ impl Default for Config {
                 "gore".to_string(),
                 "scat".to_string(),
             ],
-            greeting_sticker_id: Some("AgADbRIAAhZaEFI".to_string()), // t.me/addstickers/FuzzleBot
+            greeting_sticker_id: Some("AgADbRIAAhZaEFI".to_string()), // from the set t.me/addstickers/FuzzleBot
+            domain_name: "ui.example.com".to_string(),
         }
     }
 }

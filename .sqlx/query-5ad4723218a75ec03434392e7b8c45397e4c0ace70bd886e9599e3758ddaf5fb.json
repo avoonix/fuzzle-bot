@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT * FROM file_analysis WHERE id = (SELECT file_hash FROM sticker WHERE id = ?1)",
+  "query": "SELECT file_analysis.*, sticker.id AS sticker_id FROM file_analysis INNER JOIN sticker WHERE sticker.file_hash = file_analysis.id GROUP BY file_analysis.id",
   "describe": {
     "columns": [
       {
@@ -22,17 +22,23 @@
         "name": "visual_hash",
         "ordinal": 3,
         "type_info": "Blob"
+      },
+      {
+        "name": "sticker_id",
+        "ordinal": 4,
+        "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       false,
       true,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "93f142c22ea995021f05cff152e7ca11c42342a6c00110b1b219b561fa721a67"
+  "hash": "5ad4723218a75ec03434392e7b8c45397e4c0ace70bd886e9599e3758ddaf5fb"
 }

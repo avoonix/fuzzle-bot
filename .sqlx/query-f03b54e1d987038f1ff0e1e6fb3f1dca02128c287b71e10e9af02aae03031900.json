@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT * FROM file_analysis WHERE visual_hash IS NULL ORDER BY random() LIMIT ?1",
+  "query": "SELECT * FROM file_analysis WHERE visual_hash IS NULL OR histogram IS NULL ORDER BY random() LIMIT ?1",
   "describe": {
     "columns": [
       {
@@ -14,9 +14,14 @@
         "type_info": "Text"
       },
       {
-        "name": "visual_hash",
+        "name": "histogram",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Blob"
+      },
+      {
+        "name": "visual_hash",
+        "ordinal": 3,
+        "type_info": "Blob"
       }
     ],
     "parameters": {
@@ -25,8 +30,9 @@
     "nullable": [
       false,
       true,
+      true,
       true
     ]
   },
-  "hash": "2059858a7f3950908bc5e0c7944eccafc6890348a29ff2d2af28ce34b3220734"
+  "hash": "f03b54e1d987038f1ff0e1e6fb3f1dca02128c287b71e10e9af02aae03031900"
 }

@@ -122,21 +122,21 @@ impl Keyboard {
             ),
         ]);
 
-        // if let Some(set_name) = set_name {
-        //     keyboard.push(vec![
-        //         InlineKeyboardButton::switch_inline_query_current_chat(
-        //             "Add tags to all stickers in this set",
-        //             InlineQueryData::set_operation(set_name, vec![]).to_string(),
-        //         ),
-        //     ]);
-        // } // TODO: maybe reenable?
-
-        keyboard.push(vec![
-            // InlineKeyboardButton::callback("Tag Set", CallbackData::
-            // TODO: tag set button
-        ]);
-
         InlineKeyboardMarkup::new(keyboard)
+    }
+
+    #[must_use]
+    pub fn similarity(sticker_unique_id: &str) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(vec![
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                "Similar color (no blacklist)",
+                InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Color)
+            )],
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                "Similar shape (no blacklist)",
+                InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Shape)
+            )],
+        ])
     }
 
     #[must_use]
@@ -253,11 +253,11 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn ui() -> Result<InlineKeyboardMarkup, BotError> {
+    pub fn ui(domain_name: String) -> Result<InlineKeyboardMarkup, BotError> {
         Ok(InlineKeyboardMarkup::new([[InlineKeyboardButton::login(
             "Open",
             LoginUrl {
-                url: Url::parse("https://localhost-63243353-example.com/login")?,
+                url: Url::parse(&format!("https://{domain_name}/login"))?,
                 forward_text: None,
                 bot_username: None,
                 request_write_access: None,

@@ -28,10 +28,6 @@ pub enum HiddenCommand {
     },
     #[command(description = "find sets containing a sticker (do not use manually)")]
     FindSets { sticker_unique_id: String },
-    #[command(
-        description = "find stickers that are similar to the provided one (do not use manually)"
-    )]
-    Similar { sticker_unique_id: String },
     #[command(description = "add a tag to the blacklist (do not use manually)")]
     BlacklistTag { tag: String },
     #[command(
@@ -124,21 +120,17 @@ impl HiddenCommand {
                     .get_sets_containing_sticker(sticker_unique_id.clone())
                     .await?;
                 let messages = Text::get_find_set_messages(sets, &sticker_unique_id);
-                for message in messages {
-                    bot.send_markdown(msg.chat.id, message).await?;
-                }
-            }
-            Self::Similar { sticker_unique_id } => {
-                let stickers = database.get_similar_stickers(sticker_unique_id).await?;
-                if stickers.is_empty() {
-                    // TODO: improve similar sticker feature
-                    bot.send_markdown(msg.chat.id, Markdown::escaped("Did not find any similar stickers (this feature will be improved in the future)")).await?;
-                } else {
-                    // limit to 5 for now; we don't want to spam the user
-                    for sticker in stickers.iter().take(5) {
-                        bot.send_sticker(msg.chat.id, InputFile::file_id(sticker.file_id.clone()))
-                            .await?;
-                    }
+                for (position, message) in messages.into_iter().with_position() {
+                    match position {
+                        itertools::Position::First | itertools::Position::Middle => {
+                            bot.send_markdown(msg.chat.id, message).await?
+                        }
+                        itertools::Position::Last | itertools::Position::Only => {
+                            bot.send_markdown(msg.chat.id, message)
+                                .reply_markup(Keyboard::similarity(&sticker_unique_id))
+                                .await?
+                        }
+                    };
                 }
             }
             Self::SetOps { sticker_unique_id } => {

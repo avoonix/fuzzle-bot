@@ -15,9 +15,6 @@ pub async fn inline_result_handler(
     database: Database,
 ) -> Result<(), BotError> {
     let result = InlineQueryResultId::try_from(q.result_id)?;
-    // let query = InlineQueryData::try_from(q.query.clone())?; // TODO: handle inline results
-    // dbg!("inline result handler", q.from.id, q.result_id, query, q.inline_message_id);
-
     match result {
         InlineQueryResultId::Sticker(sticker_unique_id) => {
             // ensure that used sticker sets are always kept updated
@@ -26,7 +23,7 @@ pub async fn inline_result_handler(
                 .await;
 
             database
-                .add_recently_used_sticker(user.id().0, sticker_unique_id, q.query)
+                .add_recently_used_sticker(user.id().0, sticker_unique_id)
                 .await?;
         }
         InlineQueryResultId::Tag(tag) => {}

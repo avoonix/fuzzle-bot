@@ -27,7 +27,7 @@ use teloxide::requests::Requester;
 use crate::{
     bot::{get_or_create_user, Bot, UserMeta},
     database::Database,
-    sticker::{fetch_possibly_cached_sticker_file, fetch_sticker_file},
+    sticker::{calculate_color_histogram, create_historgram_image, create_visual_hash_image, fetch_possibly_cached_sticker_file, fetch_sticker_file, Histogram},
     tags::TagManager,
     worker::WorkerPool,
     Config,
@@ -65,6 +65,42 @@ async fn sticker_files(
         fetch_possibly_cached_sticker_file(file_id, data.bot.clone(), data.paths.image_cache())
             .await
             .map_err(|err| ErrorInternalServerError("fetch error"))?;
+    Ok(HttpResponse::Ok().body(buf))
+}
+
+#[actix_web::get("/files/histograms/{sticker_id}")]
+async fn histogram_files(
+    Path(sticker_id): Path<String>,
+    data: Data<AppState>,
+    user: AuthenticatedUser,
+) -> actix_web::Result<impl Responder> {
+    let analysis = data
+        .database
+        .get_analysis_for_sticker_id(sticker_id)
+        .await
+        .map_err(|err| ErrorInternalServerError("database error"))? // TODO: better error handling
+        .ok_or(ErrorNotFound("not found"))?;
+    let histogram = analysis.histogram.ok_or(ErrorNotFound("histogram not calculated"))?;
+    let buf = create_historgram_image(histogram.into())
+            .map_err(|err| ErrorInternalServerError("histogram encode error"))?;
+    Ok(HttpResponse::Ok().body(buf))
+}
+
+#[actix_web::get("/files/visual_hashes/{sticker_id}")]
+async fn visual_hash_files(
+    Path(sticker_id): Path<String>,
+    data: Data<AppState>,
+    user: AuthenticatedUser,
+) -> actix_web::Result<impl Responder> {
+    let analysis = data
+        .database
+        .get_analysis_for_sticker_id(sticker_id)
+        .await
+        .map_err(|err| ErrorInternalServerError("database error"))? // TODO: better error handling
+        .ok_or(ErrorNotFound("not found"))?;
+    let visual_hash = analysis.visual_hash.ok_or(ErrorNotFound("visual_hash not calculated"))?;
+    let buf = create_visual_hash_image(visual_hash.into())
+            .map_err(|err| ErrorInternalServerError("histogram encode error"))?;
     Ok(HttpResponse::Ok().body(buf))
 }
 

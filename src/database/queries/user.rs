@@ -112,11 +112,10 @@ impl Database {
         &self,
         user_id: u64,
         sticker_unique_id: String,
-        query: String,
     ) -> Result<(), DatabaseError> {
         let user_id = user_id as i64; // TODO: no convert
-        sqlx::query!("INSERT INTO sticker_user (sticker_id, user_id, query) VALUES (?1, ?2, ?3)
-                                        ON CONFLICT(sticker_id, user_id) DO UPDATE SET query = ?3, last_used = datetime('now')", sticker_unique_id, user_id, query)
+        sqlx::query!("INSERT INTO sticker_user (sticker_id, user_id) VALUES (?1, ?2)
+                                        ON CONFLICT(sticker_id, user_id) DO UPDATE SET last_used = datetime('now')", sticker_unique_id, user_id)
             .execute(&self.pool)
             .await?;
 

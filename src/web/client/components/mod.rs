@@ -10,12 +10,13 @@ use serde::{Deserialize, Serialize};
 use crate::web::shared::*;
 
 #[component]
-pub fn Sticker(data: StickerDto) -> impl IntoView {
+pub fn Sticker(id: String) -> impl IntoView {
     view! {
         <div>
             <img
-                src=format!("/files/stickers/{}", data.id)
-                alt=format!("sticker {}", data.id)
+                src=format!("/files/stickers/{id}")
+                alt=format!("sticker {id}")
+                title=format!("sticker {id}")
                 width="128"
                 height="128"
                 loading="lazy"

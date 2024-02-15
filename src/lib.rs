@@ -9,8 +9,6 @@ mod inline;
 #[cfg(feature = "ssr")]
 mod message;
 #[cfg(feature = "ssr")]
-mod sticker;
-#[cfg(feature = "ssr")]
 mod tags;
 #[cfg(feature = "ssr")]
 mod text;
@@ -22,6 +20,7 @@ mod worker;
 #[cfg(feature = "ssr")]
 pub use bot::{Config, Paths, UpdateListener};
 
+mod sticker;
 mod web;
 
 #[cfg(feature = "hydrate")]

@@ -15,7 +15,6 @@ use crate::bot::Bot;
 
 use crate::database::Database;
 use crate::sticker::analyze_n_stickers;
-use crate::sticker::calculate_visual_hash;
 use crate::Paths;
 
 use super::command::AdminMessage;

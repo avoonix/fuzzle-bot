@@ -10,6 +10,12 @@ use serde::{Deserialize, Serialize};
 use crate::web::client::components::*;
 use crate::web::shared::*;
 
+#[derive(Params, PartialEq)]
+struct HomeSearch {
+    q: String,
+    offset: usize,
+}
+
 #[component]
 pub fn HomePage() -> impl IntoView {
     view! {
@@ -37,7 +43,9 @@ fn ResultsList(#[prop(into)] results: Vec<StickerDto>) -> impl IntoView {
                 .map(|r| {
                     view! {
                         <div>
-                            <Sticker data=r/>
+                            <A href=format!("/sticker/{}", r.id.clone())>
+                                <Sticker id=r.id/>
+                            </A>
                         </div>
                     }
                 })
@@ -48,16 +56,19 @@ fn ResultsList(#[prop(into)] results: Vec<StickerDto>) -> impl IntoView {
 
 #[component]
 fn QueryInput() -> impl IntoView {
-    let query = use_query_map();
-    let search = move || query().get("q").cloned().unwrap_or_default();
-    let limit = 100;
-    let offset = move || {
-        query()
-            .get("offset")
-            .cloned()
-            .map(|c| c.parse().unwrap_or_default())
-            .unwrap_or_default()
+    let query = use_query::<HomeSearch>();
+    let search = move || {
+        query.with(|query| {
+            query
+                .as_ref()
+                .map(|query| query.q.clone())
+                .unwrap_or_default()
+        })
     };
+    let offset =
+        move || query.with(|query| query.as_ref().map(|query| query.offset).unwrap_or_default());
+
+    let limit = 100;
     let search_results = create_resource(
         move || (search(), limit, offset()),
         |(search, limit, offset)| fetch_results(search, limit, offset),

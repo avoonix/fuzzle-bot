@@ -75,6 +75,8 @@ pub fn setup(
                 .service(service::login)
                 .service(service::logout)
                 .service(service::sticker_files)
+                .service(service::histogram_files)
+                .service(service::visual_hash_files)
                 .leptos_routes(
                     leptos_options.to_owned(),
                     routes.to_owned(),

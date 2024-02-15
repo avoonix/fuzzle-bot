@@ -10,3 +10,4 @@ container-data
 **/*.rs.bk
 .secret*
 /cache
+docker-compose.yml

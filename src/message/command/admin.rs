@@ -3,6 +3,7 @@ use crate::database::{export_database, Database};
 use crate::message::Keyboard;
 use crate::text::Markdown;
 use crate::worker::WorkerPool;
+use crate::Config;
 use flate2::read::GzEncoder;
 use flate2::Compression;
 use log::info;
@@ -44,6 +45,7 @@ impl AdminCommand {
         msg: Message,
         database: Database,
         worker: WorkerPool,
+        config: Config,
     ) -> Result<(), BotError> {
         match self {
             Self::BanSet { set_name } => {
@@ -65,7 +67,7 @@ impl AdminCommand {
             }
             Self::Ui => {
                 bot.send_markdown(msg.chat.id, Markdown::escaped("Log in with this button"))
-                    .reply_markup(Keyboard::ui()?)
+                    .reply_markup(Keyboard::ui(config.domain_name)?)
                     .await?;
             }
             Self::Report => {

@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine};
 use itertools::Itertools;
 use sqlx::Row;
 
@@ -5,7 +6,7 @@ use crate::{
     database::{
         model::{Relationship, SavedSticker, SavedStickerSet},
         query_builder::StickerTagQuery,
-        FileAnalysis,
+        FileAnalysis, FileAnalysisWithStickerId,
     },
     util::Emoji,
 };
@@ -284,7 +285,7 @@ impl Database {
             .filter_map(|relationship| {
                 relationship.visual_hash.map(|visual_hash| Relationship {
                     in_: relationship.file_hash,
-                    out: visual_hash,
+                    out: general_purpose::URL_SAFE_NO_PAD.encode(visual_hash)
                 })
             })
             .collect_vec())
@@ -386,12 +387,28 @@ impl Database {
     pub async fn update_visual_hash(
         &self,
         file_hash: String,
-        visual_hash: String,
+        visual_hash: Vec<u8>,
     ) -> Result<(), DatabaseError> {
         sqlx::query!(
             "INSERT INTO file_analysis (id, visual_hash) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET visual_hash = ?2",
             file_hash,
             visual_hash
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_histogram(
+        &self,
+        file_hash: String,
+        histogram: Vec<u8>,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query!(
+            "INSERT INTO file_analysis (id, histogram) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET histogram = ?2",
+            file_hash,
+            histogram
         )
         .execute(&self.pool)
         .await?;
@@ -405,7 +422,7 @@ impl Database {
     ) -> Result<Vec<FileAnalysis>, DatabaseError> {
         let analysis: Vec<FileAnalysis> = sqlx::query_as!(
             FileAnalysis,
-            "SELECT * FROM file_analysis WHERE visual_hash IS NULL ORDER BY random() LIMIT ?1",
+            "SELECT * FROM file_analysis WHERE visual_hash IS NULL OR histogram IS NULL ORDER BY random() LIMIT ?1",
             n
         )
         .fetch_all(&self.pool)
@@ -426,6 +443,16 @@ impl Database {
         .fetch_optional(&self.pool)
         .await?;
 
+        Ok(analysis)
+    }
+
+    pub async fn get_analysis_for_all_stickers(
+        &self,
+    ) -> Result<Vec<FileAnalysisWithStickerId>, DatabaseError> {
+        let analysis: Vec<FileAnalysisWithStickerId> =
+            sqlx::query_as!(FileAnalysisWithStickerId, "SELECT file_analysis.*, sticker.id AS sticker_id FROM file_analysis INNER JOIN sticker WHERE sticker.file_hash = file_analysis.id GROUP BY file_analysis.id")
+                .fetch_all(&self.pool)
+                .await?;
         Ok(analysis)
     }
 

@@ -159,6 +159,7 @@ async fn refetch_all_sets(
             .await?;
             last_update_sent = now;
         }
+        analyze_n_stickers(database.clone(), bot.clone(), 100, paths.clone()).await?;
     }
     let elapsed = chrono::Utc::now() - start;
     bot.edit_message_markdown(
@@ -171,7 +172,6 @@ async fn refetch_all_sets(
         )),
     )
     .await?;
-    analyze_n_stickers(database.clone(), bot.clone(), 10000, paths).await?;
     Ok(())
 }
 

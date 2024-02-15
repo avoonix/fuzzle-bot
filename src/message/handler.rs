@@ -122,7 +122,7 @@ pub async fn message_handler(
                                     // admin command
                                     match AdminCommand::parse(text, bot_user) {
                                         Ok(command) => {
-                                            command.execute(bot, msg, database, worker).await?;
+                                            command.execute(bot, msg, database, worker, config).await?;
                                         }
                                         Err(err) => {
                                             handle_command_error(bot, msg, err).await?;

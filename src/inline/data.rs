@@ -37,6 +37,16 @@ pub enum InlineQueryDataMode {
     ContinuousTagMode {
         operation: SetOperation,
     },
+    Similar {
+        unique_id: String,
+        aspect: SimilarityAspect,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+pub enum SimilarityAspect {
+    Color,
+    Shape,
 }
 
 impl InlineQueryData {
@@ -45,6 +55,17 @@ impl InlineQueryData {
         Self {
             mode: InlineQueryDataMode::Sticker {
                 unique_id: sticker_unique_id.into(),
+            },
+            tags: vec![],
+        }
+    }
+
+    #[must_use]
+    pub fn similar(sticker_unique_id: impl Into<String>, aspect: SimilarityAspect) -> Self {
+        Self {
+            mode: InlineQueryDataMode::Similar {
+                unique_id: sticker_unique_id.into(),
+                aspect,
             },
             tags: vec![],
         }
@@ -119,6 +140,20 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
         map(tag("(-cont)"), |_| InlineQueryDataMode::ContinuousTagMode {
             operation: SetOperation::Untag,
         }),
+        map(
+            terminated(preceded(tag("(color:"), sticker_id_literal), tag(")")),
+            |unique_id| InlineQueryDataMode::Similar {
+                aspect: SimilarityAspect::Color,
+                unique_id: unique_id.to_string(),
+            },
+        ),
+        map(
+            terminated(preceded(tag("(shape:"), sticker_id_literal), tag(")")),
+            |unique_id| InlineQueryDataMode::Similar {
+                aspect: SimilarityAspect::Shape,
+                unique_id: unique_id.to_string(),
+            },
+        ),
         map(tag(""), |_| InlineQueryDataMode::StickerSearch {
             emoji: None,
         }),
@@ -181,6 +216,14 @@ impl Display for InlineQueryData {
             InlineQueryDataMode::ContinuousTagMode {
                 operation: SetOperation::Untag,
             } => write!(f, "(-cont) {tags}"),
+            InlineQueryDataMode::Similar {
+                aspect: SimilarityAspect::Color,
+                unique_id,
+            } => write!(f, "(color:{unique_id}) {tags}"),
+            InlineQueryDataMode::Similar {
+                aspect: SimilarityAspect::Shape,
+                unique_id,
+            } => write!(f, "(shape:{unique_id}) {tags}"),
         }
     }
 }

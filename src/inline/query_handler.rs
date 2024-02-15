@@ -3,6 +3,7 @@ use crate::bot::{BotError, UserMeta};
 use crate::database::{Database, SavedSticker};
 use crate::inline::{InlineQueryData, InlineQueryDataMode, SetOperation};
 use crate::message::StartParameter;
+use crate::sticker::compute_similar;
 use crate::tags::TagManager;
 use crate::text::Text;
 use crate::util::Emoji;
@@ -21,6 +22,7 @@ use teloxide::{
 use url::Url;
 
 use super::result_id::InlineQueryResultId;
+use super::SimilarityAspect;
 
 // TODO: seems like switch_pm_text can not be updated dynamically (eg to abuse it and show the number of results, resolved tags, etc) -> find other way to show that info
 
@@ -196,6 +198,59 @@ pub async fn query_stickers(
     };
 
     Ok(stickers)
+}
+
+async fn handle_similar_sticker_query(
+    bot: Bot,
+    tag_manager: Arc<TagManager>,
+    current_offset: usize,
+    query: InlineQueryData,
+    database: Database,
+    user: UserMeta,
+    sticker_unique_id: String,
+    aspect: SimilarityAspect,
+    q: InlineQuery,
+    worker: WorkerPool,
+) -> Result<(), BotError> {
+    // TODO: cache?
+    // TODO: blacklist?
+    let result = compute_similar(database.clone(), sticker_unique_id).await?;
+    let matches = match aspect {
+        SimilarityAspect::Color => result.histogram_cosine.items(),
+        SimilarityAspect::Shape => result.visual_hash_cosine.items(),
+    };
+    let sticker_ids = matches.into_iter().map(|m| m.sticker_id)
+        .skip(current_offset)
+        .take(INLINE_QUERY_LIMIT)
+    .collect_vec();
+    let mut stickers = Vec::new();
+    for id in sticker_ids {
+        stickers.push(database.get_sticker(id).await?); // TODO: single query?
+    }
+
+    let sticker_result = stickers
+        .into_iter()
+        .filter_map(|sticker| sticker)
+        .map(|sticker| {
+            InlineQueryResultCachedSticker::new(
+                InlineQueryResultId::Sticker(sticker.id).to_string(),
+                sticker.file_id,
+            )
+            .into()
+        })
+        .collect_vec();
+
+    bot.answer_inline_query(q.id, sticker_result.clone())
+        .next_offset(next_inline_query_offset(
+            sticker_result.len(),
+            current_offset,
+        ))
+        .cache_time(0)
+        .switch_pm_text(Text::switch_pm_text())
+        .switch_pm_parameter(StartParameter::Greeting.to_string())
+        .is_personal(true)
+        .await?;
+    Ok(())
 }
 
 async fn handle_sticker_search(
@@ -399,6 +454,9 @@ pub async fn inline_query_handler(
         }
         InlineQueryDataMode::ContinuousTagMode { operation } => {
             handle_continuous_tag_query(bot, tag_manager, current_offset, query, operation, q).await
+        }
+        InlineQueryDataMode::Similar { unique_id, aspect } => {
+            handle_similar_sticker_query( bot, tag_manager, current_offset, query, database, user, unique_id, aspect, q, worker).await
         }
     }
 }

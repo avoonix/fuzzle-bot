@@ -79,9 +79,6 @@ impl Text {
                     format_set_as_markdown_link(&set.id.clone(), &set.title.unwrap_or(set.id));
                 format!("Set {}: {link}", id + 1)
             })
-            .chain(once(escape(
-                format!("\nFind Similar Stickers: /similar_{escaped_sticker_id}").as_str(),
-            )))
             .collect_vec();
         lines
             .chunks(32)
@@ -150,7 +147,7 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
         let escaped_sticker_id = &escape_sticker_unique_id_for_command(sticker_unique_id);
         Markdown::new(
     format!(
-        "UwU you sent some stickers :3\nSet: {}\nSticker ID: {}\nEmojis: {}\nFind Sets: {}\nSet Operations: {}",
+        "UwU you sent some stickers :3\nSet: {}\nSticker ID: {}\nEmojis: {}\nSets/Similar Stickers: {}\nSet Operations: {}",
         format_set_as_markdown_link(set_name, set_title),
         escape(sticker_unique_id),
         escape(&emojis.iter().join(", ")),

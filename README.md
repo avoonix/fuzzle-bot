@@ -56,9 +56,11 @@ services:
     pull_policy: always
     command: serve
     environment:
-      - FUZZLE_TAG_DIR_PATH=/data/tags
+      - FUZZLE_CACHE_DIR_PATH=/data/cache
       - FUZZLE_DB_FILE_PATH=/data/db.sqlite
       - FUZZLE_CONFIG_FILE_PATH=/config/config.toml
+    ports:
+      - "3000:3000" # admin interface
     volumes:
       - ./container-data:/data
       - ./config:/config
