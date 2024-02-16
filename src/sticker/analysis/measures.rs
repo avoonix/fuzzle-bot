@@ -27,6 +27,7 @@ pub struct TopMatches {
 }
 
 impl TopMatches {
+    #[cfg(feature = "ssr")]
     fn new(n: usize, max_distance: f64) -> Self {
         TopMatches {
             max_distance,
@@ -36,6 +37,7 @@ impl TopMatches {
         }
     }
 
+    #[cfg(feature = "ssr")]
     pub(super) fn push(&mut self, distance: f64, sticker_id: String) {
         if distance > self.max_distance
             || (self.vec.len() >= self.n && distance > self.worst_distance)
@@ -66,6 +68,7 @@ pub struct Measures {
     pub visual_hash_cosine: TopMatches,
 }
 
+#[cfg(feature = "ssr")]
 impl Measures {
     pub(super) fn new(
         n: usize,
