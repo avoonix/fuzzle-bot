@@ -8,6 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [lints.rust]
 
+dead_code = "deny" # use cfg to exclude from compilation
 unused_must_use = "deny"
 missing_copy_implementations = "deny"
 missing_debug_implementations = "deny"

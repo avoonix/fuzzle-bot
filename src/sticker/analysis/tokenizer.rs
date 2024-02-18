@@ -9,7 +9,6 @@ use std::sync::Mutex;
 use tract_itertools::Itertools;
 use tract_onnx::prelude::*;
 
-
 // adapted from https://github.com/openai/CLIP/blob/main/clip/simple_tokenizer.py
 
 const CONTEXT_LENGTH: usize = 77;
@@ -102,20 +101,21 @@ fn whitespace_clean(text: &str) -> String {
 
 struct SimpleTokenizer {
     byte_encoder: IndexMap<u32, char>,
-    byte_decoder: IndexMap<char, u32>,
+    // byte_decoder: IndexMap<char, u32>,
     encoder: IndexMap<String, usize>,
-    decoder: IndexMap<usize, String>,
+    // decoder: IndexMap<usize, String>,
     bpe_ranks: IndexMap<(String, String), usize>,
     cache: IndexMap<String, String>,
     pat: regex::Regex,
+    #[cfg(test)]
     vocab: Vec<String>,
 }
 
 impl SimpleTokenizer {
     fn new(bpe_vocab: &str) -> Self {
         let byte_encoder = bytes_to_unicode();
-        let byte_decoder: IndexMap<char, u32> =
-            byte_encoder.iter().map(|(&b, &c)| (c, b)).collect();
+        // let byte_decoder: IndexMap<char, u32> =
+        //     byte_encoder.iter().map(|(&b, &c)| (c, b)).collect();
 
         let merges = bpe_vocab
             .split("\n")
@@ -144,7 +144,7 @@ impl SimpleTokenizer {
             .collect_vec();
 
         let encoder: IndexMap<_, _> = vocab.iter().cloned().zip(0..vocab.len()).collect();
-        let decoder: IndexMap<_, _> = encoder.iter().map(|(k, &v)| (v, k.clone())).collect();
+        // let decoder: IndexMap<_, _> = encoder.iter().map(|(k, &v)| (v, k.clone())).collect();
         let bpe_ranks: IndexMap<_, _> = merges.iter().cloned().zip(0..merges.len()).collect();
 
         let mut cache = IndexMap::new();
@@ -155,12 +155,13 @@ impl SimpleTokenizer {
 
         SimpleTokenizer {
             byte_encoder,
-            byte_decoder,
+            // byte_decoder,
             encoder,
-            decoder,
+            // decoder,
             bpe_ranks,
             cache,
             pat,
+            #[cfg(test)]
             vocab, // not needed except for tests
         }
     }
