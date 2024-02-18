@@ -44,6 +44,7 @@ pub async fn fetch_results(
                 data.tag_manager.clone(),
                 limit,
                 offset,
+                0
             )
             .await
             .map_err(|err| ServerFnError::new("bot error"))?; // TODO: limit, offset, proper error handling

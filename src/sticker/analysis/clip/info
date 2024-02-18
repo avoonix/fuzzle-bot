@@ -1,0 +1,4 @@
+model downloaded from Jina AI
+https://clip-as-service.s3.us-east-2.amazonaws.com/models/onnx/RN50/visual.onnx
+https://clip-as-service.s3.us-east-2.amazonaws.com/models/onnx/RN50/textual.onnx
+https://github.com/jina-ai/clip-as-service/blob/main/server/clip_server/resources/bpe_simple_vocab_16e6.txt.gz

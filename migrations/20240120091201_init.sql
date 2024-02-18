@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS user (
     can_tag_stickers BOOLEAN NOT NULL CHECK (can_tag_stickers IN (0, 1)) DEFAULT 1,
     can_tag_sets BOOLEAN NOT NULL CHECK (can_tag_sets IN (0, 1)) DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    settings TEXT NULL,
     interactions INTEGER NOT NULL DEFAULT 1
 );
 
@@ -17,7 +18,9 @@ CREATE TABLE IF NOT EXISTS sticker_set (
 
 CREATE TABLE IF NOT EXISTS file_hash (
     id TEXT NOT NULL PRIMARY KEY,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tags_locked_by_user_id INTEGER NULL DEFAULT NULL,
+    FOREIGN KEY(tags_locked_by_user_id) REFERENCES user(id) ON UPDATE RESTRICT ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS sticker (
@@ -29,18 +32,6 @@ CREATE TABLE IF NOT EXISTS sticker (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(set_id) REFERENCES sticker_set(id) ON UPDATE RESTRICT ON DELETE CASCADE,
     FOREIGN KEY(file_hash) REFERENCES file_hash(id) ON UPDATE RESTRICT ON DELETE RESTRICT
-);
-
-CREATE TABLE IF NOT EXISTS visual_hash (
-    id TEXT NOT NULL PRIMARY KEY
-);
-
-CREATE TABLE IF NOT EXISTS file_hash_visual_hash (
-    file_hash TEXT NOT NULL,
-    visual_hash TEXT NOT NULL,
-    FOREIGN KEY(file_hash) REFERENCES file_hash(id) ON UPDATE RESTRICT ON DELETE CASCADE,
-    FOREIGN KEY(visual_hash) REFERENCES visual_hash(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
-    UNIQUE(file_hash, visual_hash)
 );
 
 CREATE TABLE IF NOT EXISTS file_hash_tag (

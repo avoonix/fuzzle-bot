@@ -34,6 +34,9 @@ pub enum RegularCommand {
     #[command(description = "clear recently used stickers")]
     ClearRecentlyUsed,
 
+    #[command(description = "alternative search")]
+    EmbeddingSearch,
+
     #[command(description = "show welcome message")]
     Start { start_parameter: StartParameter },
 
@@ -97,9 +100,14 @@ impl RegularCommand {
                         .await?;
                 }
             },
+            Self::EmbeddingSearch => {
+                bot.send_markdown(msg.chat.id, Markdown::escaped("Use the button below to search"))
+                    .reply_markup(Keyboard::embedding())
+                    .await?;
+            }
             Self::Settings => {
-                bot.send_markdown(msg.chat.id, Text::get_settings_text())
-                    .reply_markup(Keyboard::make_settings_keyboard())
+                bot.send_markdown(msg.chat.id, Text::get_settings_text(user.user.settings.clone()))
+                    .reply_markup(Keyboard::make_settings_keyboard(user.user.settings))
                     .await?;
             }
             Self::PopularTags => {
@@ -126,12 +134,14 @@ impl RegularCommand {
                     )
                     .await?;
                     let set_name = database.get_set_name(sticker.id.clone()).await?;
+                    let is_locked = database.sticker_is_locked(sticker.id.clone()).await?;
                     bot.send_sticker(msg.chat.id, InputFile::file_id(sticker.file_id))
                         .reply_markup(Keyboard::make_tag_keyboard(
                             &tags,
                             &sticker.id,
                             &suggested_tags,
                             set_name,
+                            is_locked,
                         ))
                         .reply_to_message_id(msg.id.0)
                         .allow_sending_without_reply(true)

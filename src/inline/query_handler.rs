@@ -3,7 +3,7 @@ use crate::bot::{BotError, UserMeta};
 use crate::database::{Database, SavedSticker};
 use crate::inline::{InlineQueryData, InlineQueryDataMode, SetOperation};
 use crate::message::StartParameter;
-use crate::sticker::compute_similar;
+use crate::sticker::{compute_similar, find_with_text_embedding};
 use crate::tags::TagManager;
 use crate::text::Text;
 use crate::util::Emoji;
@@ -21,6 +21,7 @@ use teloxide::{
 };
 use url::Url;
 
+use super::pagination::QueryPage;
 use super::result_id::InlineQueryResultId;
 use super::SimilarityAspect;
 
@@ -61,7 +62,7 @@ fn create_query_article(
 async fn handle_set_query(
     bot: Bot,
     tag_manager: Arc<TagManager>,
-    current_offset: usize,
+    current_offset: QueryPage,
     query: InlineQueryData,
     operation: SetOperation,
     set_name: String,
@@ -72,8 +73,8 @@ async fn handle_set_query(
     // TODO: if tags empty -> recommend tags from emojis/set name + fetch set
     let results = suggested_tags
         .into_iter()
-        .skip(current_offset)
-        .take(INLINE_QUERY_LIMIT)
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
         .map(|tag| {
             let (command, description) = match operation {
                 SetOperation::Tag => (
@@ -89,7 +90,7 @@ async fn handle_set_query(
         })
         .collect::<Result<Vec<_>, _>>()?;
     bot.answer_inline_query(q.id, results.clone())
-        .next_offset(next_inline_query_offset(results.len(), current_offset))
+        .next_offset(current_offset.next_query_offset(results.len()))
         .cache_time(60)
         .await?;
     Ok(())
@@ -98,7 +99,7 @@ async fn handle_set_query(
 async fn handle_sticker_query(
     bot: Bot,
     tag_manager: Arc<TagManager>,
-    current_offset: usize,
+    current_offset: QueryPage,
     query: InlineQueryData,
     database: Database,
     unique_id: String,
@@ -114,8 +115,8 @@ async fn handle_sticker_query(
     let suggested_tags = suggested_tags.into_iter().filter(|tag| !tags.contains(tag));
     let results = suggested_tags
         .into_iter()
-        .skip(current_offset)
-        .take(INLINE_QUERY_LIMIT)
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
         .map(|tag| {
             create_query_article(
                 tag_manager.clone(),
@@ -126,7 +127,7 @@ async fn handle_sticker_query(
         })
         .collect::<Result<Vec<_>, _>>()?;
     bot.answer_inline_query(q.id, results.clone())
-        .next_offset(next_inline_query_offset(results.len(), current_offset))
+        .next_offset(current_offset.next_query_offset(results.len()))
         .cache_time(0)
         .await?;
     Ok(())
@@ -140,11 +141,18 @@ pub async fn query_stickers(
     tag_manager: Arc<TagManager>,
     limit: usize,
     offset: usize,
+    seed: i32,
 ) -> Result<Vec<SavedSticker>, BotError> {
     // TODO: fall back to default blacklist if blacklist is not set
     let query_empty = query.tags.is_empty();
 
     // TODO: give warning: querying by emoji is very limited (no blacklist, only single emoji)
+
+    let order = user.user.settings.order();
+    let order = match order {
+        crate::database::StickerOrder::LatestFirst => crate::database::Order::LatestFirst,
+        crate::database::StickerOrder::Random => crate::database::Order::Random { seed },
+    };
 
     let stickers = if let Some(emoji) = emoji {
         database.get_stickers_by_emoji(emoji, limit, offset).await?
@@ -155,7 +163,7 @@ pub async fn query_stickers(
         if stickers.is_empty() {
             let blacklist = database.get_blacklist(user.id().0).await?;
             database
-                .get_stickers_for_tag_query(vec![], blacklist, limit, offset)
+                .get_stickers_for_tag_query(vec![], blacklist, limit, offset, order)
                 .await?
         } else {
             stickers
@@ -176,9 +184,9 @@ pub async fn query_stickers(
 
         let tags_empty = tags.is_empty();
 
-        let blacklist = database
-            .get_blacklist(user.id().0)
-            .await?
+        let blacklist = user
+            .user
+            .blacklist
             .into_iter()
             .chain(query_blacklist)
             .collect_vec();
@@ -193,7 +201,7 @@ pub async fn query_stickers(
 
         // TODO: if tags are empty -> show the user's recently used or favorited (if implemented alread) stickers
         database
-            .get_stickers_for_tag_query(tags.clone(), blacklist, limit, offset)
+            .get_stickers_for_tag_query(tags.clone(), blacklist, limit, offset, order)
             .await?
     };
 
@@ -203,7 +211,7 @@ pub async fn query_stickers(
 async fn handle_similar_sticker_query(
     bot: Bot,
     tag_manager: Arc<TagManager>,
-    current_offset: usize,
+    current_offset: QueryPage,
     query: InlineQueryData,
     database: Database,
     user: UserMeta,
@@ -218,11 +226,14 @@ async fn handle_similar_sticker_query(
     let matches = match aspect {
         SimilarityAspect::Color => result.histogram_cosine.items(),
         SimilarityAspect::Shape => result.visual_hash_cosine.items(),
+        SimilarityAspect::Embedding => result.embedding_cosine.items(),
     };
-    let sticker_ids = matches.into_iter().map(|m| m.sticker_id)
-        .skip(current_offset)
-        .take(INLINE_QUERY_LIMIT)
-    .collect_vec();
+    let sticker_ids = matches
+        .into_iter()
+        .map(|m| m.sticker_id)
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
+        .collect_vec();
     let mut stickers = Vec::new();
     for id in sticker_ids {
         stickers.push(database.get_sticker(id).await?); // TODO: single query?
@@ -241,10 +252,7 @@ async fn handle_similar_sticker_query(
         .collect_vec();
 
     bot.answer_inline_query(q.id, sticker_result.clone())
-        .next_offset(next_inline_query_offset(
-            sticker_result.len(),
-            current_offset,
-        ))
+        .next_offset(current_offset.next_query_offset(sticker_result.len()))
         .cache_time(0)
         .switch_pm_text(Text::switch_pm_text())
         .switch_pm_parameter(StartParameter::Greeting.to_string())
@@ -256,7 +264,7 @@ async fn handle_similar_sticker_query(
 async fn handle_sticker_search(
     bot: Bot,
     tag_manager: Arc<TagManager>,
-    current_offset: usize,
+    current_offset: QueryPage,
     query: InlineQueryData,
     database: Database,
     user: UserMeta,
@@ -270,8 +278,9 @@ async fn handle_sticker_search(
         emoji,
         user.clone(),
         tag_manager,
-        INLINE_QUERY_LIMIT,
-        current_offset,
+        current_offset.page_size(),
+        current_offset.skip(),
+        current_offset.seed(),
     )
     .await?;
 
@@ -300,10 +309,7 @@ async fn handle_sticker_search(
         .collect_vec();
 
     bot.answer_inline_query(q.id, sticker_result.clone())
-        .next_offset(next_inline_query_offset(
-            sticker_result.len(),
-            current_offset,
-        ))
+        .next_offset(current_offset.next_query_offset(sticker_result.len()))
         .cache_time(0)
         // TODO: this button could switch to a web app; or the blacklist start parameter
         // also it should be possible to display the actually resolved tags (maybe when teloxide implements the new bot api)
@@ -317,7 +323,7 @@ async fn handle_sticker_search(
 async fn handle_blacklist_query(
     bot: Bot,
     tag_manager: Arc<TagManager>,
-    current_offset: usize,
+    current_offset: QueryPage,
     query: InlineQueryData,
     database: Database,
     q: InlineQuery,
@@ -329,8 +335,8 @@ async fn handle_blacklist_query(
         .filter(|tag| !blacklist.contains(tag));
     let results = suggested_tags
         .into_iter()
-        .skip(current_offset)
-        .take(INLINE_QUERY_LIMIT)
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
         .map(|tag| {
             create_query_article(
                 tag_manager.clone(),
@@ -342,7 +348,7 @@ async fn handle_blacklist_query(
         .collect::<Result<Vec<_>, _>>()?;
 
     bot.answer_inline_query(q.id, results.clone())
-        .next_offset(next_inline_query_offset(results.len(), current_offset))
+        .next_offset(current_offset.next_query_offset(results.len()))
         .cache_time(0) // in seconds // TODO: constant?
         .await?;
 
@@ -352,7 +358,7 @@ async fn handle_blacklist_query(
 async fn handle_continuous_tag_query(
     bot: Bot,
     tag_manager: Arc<TagManager>,
-    current_offset: usize,
+    current_offset: QueryPage,
     query: InlineQueryData,
     operation: SetOperation,
     q: InlineQuery,
@@ -361,8 +367,8 @@ async fn handle_continuous_tag_query(
     let suggested_tags = tag_manager.find_tags(&query.tags);
     let results = suggested_tags
         .into_iter()
-        .skip(current_offset)
-        .take(INLINE_QUERY_LIMIT)
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
         .map(|tag| {
             let (command, description) = match operation {
                 SetOperation::Tag => (
@@ -379,7 +385,7 @@ async fn handle_continuous_tag_query(
         .collect::<Result<Vec<_>, _>>()?;
 
     bot.answer_inline_query(q.id, results.clone())
-        .next_offset(next_inline_query_offset(results.len(), current_offset))
+        .next_offset(current_offset.next_query_offset(results.len()))
         .cache_time(300) // in seconds // TODO: constant?
         .await?;
 
@@ -406,7 +412,7 @@ pub async fn inline_query_handler(
         }
     };
 
-    let current_offset = q.offset.parse::<usize>().unwrap_or(0);
+    let current_offset = QueryPage::from_query_offset(&q.offset, INLINE_QUERY_LIMIT)?;
     match query.mode.clone() {
         InlineQueryDataMode::Set {
             set_name,
@@ -456,15 +462,66 @@ pub async fn inline_query_handler(
             handle_continuous_tag_query(bot, tag_manager, current_offset, query, operation, q).await
         }
         InlineQueryDataMode::Similar { unique_id, aspect } => {
-            handle_similar_sticker_query( bot, tag_manager, current_offset, query, database, user, unique_id, aspect, q, worker).await
+            handle_similar_sticker_query(
+                bot,
+                tag_manager,
+                current_offset,
+                query,
+                database,
+                user,
+                unique_id,
+                aspect,
+                q,
+                worker,
+            )
+            .await
+        }
+        InlineQueryDataMode::EmbeddingSearch => {
+            handle_embedding_query(bot, current_offset, database, query.tags.join(" "), q).await
         }
     }
 }
 
-fn next_inline_query_offset(current_result_len: usize, current_offset: usize) -> String {
-    if current_result_len >= INLINE_QUERY_LIMIT {
-        (current_offset + INLINE_QUERY_LIMIT).to_string()
-    } else {
-        String::new() // empty string means no more results
+async fn handle_embedding_query(
+    bot: Bot,
+    current_offset: QueryPage,
+    database: Database,
+    query: String,
+    q: InlineQuery,
+) -> Result<(), BotError> {
+    // TODO: cache?
+    // TODO: blacklist?
+
+    let result = find_with_text_embedding(database.clone(), query).await?;
+    let sticker_ids = result.items()
+        .into_iter()
+        .map(|m| m.sticker_id)
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
+        .collect_vec();
+    let mut stickers = Vec::new();
+    for id in sticker_ids {
+        stickers.push(database.get_sticker(id).await?); // TODO: single query?
     }
+
+    let sticker_result = stickers
+        .into_iter()
+        .filter_map(|sticker| sticker)
+        .map(|sticker| {
+            InlineQueryResultCachedSticker::new(
+                InlineQueryResultId::Sticker(sticker.id).to_string(),
+                sticker.file_id,
+            )
+            .into()
+        })
+        .collect_vec();
+
+    bot.answer_inline_query(q.id, sticker_result.clone())
+        .next_offset(current_offset.next_query_offset(sticker_result.len()))
+        .cache_time(0)
+        .switch_pm_text(Text::switch_pm_text())
+        .switch_pm_parameter(StartParameter::Greeting.to_string())
+        .is_personal(true)
+        .await?;
+    Ok(())
 }

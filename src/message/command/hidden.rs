@@ -92,6 +92,7 @@ impl HiddenCommand {
                     )
                     .await?;
                     let set_name = database.get_set_name(sticker_unique_id.clone()).await?;
+                    let is_locked = database.sticker_is_locked(sticker_unique_id.clone()).await?;
                     bot.send_sticker(msg.chat.id, InputFile::file_id(sticker.file_id)) // TODO: fetch
                         // file id
                         // from
@@ -101,6 +102,7 @@ impl HiddenCommand {
                             &sticker_unique_id,
                             &suggested_tags,
                             set_name,
+                            is_locked
                         ))
                         .await?;
                 } else {

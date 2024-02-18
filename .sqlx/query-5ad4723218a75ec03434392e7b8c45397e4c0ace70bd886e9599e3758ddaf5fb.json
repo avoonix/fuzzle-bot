@@ -14,18 +14,23 @@
         "type_info": "Text"
       },
       {
-        "name": "histogram",
+        "name": "visual_hash",
         "ordinal": 2,
         "type_info": "Blob"
       },
       {
-        "name": "visual_hash",
+        "name": "histogram",
         "ordinal": 3,
         "type_info": "Blob"
       },
       {
-        "name": "sticker_id",
+        "name": "embedding",
         "ordinal": 4,
+        "type_info": "Blob"
+      },
+      {
+        "name": "sticker_id",
+        "ordinal": 5,
         "type_info": "Text"
       }
     ],
@@ -34,6 +39,7 @@
     },
     "nullable": [
       false,
+      true,
       true,
       true,
       true,

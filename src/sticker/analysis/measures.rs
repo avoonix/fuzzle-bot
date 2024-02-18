@@ -28,7 +28,7 @@ pub struct TopMatches {
 
 impl TopMatches {
     #[cfg(feature = "ssr")]
-    fn new(n: usize, max_distance: f64) -> Self {
+    pub(super) fn new(n: usize, max_distance: f64) -> Self {
         TopMatches {
             max_distance,
             worst_distance: f64::INFINITY,
@@ -66,6 +66,7 @@ impl TopMatches {
 pub struct Measures {
     pub histogram_cosine: TopMatches,
     pub visual_hash_cosine: TopMatches,
+    pub embedding_cosine: TopMatches,
 }
 
 #[cfg(feature = "ssr")]
@@ -74,10 +75,12 @@ impl Measures {
         n: usize,
         max_distance_histogram: f64,
         max_distance_visual_hash: f64,
+        max_distance_embedding: f64,
     ) -> Self {
         Self {
             histogram_cosine: TopMatches::new(n, max_distance_histogram),
             visual_hash_cosine: TopMatches::new(n, max_distance_visual_hash),
+            embedding_cosine: TopMatches::new(n, max_distance_embedding),
         }
     }
 }

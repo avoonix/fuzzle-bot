@@ -1,10 +1,11 @@
 use nom::bytes::complete::tag;
-use nom::combinator::map;
+use nom::combinator::{fail, map, success};
 use nom::sequence::preceded;
 use nom::IResult;
 use nom::{branch::alt, character::complete::u64};
 use std::fmt::Display;
 
+use crate::database::StickerOrder;
 use crate::util::{sticker_id_literal, tag_literal};
 
 fn parse_tag_operation(input: &str) -> IResult<&str, TagOperation> {
@@ -48,6 +49,11 @@ pub enum CallbackData {
     Info,
     RemoveSet(String),
     UserInfo(u64),
+    SetOrder(StickerOrder),
+    SetLock {
+        lock: bool,
+        sticker_id: String,
+    },
 }
 
 impl CallbackData {
@@ -83,7 +89,29 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
         parse_sticker_data,
         parse_remove_set_data,
         parse_user_info_data,
+        parse_order_data,
+        parse_lock_data,
     ))(input)
+}
+
+fn parse_lock_data(input: &str) -> IResult<&str, CallbackData> {
+    let (input, _) = tag("lock;")(input)?;
+    let (input, sticker_id) = sticker_id_literal(input)?;
+    let (input, _) = tag(";")(input)?;
+    alt((
+        map(tag("lock"), |_| CallbackData::SetLock { lock: true, sticker_id: sticker_id.to_string() }),
+        map(tag("unlock"), |_| CallbackData::SetLock { lock: false, sticker_id: sticker_id.to_string() })
+    ))(input)
+}
+
+fn parse_order_data(input: &str) -> IResult<&str, CallbackData> {
+    let (input, _) = tag("order")(input)?;
+    let (input, _) = tag(";")(input)?;
+    let order = serde_json::from_str(input);
+    match order {
+        Err(err) => return fail(input),
+        Ok(order) => Ok(("", CallbackData::SetOrder(order))),
+    }
 }
 
 fn parse_user_info_data(input: &str) -> IResult<&str, CallbackData> {
@@ -151,6 +179,14 @@ impl Display for CallbackData {
             Self::RemoveSet(set_name) => write!(f, "rmset;{set_name}"),
             Self::Info => write!(f, "info"),
             Self::UserInfo(user_id) => write!(f, "userinfo;{user_id}"),
+            Self::SetOrder(order) => {
+                let order = serde_json::to_string(order).unwrap_or_default();
+                write!(f, "order;{order}")
+            }
+            Self::SetLock { lock, sticker_id } => {
+                let lock = if *lock { "lock" } else { "unlock" };
+                write!(f, "lock;{sticker_id};{lock}")
+            }
         }
     }
 }

@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use sqlx::prelude::FromRow;
 
 // type SqlDateTime = chrono::DateTime<chrono::Utc>;
@@ -48,6 +49,7 @@ pub struct FileAnalysis {
     pub thumbnail_file_id: Option<String>,
     pub visual_hash: Option<Vec<u8>>,
     pub histogram: Option<Vec<u8>>,
+    pub embedding: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
@@ -56,6 +58,7 @@ pub struct FileAnalysisWithStickerId {
     pub thumbnail_file_id: Option<String>,
     pub visual_hash: Option<Vec<u8>>,
     pub histogram: Option<Vec<u8>>,
+    pub embedding: Option<Vec<u8>>,
     pub sticker_id: Option<String>,
 }
 
@@ -92,7 +95,7 @@ pub struct AddedRemoved {
 pub struct User {
     pub id: u64,
     pub blacklist: Vec<String>,
-
+    pub settings: UserSettings,
     pub can_tag_sets: bool,
     pub can_tag_stickers: bool,
 }
@@ -108,4 +111,23 @@ pub struct SavedSticker {
     pub id: String,
     pub file_id: String,
     pub file_hash: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct UserSettings {
+    pub order: Option<StickerOrder>
+}
+
+impl UserSettings {
+    pub fn order(&self) -> StickerOrder {
+        self.order.clone().unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Default, PartialEq, Eq, Copy)]
+#[repr(u8)]
+pub enum StickerOrder {
+    #[default]
+    LatestFirst = 0,
+    Random = 1,
 }

@@ -1,5 +1,6 @@
 use itertools::Itertools;
 
+use crate::database::UserSettings;
 use crate::database::{model::User, raw::RawDatabaseUser};
 
 use super::DatabaseError;
@@ -28,6 +29,21 @@ impl Database {
         match user {
             Some(user) => Ok(serde_json::from_str(&user.blacklist)?),
             None => Ok(vec![]),
+        }
+    }
+
+    pub async fn update_settings(&self, user_id: u64, settings: UserSettings) -> Result<(), DatabaseError> {
+        let user_id = user_id as i64; // TODO: no convert
+        let settings = serde_json::to_string(&settings)?;
+        let rows_affected = sqlx::query!( "UPDATE user SET settings = ?1 WHERE id = ?2", settings, user_id)
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
+
+        if rows_affected == 0 {
+            Err(DatabaseError::NoRowsAffected)
+        } else {
+            Ok(())
         }
     }
 

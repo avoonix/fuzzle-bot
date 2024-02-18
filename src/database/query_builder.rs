@@ -1,11 +1,14 @@
 use sqlx::{QueryBuilder, Sqlite};
 
+use super::Order;
+
 #[derive(Debug)]
 pub(super) struct StickerTagQuery {
     must: Vec<String>,
     must_not: Vec<String>,
     limit: Option<usize>,
     offset: Option<usize>,
+    order: Option<Order>,
 }
 
 impl StickerTagQuery {
@@ -16,6 +19,7 @@ impl StickerTagQuery {
             must_not,
             limit: None,
             offset: None,
+            order: None,
         }
     }
 
@@ -28,6 +32,12 @@ impl StickerTagQuery {
     #[must_use]
     pub(super) const fn offset(mut self, offset: usize) -> Self {
         self.offset = Some(offset);
+        self
+    }
+
+    #[must_use]
+    pub(super) const fn order(mut self, order: Order) -> Self {
+        self.order = Some(order);
         self
     }
 
@@ -57,7 +67,17 @@ impl StickerTagQuery {
             separated.push_unseparated(")");
         }
 
-        query_builder.push(") GROUP BY sticker.file_hash LIMIT ");
+        query_builder.push(") GROUP BY sticker.file_hash ORDER BY ");
+        match self.order {
+            None | Some(Order::LatestFirst) => query_builder.push("rowid DESC"),
+            Some(Order::Random { seed }) => {
+                // sqlite doesn't support seeded random sort
+                query_builder.push("sin(rowid + ");
+                query_builder.push_bind(seed);
+                query_builder.push(")")
+            },
+        };
+        query_builder.push(" LIMIT ");
         let limit = self.limit.unwrap_or(10) as i64;
         query_builder.push_bind(limit);
 
@@ -77,9 +97,10 @@ mod tests {
     fn test_query_builder_1() {
         let query = StickerTagQuery::new(vec!["solo".into()], vec!["meta_sticker".into()])
             .limit(100)
-            .offset(200);
+            .offset(200)
+            .order(Order::LatestFirst);
         let query = query.generate();
-        assert_eq!(query.sql(), "SELECT * FROM sticker WHERE file_hash IN (SELECT file_hash FROM file_hash_tag WHERE file_hash_tag.file_hash IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?) AND file_hash_tag.file_hash NOT IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?)) GROUP BY sticker.file_hash LIMIT ? OFFSET ?");
+        assert_eq!(query.sql(), "SELECT * FROM sticker WHERE file_hash IN (SELECT file_hash FROM file_hash_tag WHERE file_hash_tag.file_hash IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?) AND file_hash_tag.file_hash NOT IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?)) GROUP BY sticker.file_hash ORDER BY rowid DESC LIMIT ? OFFSET ?");
         // TODO: check the bound values
     }
 
@@ -90,9 +111,10 @@ mod tests {
             vec!["meta_sticker".into()],
         )
         .limit(100)
-        .offset(200);
+        .offset(200)
+        .order(Order::Random { seed: 42 });
         let query = query.generate();
-        assert_eq!(query.sql(), "SELECT * FROM sticker WHERE file_hash IN (SELECT file_hash FROM file_hash_tag WHERE file_hash_tag.file_hash IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?) AND file_hash_tag.file_hash IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?) AND file_hash_tag.file_hash NOT IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?)) GROUP BY sticker.file_hash LIMIT ? OFFSET ?");
+        assert_eq!(query.sql(), "SELECT * FROM sticker WHERE file_hash IN (SELECT file_hash FROM file_hash_tag WHERE file_hash_tag.file_hash IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?) AND file_hash_tag.file_hash IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?) AND file_hash_tag.file_hash NOT IN (SELECT file_hash FROM file_hash_tag WHERE tag = ?)) GROUP BY sticker.file_hash ORDER BY sin(rowid + ?) LIMIT ? OFFSET ?");
         // TODO: check the bound values
     }
 }

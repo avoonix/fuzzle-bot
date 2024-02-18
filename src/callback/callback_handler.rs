@@ -19,6 +19,32 @@ use std::sync::Arc;
 
 use crate::callback::CallbackData;
 
+async fn handle_sticker_lock(
+    lock: bool,
+    unique_id: String,
+    q: CallbackQuery,
+    tag_manager: Arc<TagManager>,
+    user: UserMeta,
+    database: Database,
+    bot: Bot,
+) -> Result<(), BotError> {
+    if !user.can_tag_stickers() {
+        return Err(anyhow::anyhow!(
+            "user is not permitted to change locked status"
+        ))?;
+    }
+    let Some(set_name) = database.get_set_name(unique_id.clone()).await? else {
+        // TODO: inform admin; this should not happen
+        return answer_callback_query(bot, q, Some(Text::sticker_not_found()), None, None).await;
+    };
+    database
+        .set_locked(unique_id.clone(), user.id().0, lock)
+        .await?;
+
+    // TODO: explain what locking does
+    send_tagging_keyboard(database, tag_manager, bot, set_name, None, unique_id, q).await
+}
+
 async fn handle_sticker_tag_action(
     operation: TagOperation,
     unique_id: String,
@@ -79,17 +105,45 @@ async fn handle_sticker_tag_action(
         }
     }
 
+    send_tagging_keyboard(
+        database,
+        tag_manager,
+        bot,
+        set_name,
+        Some(notification),
+        unique_id,
+        q,
+    )
+    .await
+}
+
+async fn send_tagging_keyboard(
+    database: Database,
+    tag_manager: Arc<TagManager>,
+    bot: Bot,
+    set_name: String,
+    notification: Option<String>,
+    unique_id: String,
+    q: CallbackQuery,
+) -> Result<(), BotError> {
     let tags = database.get_sticker_tags(unique_id.clone()).await?;
-    let suggested_tags =
-        suggest_tags(&unique_id, bot.clone(), tag_manager.clone(), database).await?;
+    let suggested_tags = suggest_tags(
+        &unique_id,
+        bot.clone(),
+        tag_manager.clone(),
+        database.clone(),
+    )
+    .await?;
+    let is_locked = database.sticker_is_locked(unique_id.clone()).await?;
     let keyboard = Some(Keyboard::make_tag_keyboard(
         &tags,
         &unique_id,
         &suggested_tags,
         Some(set_name.clone()),
+        is_locked,
     ));
 
-    answer_callback_query(bot, q, None, keyboard, Some(notification)).await
+    answer_callback_query(bot, q, None, keyboard, notification).await
 }
 
 pub async fn callback_handler(
@@ -102,6 +156,9 @@ pub async fn callback_handler(
 ) -> Result<(), BotError> {
     let data: CallbackData = q.data.clone().unwrap_or_default().try_into()?;
     match data {
+        CallbackData::SetLock { lock, sticker_id } => {
+            handle_sticker_lock(lock, sticker_id, q, tag_manager, user, database, bot).await
+        }
         CallbackData::Sticker {
             unique_id,
             operation,
@@ -127,8 +184,8 @@ pub async fn callback_handler(
             answer_callback_query(
                 bot,
                 q,
-                Some(Text::get_settings_text()),
-                Some(Keyboard::make_settings_keyboard()),
+                Some(Text::get_settings_text(user.user.settings.clone())),
+                Some(Keyboard::make_settings_keyboard(user.user.settings)),
                 None,
             )
             .await
@@ -178,6 +235,21 @@ pub async fn callback_handler(
                 .reply_markup(Keyboard::user_stats(user_id)?)
                 .await?;
             Ok(())
+        }
+        CallbackData::SetOrder(order) => {
+            let mut settings = user.user.settings.clone();
+            settings.order = Some(order);
+            database
+                .update_settings(user.id().0, settings.clone())
+                .await?;
+            answer_callback_query(
+                bot,
+                q,
+                Some(Text::get_settings_text(settings.clone())),
+                Some(Keyboard::make_settings_keyboard(settings)),
+                None,
+            )
+            .await
         }
     }
 }

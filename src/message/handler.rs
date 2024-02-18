@@ -251,10 +251,11 @@ async fn handle_sticker(
             &sticker.file.unique_id,
             bot.clone(),
             tag_manager.clone(),
-            database,
+            database.clone(),
         )
         .await?;
         let emojis = Emoji::parse(sticker.emoji.as_ref().unwrap_or(&String::new()));
+        let is_locked = database.sticker_is_locked(sticker.file.unique_id.clone()).await?;
         // TODO: get the actual set name
         bot.send_markdown(
             msg.chat.id,
@@ -265,6 +266,7 @@ async fn handle_sticker(
             &sticker.file.unique_id.clone(),
             &suggested_tags,
             Some(set_name.to_string()),
+            is_locked,
         ))
         .allow_sending_without_reply(true)
         .reply_to_message_id(msg.id)

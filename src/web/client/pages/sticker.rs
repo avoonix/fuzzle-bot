@@ -31,6 +31,7 @@ pub fn StickerPage() -> impl IntoView {
 <Sticker id=id()/>
     }} 
 
+    <Loader />
 
         <Transition fallback=move || ()>
             <div>
@@ -72,20 +73,15 @@ fn StickerInfo(#[prop(into)] info: StickerInfoDto) -> impl IntoView {
                 style="image-rendering: pixelated; width: 100%; height: 20vh; outline: 1px solid grey;"
             />
 
-            <img
-                src=format!("/files/visual_hashes/{}", info.id.clone())
-                alt="Visual hash of sticker"
-                loading="lazy"
-                style="image-rendering: pixelated; width: 100%; height: 20vh; outline: 1px solid grey;"
-            />
-
         // TODO: make page prettier
-
         <div class="flex"> histogram cosine
             {info.similar.histogram_cosine.clone().items() .into_iter() .map(|Match{distance, sticker_id}| { view! { <div style="width: 150px"> {format!("{distance}")} <A href=format!("/sticker/{sticker_id}")> <Sticker id=sticker_id.clone()/> </A> </div> } }) .collect_vec()}
         </div>
         <div class="flex"> visual hash cosine
             {info.similar.visual_hash_cosine.clone().items() .into_iter() .map(|Match{distance, sticker_id}| { view! { <div style="width: 150px"> {format!("{distance}")} <A href=format!("/sticker/{sticker_id}")> <Sticker id=sticker_id.clone()/> </A> </div> } }) .collect_vec()}
+        </div>
+        <div class="flex"> embedding cosine
+            {info.similar.embedding_cosine.clone().items() .into_iter() .map(|Match{distance, sticker_id}| { view! { <div style="width: 150px"> {format!("{distance}")} <A href=format!("/sticker/{sticker_id}")> <Sticker id=sticker_id.clone()/> </A> </div> } }) .collect_vec()}
         </div>
 
         <code>{format!("{info:?}")}</code>

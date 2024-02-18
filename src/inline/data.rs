@@ -41,12 +41,14 @@ pub enum InlineQueryDataMode {
         unique_id: String,
         aspect: SimilarityAspect,
     },
+    EmbeddingSearch,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Copy)]
 pub enum SimilarityAspect {
     Color,
     Shape,
+    Embedding,
 }
 
 impl InlineQueryData {
@@ -68,6 +70,14 @@ impl InlineQueryData {
                 aspect,
             },
             tags: vec![],
+        }
+    }
+
+    #[must_use]
+    pub fn embedding(tags: Vec<String>) -> Self {
+        Self {
+            mode: InlineQueryDataMode::EmbeddingSearch,
+            tags,
         }
     }
 
@@ -134,6 +144,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
             },
         ),
         map(tag("(blacklist)"), |_| InlineQueryDataMode::Blacklist),
+        map(tag("(embed)"), |_| InlineQueryDataMode::EmbeddingSearch),
         map(tag("(cont)"), |_| InlineQueryDataMode::ContinuousTagMode {
             operation: SetOperation::Tag,
         }),
@@ -151,6 +162,13 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
             terminated(preceded(tag("(shape:"), sticker_id_literal), tag(")")),
             |unique_id| InlineQueryDataMode::Similar {
                 aspect: SimilarityAspect::Shape,
+                unique_id: unique_id.to_string(),
+            },
+        ),
+        map(
+            terminated(preceded(tag("(embed:"), sticker_id_literal), tag(")")),
+            |unique_id| InlineQueryDataMode::Similar {
+                aspect: SimilarityAspect::Embedding,
                 unique_id: unique_id.to_string(),
             },
         ),
@@ -224,6 +242,11 @@ impl Display for InlineQueryData {
                 aspect: SimilarityAspect::Shape,
                 unique_id,
             } => write!(f, "(shape:{unique_id}) {tags}"),
+            InlineQueryDataMode::Similar {
+                aspect: SimilarityAspect::Embedding,
+                unique_id,
+            } => write!(f, "(embed:{unique_id}) {tags}"),
+            InlineQueryDataMode::EmbeddingSearch => write!(f, "(embed) {tags}"),
         }
     }
 }

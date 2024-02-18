@@ -193,8 +193,8 @@ async fn refetch_scheduled(
             worker.clone(),
         )
         .await?;
+        analyze_n_stickers(database.clone(), bot.clone(), 100, paths.clone()).await?;
     }
-    analyze_n_stickers(database.clone(), bot.clone(), 100, paths).await?;
     Ok(())
 }
 
@@ -240,7 +240,8 @@ impl Command {
                     database.clone(),
                     worker.clone(),
                 )
-                .await
+                .await?;
+                analyze_n_stickers(database, bot, 120, paths).await
             }
             Self::ProcessSetOfSticker {
                 sticker_unique_id,

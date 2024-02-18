@@ -3,7 +3,7 @@ use std::{collections::HashMap, iter::once};
 use crate::{
     callback::TagOperation,
     database::{
-        AddedRemoved, AdminStats, FullUserStats, PopularTag, SavedStickerSet, Stats, UserStats,
+        AddedRemoved, AdminStats, FullUserStats, PopularTag, SavedStickerSet, Stats, UserSettings, UserStats
     },
     message::{
         admin_command_description, escape_sticker_unique_id_for_command, user_command_description,
@@ -43,9 +43,16 @@ impl Text {
     }
 
     #[must_use]
-    pub fn get_settings_text() -> Markdown {
+    pub fn get_settings_text(settings: UserSettings) -> Markdown {
+        let order = match settings.order() {
+            crate::database::StickerOrder::LatestFirst => "🆕 Latest First",
+            crate::database::StickerOrder::Random => "🔀 Random",
+        };
+
         Markdown::new(
-            "Settings", // TODO: settings info
+            format!("*Settings:*
+Current Order: {order}
+"),
         )
     }
 

@@ -25,6 +25,7 @@ impl Database {
         Ok(())
     }
 
+    /// except locked stickers
     pub async fn tag_all_stickers_in_set(
         &self,
         set_name: String,
@@ -35,7 +36,8 @@ impl Database {
         let mut tags_affected = 0;
         for tag in tags {
             tags_affected += sqlx::query!("INSERT INTO file_hash_tag (file_hash, tag, added_by_user_id)
-                                           SELECT DISTINCT file_hash, ?1, ?2 FROM sticker WHERE set_id = ?3
+                                           SELECT DISTINCT file_hash, ?1, ?2 FROM sticker 
+                                                WHERE set_id = ?3 AND NOT EXISTS (SELECT * FROM file_hash WHERE sticker.file_hash = file_hash.id AND file_hash.tags_locked_by_user_id IS NOT NULL)
                                            ON CONFLICT (file_hash, tag) DO NOTHING", tag, user, set_name)
                 .execute(&self.pool)
                 .await?
@@ -45,6 +47,7 @@ impl Database {
         Ok(tags_affected)
     }
 
+    /// except locked stickers
     pub async fn untag_all_stickers_in_set(
         &self,
         set_name: String,
@@ -54,7 +57,8 @@ impl Database {
         let user = user as i64;
 
         let tags_affected = sqlx::query!("INSERT INTO file_hash_tag_history (file_hash, tag, removed_by_user_id, added_by_user_id)
-                      SELECT file_hash, tag, ?1, added_by_user_id FROM file_hash_tag WHERE tag = ?2 AND file_hash IN (SELECT file_hash FROM sticker WHERE set_id = ?3)",
+                      SELECT file_hash, tag, ?1, added_by_user_id FROM file_hash_tag WHERE tag = ?2 AND file_hash IN (SELECT file_hash FROM sticker 
+                            WHERE set_id = ?3 AND NOT EXISTS (SELECT * FROM file_hash WHERE sticker.file_hash = file_hash.id AND file_hash.tags_locked_by_user_id IS NOT NULL))",
                       user, tag, set_name
                     )
                 .execute(&self.pool)

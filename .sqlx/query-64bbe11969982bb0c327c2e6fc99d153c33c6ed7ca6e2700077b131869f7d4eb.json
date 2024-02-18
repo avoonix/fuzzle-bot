@@ -29,8 +29,13 @@
         "type_info": "Datetime"
       },
       {
-        "name": "interactions",
+        "name": "settings",
         "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "interactions",
+        "ordinal": 6,
         "type_info": "Int64"
       }
     ],
@@ -43,6 +48,7 @@
       false,
       false,
       false,
+      true,
       false
     ]
   },

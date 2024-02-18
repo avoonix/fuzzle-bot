@@ -15,8 +15,6 @@ use super::{
     hash::calculate_sticker_file_hash,
 };
 
-// TODO: test sticker/sticker set deletion
-
 pub async fn import_all_stickers_from_set(
     set_name: String,
     user_id: Option<UserId>,

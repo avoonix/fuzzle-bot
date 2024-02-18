@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     bot::BotError,
     callback::CallbackData,
-    database::UserStats,
+    database::{UserSettings, UserStats},
     inline::{InlineQueryData, SetOperation},
     tags::{self, all_count_tags, all_rating_tags, character_count, rating, Characters},
 };
@@ -20,6 +20,7 @@ impl Keyboard {
         sticker_unique_id: &str,
         suggested_tags: &[String],
         set_name: Option<String>,
+        tagging_locked: bool,
     ) -> InlineKeyboardMarkup {
         let mut button_layout: Vec<Vec<String>> = vec![];
         // trio implies group; trio is more important than group
@@ -122,6 +123,24 @@ impl Keyboard {
             ),
         ]);
 
+        keyboard.push(vec![if tagging_locked {
+            InlineKeyboardButton::callback(
+                "🔒 Bulk Tagging Locked",
+                CallbackData::SetLock {
+                    lock: false,
+                    sticker_id: sticker_unique_id.to_string(),
+                },
+            )
+        } else {
+            InlineKeyboardButton::callback(
+                "🔓 Bulk Tagging Unlocked",
+                CallbackData::SetLock {
+                    lock: true,
+                    sticker_id: sticker_unique_id.to_string(),
+                },
+            )
+        }]);
+
         InlineKeyboardMarkup::new(keyboard)
     }
 
@@ -129,12 +148,19 @@ impl Keyboard {
     pub fn similarity(sticker_unique_id: &str) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
-                "Similar color (no blacklist)",
-                InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Color)
+                "Similar color (Warning: ignores blacklist)",
+                InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Color),
             )],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
-                "Similar shape (no blacklist)",
-                InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Shape)
+                "Similar shape (Warning: ignores blacklist)",
+                InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Shape),
+            )],
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                "Similar embedding (Warning: ignores blacklist)",
+                InlineQueryData::similar(
+                    sticker_unique_id,
+                    crate::inline::SimilarityAspect::Embedding,
+                ),
             )],
         ])
     }
@@ -201,6 +227,14 @@ impl Keyboard {
     }
 
     #[must_use]
+    pub fn embedding() -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new([[InlineKeyboardButton::switch_inline_query_current_chat(
+            "Similar embedding (Warning: ignores blacklist)",
+            InlineQueryData::embedding(vec![]),
+        )]])
+    }
+
+    #[must_use]
     pub fn make_main_keyboard() -> InlineKeyboardMarkup {
         let keyboard: Vec<Vec<InlineKeyboardButton>> = vec![
             vec![
@@ -239,12 +273,24 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn make_settings_keyboard() -> InlineKeyboardMarkup {
+    pub fn make_settings_keyboard(settings: UserSettings) -> InlineKeyboardMarkup {
+        let order = match settings.order() {
+            crate::database::StickerOrder::LatestFirst => InlineKeyboardButton::callback(
+                "🔀 Change Ordering",
+                CallbackData::SetOrder(crate::database::StickerOrder::Random),
+            ),
+            crate::database::StickerOrder::Random => InlineKeyboardButton::callback(
+                "🆕 Change Ordering",
+                CallbackData::SetOrder(crate::database::StickerOrder::LatestFirst),
+            ),
+        };
+
         InlineKeyboardMarkup::new([
             [InlineKeyboardButton::callback(
                 "🔙 Start",
                 CallbackData::Start,
             )],
+            [order],
             [InlineKeyboardButton::callback(
                 "Blacklist",
                 CallbackData::Blacklist,

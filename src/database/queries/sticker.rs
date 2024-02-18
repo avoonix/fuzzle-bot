@@ -6,7 +6,7 @@ use crate::{
     database::{
         model::{Relationship, SavedSticker, SavedStickerSet},
         query_builder::StickerTagQuery,
-        FileAnalysis, FileAnalysisWithStickerId,
+        FileAnalysis, FileAnalysisWithStickerId, Order,
     },
     util::Emoji,
 };
@@ -218,7 +218,7 @@ impl Database {
         let offset = offset as i64;
         let emoji = emoji.to_string();
         let stickers = sqlx::query!(
-            "SELECT * FROM sticker WHERE emoji = ?1 LIMIT ?2 OFFSET ?3",
+            "SELECT * FROM sticker WHERE emoji = ?1 GROUP BY file_hash ORDER BY rowid DESC LIMIT ?2 OFFSET ?3",
             emoji,
             limit,
             offset
@@ -242,12 +242,14 @@ impl Database {
         blacklist: Vec<String>,
         limit: usize,
         offset: usize,
+        order: Order,
     ) -> Result<Vec<SavedSticker>, DatabaseError> {
         let tags = tags.into_iter().collect_vec();
         let blacklist = blacklist.into_iter().collect_vec();
         let query = StickerTagQuery::new(tags, blacklist)
             .limit(limit)
-            .offset(offset);
+            .offset(offset)
+            .order(order);
 
         let stickers = query.generate().build().fetch_all(&self.pool).await?;
 
@@ -285,7 +287,7 @@ impl Database {
             .filter_map(|relationship| {
                 relationship.visual_hash.map(|visual_hash| Relationship {
                     in_: relationship.file_hash,
-                    out: general_purpose::URL_SAFE_NO_PAD.encode(visual_hash)
+                    out: general_purpose::URL_SAFE_NO_PAD.encode(visual_hash),
                 })
             })
             .collect_vec())
@@ -354,6 +356,47 @@ impl Database {
         Ok(sets)
     }
 
+    pub async fn set_locked(
+        &self,
+        sticker_unique_id: String,
+        user_id: u64,
+        locked: bool,
+    ) -> Result<(), DatabaseError> {
+        let user_id = user_id as i64;
+        if locked {
+            sqlx::query!(
+            "UPDATE file_hash SET tags_locked_by_user_id = ?1 WHERE id = (SELECT file_hash FROM sticker WHERE id = ?2)",
+            user_id,
+            sticker_unique_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        } else {
+            sqlx::query!(
+            "UPDATE file_hash SET tags_locked_by_user_id = NULL WHERE id = (SELECT file_hash FROM sticker WHERE id = ?1)",
+            sticker_unique_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn sticker_is_locked(
+        &self,
+        sticker_unique_id: String,
+    ) -> Result<bool, DatabaseError> {
+        let locked_by_user: Option<Option<i64>> = sqlx::query_scalar!(
+            "SELECT tags_locked_by_user_id FROM file_hash WHERE id = (SELECT file_hash FROM sticker WHERE id = ?1)",
+            sticker_unique_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(locked_by_user.flatten().is_some())
+    }
+
     pub async fn get_set_name(
         &self,
         sticker_unique_id: String,
@@ -416,13 +459,25 @@ impl Database {
         Ok(())
     }
 
+    pub async fn update_embedding(
+        &self,
+        file_hash: String,
+        embedding: Vec<u8>,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query!( "INSERT INTO file_analysis (id, embedding) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET embedding = ?2", file_hash, embedding)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn get_n_stickers_with_missing_analysis(
         &self,
         n: i64,
     ) -> Result<Vec<FileAnalysis>, DatabaseError> {
         let analysis: Vec<FileAnalysis> = sqlx::query_as!(
             FileAnalysis,
-            "SELECT * FROM file_analysis WHERE visual_hash IS NULL OR histogram IS NULL ORDER BY random() LIMIT ?1",
+            "SELECT * FROM file_analysis WHERE visual_hash IS NULL OR histogram IS NULL OR embedding IS NULL ORDER BY random() LIMIT ?1",
             n
         )
         .fetch_all(&self.pool)
@@ -481,31 +536,6 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_similar_stickers(
-        &self,
-        sticker_unique_id: String,
-    ) -> Result<Vec<SavedSticker>, DatabaseError> {
-        // // get random similar stickers
-        // let stickers = sqlx::query!("select * from sticker where file_hash in (select file_hash from file_hash_visual_hash where visual_hash = (
-        //                         select visual_hash from file_hash_visual_hash group by visual_hash having count(*) > 1 order by random())) group by file_hash")
-        //     .fetch_all(&self.pool)
-        //     .await?;
-
-        let stickers = sqlx::query!("select * from sticker where id != ?1 and file_hash in (select id from file_analysis where visual_hash = (
-                                select visual_hash from file_analysis where id = (select file_hash from sticker where id = ?1))) group by file_hash", sticker_unique_id)
-            .fetch_all(&self.pool)
-            .await?;
-
-        Ok(stickers
-            .into_iter()
-            .map(|sticker| SavedSticker {
-                file_id: sticker.file_id,
-                id: sticker.id,
-                file_hash: sticker.file_hash,
-            })
-            .collect_vec())
-    }
-
     pub async fn get_all_set_ids(&self) -> Result<Vec<String>, DatabaseError> {
         let sets: Vec<SavedStickerSet> =
             sqlx::query_as!(SavedStickerSet, "SELECT * FROM sticker_set")
@@ -538,7 +568,6 @@ impl Database {
         let limit = limit as i64;
         let offset = offset as i64;
         // TODO: sort by recently used, sort by favorites
-        // TODO: pagination
         let stickers = sqlx::query!("SELECT sticker.* FROM sticker INNER JOIN sticker_user ON sticker_user.sticker_id = sticker.id WHERE sticker_user.user_id = ?1 ORDER BY last_used DESC LIMIT ?2 OFFSET ?3", user_id, limit, offset)
             .fetch_all(&self.pool)
             .await?;

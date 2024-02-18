@@ -118,6 +118,7 @@ impl UpdateListener {
             ])
             .default_handler(|upd| async move {
                 log::warn!("Unhandled update: {:?}", upd);
+                // TODO: notify admin
             })
             .error_handler(ErrorHandler::new(
                 self.bot.clone(),

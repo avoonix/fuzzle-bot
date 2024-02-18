@@ -97,29 +97,3 @@ fn two_dimensional_dct(input: Vec<Vec<u8>>) -> Vec<Vec<f64>> {
 
     transpose(output)
 }
-
-pub fn create_visual_hash_image(visual_hash: VisualHash) -> anyhow::Result<Vec<u8>> {
-    let mut img = RgbaImage::new(visual_hash.normalized_vec.len() as u32, 256);
-
-    for x in 0..img.width() {
-        for y in 0..img.height() {
-            let hash_entry = visual_hash.normalized_vec[x as usize];
-            let pixel_color = if img.height() - y <= hash_entry as u32  {
-                Rgba([
-                    hash_entry,
-                    hash_entry,
-                    hash_entry,
-                    255,
-                ])
-            } else {
-                Rgba([255, 255, 255, 0])
-            };
-            img.put_pixel(x, y, pixel_color);
-        }
-    }
-
-    let mut bytes: Vec<u8> = Vec::new();
-    img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::WebP)?;
-
-    Ok(bytes)
-}
