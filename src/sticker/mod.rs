@@ -15,4 +15,4 @@ pub use analysis::{Match, Measures, TopMatches}; // TODO: don't expose everythin
 #[cfg(feature = "ssr")]
 pub use download::{fetch_possibly_cached_sticker_file, fetch_sticker_file};
 #[cfg(feature = "ssr")]
-pub use import::{import_all_stickers_from_set, import_individual_sticker_and_queue_set};
+pub use import::{import_all_stickers_from_set, import_individual_sticker_and_queue_set, notify_admin_if_set_new};

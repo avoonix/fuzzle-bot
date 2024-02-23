@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use sqlx::prelude::FromRow;
 
+use crate::util::Emoji;
+
 // type SqlDateTime = chrono::DateTime<chrono::Utc>;
 pub type SqlDateTime = chrono::NaiveDateTime;
 
@@ -111,6 +113,7 @@ pub struct SavedSticker {
     pub id: String,
     pub file_id: String,
     pub file_hash: String,
+    pub emoji: Option<Emoji>, // TODO: every sticker has an emoji
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

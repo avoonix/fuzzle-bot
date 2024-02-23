@@ -1,9 +1,14 @@
+use std::sync::Arc;
+
+use crate::background_tasks::{send_message_to_admin, AdminMessage, AnalysisWorker, TaggingWorker};
 use crate::bot::config::Config;
 use crate::database::{Database, User};
-use crate::worker::{AdminMessage, WorkerPool};
+use crate::tags::TagManager;
+use crate::util::Timer;
+use crate::Paths;
 use teloxide::prelude::*;
 
-use super::BotError;
+use super::{Bot, BotError, RequestContext};
 
 #[derive(Clone, Debug)]
 pub struct UserMeta {
@@ -11,14 +16,36 @@ pub struct UserMeta {
     pub is_admin: bool,
 }
 
-pub async fn inject_user(
+pub async fn inject_context(
     update: Update,
-    config: Config,
+    config: Arc<Config>,
     database: Database,
-    worker: WorkerPool,
-) -> Option<UserMeta> {
-    match _inject_user(update, config, database, worker).await {
-        Ok(user) => Some(user),
+    tag_manager: Arc<TagManager>,
+    bot: Bot,
+    paths: Arc<Paths>,
+    analysis_worker: AnalysisWorker,
+    tagging_worker: TaggingWorker,
+) -> Option<RequestContext> {
+    let timer = Timer::new(update.clone());
+    match get_user(
+        update.clone(),
+        config.clone(),
+        database.clone(),
+        bot.clone(),
+    )
+    .await
+    {
+        Ok(user) => Some(RequestContext {
+            bot,
+            config,
+            database,
+            tag_manager,
+            user: Arc::new(user),
+            paths,
+            timer: Arc::new(timer),
+            analysis_worker,
+            tagging_worker,
+        }),
         Err(err) => {
             // TODO: handle error
             dbg!(err);
@@ -27,37 +54,40 @@ pub async fn inject_user(
     }
 }
 
-// TODO: rename method
-async fn _inject_user(
+async fn get_user(
     update: Update,
-    config: Config,
+    config: Arc<Config>,
     database: Database,
-    worker: WorkerPool,
+    bot: Bot,
 ) -> Result<UserMeta, BotError> {
     // TODO: possibly cache users? TODO: measure how long this function takes
     let Some(user) = update.user() else {
         return Err(anyhow::anyhow!("user missing from telegram update"))?;
     };
 
-    get_or_create_user(user.id, config, database, worker).await
+    get_or_create_user(user.id, config, database, bot).await
 }
 
 pub async fn get_or_create_user(
     user_id: UserId,
-    config: Config,
+    config: Arc<Config>,
     database: Database,
-    worker: WorkerPool,
+    bot: Bot,
 ) -> Result<UserMeta, BotError> {
     let user_exists = database.has_user(user_id.0).await?;
     if !user_exists {
-        worker
-            .dispatch_message_to_admin(user_id, AdminMessage::NewUser)
-            .await;
+        send_message_to_admin(
+            AdminMessage::NewUser,
+            user_id,
+            bot,
+            config.get_admin_user_id(),
+        )
+        .await?;
     }
 
     let is_admin = user_id == config.get_admin_user_id();
-    let user = database
-        .add_user_if_not_exist(user_id.0, config.default_blacklist)
+    let user = database // TODO: don't update user every time?
+        .add_user_if_not_exist(user_id.0, config.default_blacklist.clone())
         .await?;
 
     // TODO: check if user is banned?

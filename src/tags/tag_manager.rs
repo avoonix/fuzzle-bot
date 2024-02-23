@@ -1,6 +1,6 @@
 use super::download::{TagAliasCsv, TagCsv, TagImplicationCsv};
 use itertools::Itertools;
-use log::warn;
+use log::{info, warn};
 use std::collections::HashMap;
 use strsim::sorensen_dice;
 
@@ -63,6 +63,7 @@ impl TagManager {
         tags.insert("firelex".to_string(), Category::Artist);
         tags.insert("felisrandomis".to_string(), Category::Artist);
         tags.insert("stumblinbear".to_string(), Category::Artist);
+        tags.insert("spookyfoxinc".to_string(), Category::Artist);
 
         tags.insert("yes".to_string(), Category::General);
         tags.insert("no".to_string(), Category::General);
@@ -71,6 +72,8 @@ impl TagManager {
         tags.insert("ill".to_string(), Category::General);
         tags.insert("a".to_string(), Category::General);
         tags.insert("yeet".to_string(), Category::General);
+        tags.insert("holding_heart".to_string(), Category::General);
+        tags.insert("segufix".to_string(), Category::General);
 
         self.tags = tags;
         self
@@ -81,9 +84,12 @@ impl TagManager {
         mut self,
         csv: Vec<TagCsv>,
         min_post_count: i64,
+        min_post_count_character: i64,
         ignore_meta_tags: bool,
+        ignore_artist_tags: bool,
     ) -> Self {
         let mut tags = self.tags.clone();
+        let mut counts: HashMap<Category, u64> = HashMap::new();
         for tag in csv {
             if tag.post_count < min_post_count {
                 continue;
@@ -93,12 +99,24 @@ impl TagManager {
                     if ignore_meta_tags && category == Category::Meta {
                         continue;
                     }
+                    if ignore_artist_tags && category == Category::Artist {
+                        continue;
+                    }
+                    if category == Category::Character && tag.post_count < min_post_count_character
+                    {
+                        continue;
+                    }
                     tags.insert(tag.name, category);
+                    *counts.entry(category).or_default() += 1;
                 }
                 Err(e) => {
                     warn!("can't add tag {}: {}", tag.name, e);
                 }
             }
+        }
+        for (category, count) in counts {
+            let category = category.to_human_name();
+            info!("inserted {count} {category} tags from csv");
         }
 
         self.tags = tags;
@@ -210,6 +228,36 @@ impl TagManager {
             .or_default()
             .push("no".to_string());
 
+        implications
+            .entry("holding_heart".to_string())
+            .or_default()
+            .push("holding_object".to_string());
+
+        self.implications = implications;
+        self
+    }
+
+    #[must_use]
+    pub fn compute_transitive_implications(mut self) -> Self {
+        let mut implications = self.implications.clone();
+        let mut has_changed = true;
+        while has_changed {
+            has_changed = false;
+            let old_implications = implications.clone();
+            for (tag, implied_tags) in implications.iter_mut() {
+                for implied_tag in implied_tags.clone() {
+                    let transitive_implications = old_implications.get(&implied_tag);
+                    if let Some(transitive_implications) = transitive_implications {
+                        for transitive_implication in transitive_implications {
+                            if !implied_tags.contains(transitive_implication) {
+                                implied_tags.push(transitive_implication.clone());
+                                has_changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         self.implications = implications;
         self
     }
@@ -393,7 +441,7 @@ impl TagManager {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash)]
 pub enum Category {
     #[default]
     General,

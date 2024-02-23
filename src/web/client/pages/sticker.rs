@@ -13,14 +13,14 @@ use crate::web::shared::*;
 
 #[derive(Params, PartialEq)]
 struct StickerParams {
-    sticker_id: String,
+    sticker_id: Option<String>,
 }
 
 #[component]
 pub fn StickerPage() -> impl IntoView {
     let params = use_params::<StickerParams>();
     let id =
-        move || params.with(|params| params.as_ref().map(|params| params.sticker_id.clone()).unwrap_or_default());
+        move || params.with(|params| params.as_ref().map(|params| params.sticker_id.clone().unwrap_or_default()).unwrap_or_default());
 
     let sticker_info = create_resource(
         move || (id()),

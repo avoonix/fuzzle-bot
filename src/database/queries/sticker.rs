@@ -178,6 +178,7 @@ impl Database {
                 file_id: sticker.file_id,
                 id: sticker.id,
                 file_hash: sticker.file_hash,
+                emoji: None,
             })
             .collect_vec())
     }
@@ -194,6 +195,7 @@ impl Database {
             file_id: sticker.file_id,
             id: sticker.id,
             file_hash: sticker.file_hash,
+            emoji: Emoji::parse(&sticker.emoji).first().cloned(),
         }))
     }
 
@@ -232,6 +234,7 @@ impl Database {
                 file_id: sticker.file_id,
                 id: sticker.id,
                 file_hash: sticker.file_hash,
+                emoji: None,
             })
             .collect_vec())
     }
@@ -259,6 +262,7 @@ impl Database {
                 file_id: row.get("file_id"),
                 id: row.get("id"),
                 file_hash: row.get("file_hash"),
+                emoji: None,
             })
             .collect_vec())
     }
@@ -272,6 +276,7 @@ impl Database {
             file_id: sticker.file_id,
             id: sticker.id,
             file_hash: sticker.file_hash,
+            emoji: None,
         }))
     }
 
@@ -501,6 +506,16 @@ impl Database {
         Ok(analysis)
     }
 
+    pub async fn get_analysis_for_all_stickers_with_tags(
+        &self,
+    ) -> Result<Vec<FileAnalysisWithStickerId>, DatabaseError> {
+        let analysis: Vec<FileAnalysisWithStickerId> =
+            sqlx::query_as!(FileAnalysisWithStickerId, "SELECT file_analysis.*, sticker.id AS sticker_id FROM file_analysis INNER JOIN sticker WHERE sticker.file_hash = file_analysis.id AND EXISTS (SELECT * FROM file_hash_tag WHERE file_hash_tag.file_hash = sticker.file_hash) GROUP BY file_analysis.id")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(analysis)
+    }
+
     pub async fn get_analysis_for_all_stickers(
         &self,
     ) -> Result<Vec<FileAnalysisWithStickerId>, DatabaseError> {
@@ -509,6 +524,13 @@ impl Database {
                 .fetch_all(&self.pool)
                 .await?;
         Ok(analysis)
+    }
+
+    pub async fn unban_set(&self, set_name: String) -> Result<(), DatabaseError> {
+        sqlx::query!("DELETE FROM removed_set WHERE id = ?1", set_name)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn ban_set(&self, set_name: String) -> Result<(), DatabaseError> {
@@ -534,14 +556,6 @@ impl Database {
             .execute(&self.pool)
             .await?;
         Ok(())
-    }
-
-    pub async fn get_all_set_ids(&self) -> Result<Vec<String>, DatabaseError> {
-        let sets: Vec<SavedStickerSet> =
-            sqlx::query_as!(SavedStickerSet, "SELECT * FROM sticker_set")
-                .fetch_all(&self.pool)
-                .await?;
-        Ok(sets.into_iter().map(|s| s.id).collect_vec())
     }
 
     pub async fn get_n_least_recently_fetched_set_ids(
@@ -578,6 +592,7 @@ impl Database {
                 file_id: sticker.file_id,
                 id: sticker.id,
                 file_hash: sticker.file_hash,
+                emoji: None,
             })
             .collect_vec())
     }

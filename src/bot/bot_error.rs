@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::database::DatabaseError;
+use crate::{background_tasks, database::DatabaseError, sticker::EmbeddingError};
 
 #[derive(Error, Debug)]
 pub enum BotError {
@@ -12,6 +12,9 @@ pub enum BotError {
 
     #[error("database error")]
     Database(#[from] DatabaseError),
+
+    #[error("embedding error")]
+    Embedding(#[from] EmbeddingError),
 
     // TODO: add error infos
     #[error("a timeout occured")]
@@ -65,3 +68,6 @@ impl_other_error!(serde_json::Error);
 impl_other_error!(url::ParseError);
 impl_other_error!(std::fmt::Error);
 impl_other_error!(tokio::task::JoinError);
+impl_other_error!(tokio::sync::oneshot::error::RecvError);
+impl_other_error!(tokio::sync::mpsc::error::SendError<background_tasks::analysis::Command>);
+impl_other_error!(tokio::sync::mpsc::error::SendError<background_tasks::tagging::TaggingWorkerCommand>);

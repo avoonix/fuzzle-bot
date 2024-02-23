@@ -1,6 +1,5 @@
 #[cfg(feature = "ssr")]
 mod bot;
-#[cfg(feature = "ssr")]
 mod callback;
 #[cfg(feature = "ssr")]
 mod database;
@@ -15,7 +14,7 @@ mod text;
 #[cfg(feature = "ssr")]
 mod util;
 #[cfg(feature = "ssr")]
-mod worker;
+mod background_tasks;
 
 #[cfg(feature = "ssr")]
 pub use bot::{Config, Paths, UpdateListener};

@@ -24,33 +24,30 @@ use serde::{Deserialize, Serialize};
 use teloxide::requests::Requester;
 
 use crate::{
-    bot::{get_or_create_user, Bot, UserMeta},
-    database::Database,
-    sticker::fetch_sticker_file,
-    tags::TagManager,
-    worker::WorkerPool,
-    Config, Paths,
+    background_tasks::{AnalysisWorker, TaggingWorker}, bot::{get_or_create_user, Bot, UserMeta}, database::Database, sticker::fetch_sticker_file, tags::TagManager, Config, Paths
 };
 
 use super::service;
 
 #[derive(Debug)]
 pub struct AppState {
-    pub config: Config,
+    pub config: Arc<Config>,
     pub database: Database,
     pub tag_manager: Arc<TagManager>,
-    pub worker: WorkerPool,
     pub bot: Bot,
-    pub paths: Paths,
+    pub paths: Arc<Paths>,
+    pub analysis_worker: AnalysisWorker,
+    pub tagging_worker: TaggingWorker,
 }
 
 pub fn setup(
-    config: Config,
+    config: Arc<Config>,
     database: Database,
     tag_manager: Arc<TagManager>,
-    worker: WorkerPool,
     bot: Bot,
-    paths: Paths,
+    paths: Arc<Paths>,
+    analysis_worker: AnalysisWorker,
+    tagging_worker: TaggingWorker,
 ) {
     tokio::spawn(async move {
         let conf = get_configuration(None).await.expect("config to exist");
@@ -65,9 +62,10 @@ pub fn setup(
                     config: config.clone(),
                     database: database.clone(),
                     tag_manager: tag_manager.clone(),
-                    worker: worker.clone(),
                     bot: bot.clone(),
                     paths: paths.clone(),
+                    analysis_worker: analysis_worker.clone(),
+                    tagging_worker: tagging_worker.clone(),
                 }))
                 .service(Files::new("/pkg", format!("{site_root}/pkg")))
                 .service(Files::new("/assets", site_root))

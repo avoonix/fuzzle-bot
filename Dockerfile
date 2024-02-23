@@ -1,6 +1,8 @@
-FROM rustlang/rust:nightly-alpine as builder
+FROM rustlang/rust:nightly as builder
 ARG RUST_TARGET
-RUN apk add --no-cache musl-dev 
+RUN apt-get update
+RUN apt-get install -y musl-dev musl-tools cmake build-essential libopenblas-dev
+RUN ln -s /bin/g++ /bin/musl-g++
 ENV SYSROOT=/dummy
 RUN rustup target add $RUST_TARGET
 WORKDIR /wd

@@ -28,7 +28,7 @@ pub struct TopMatches {
 
 impl TopMatches {
     #[cfg(feature = "ssr")]
-    pub(super) fn new(n: usize, max_distance: f64) -> Self {
+    pub fn new(n: usize, max_distance: f64) -> Self {
         TopMatches {
             max_distance,
             worst_distance: f64::INFINITY,
@@ -38,7 +38,7 @@ impl TopMatches {
     }
 
     #[cfg(feature = "ssr")]
-    pub(super) fn push(&mut self, distance: f64, sticker_id: String) {
+    pub fn push(&mut self, distance: f64, sticker_id: String) {
         if distance > self.max_distance
             || (self.vec.len() >= self.n && distance > self.worst_distance)
         {
@@ -69,18 +69,18 @@ pub struct Measures {
     pub embedding_cosine: TopMatches,
 }
 
-#[cfg(feature = "ssr")]
-impl Measures {
-    pub(super) fn new(
-        n: usize,
-        max_distance_histogram: f64,
-        max_distance_visual_hash: f64,
-        max_distance_embedding: f64,
-    ) -> Self {
-        Self {
-            histogram_cosine: TopMatches::new(n, max_distance_histogram),
-            visual_hash_cosine: TopMatches::new(n, max_distance_visual_hash),
-            embedding_cosine: TopMatches::new(n, max_distance_embedding),
-        }
-    }
-}
+// #[cfg(feature = "ssr")]
+// impl Measures {
+//     pub(super) fn new(
+//         n: usize,
+//         max_distance_histogram: f64,
+//         max_distance_visual_hash: f64,
+//         max_distance_embedding: f64,
+//     ) -> Self {
+//         Self {
+//             histogram_cosine: TopMatches::new(n, max_distance_histogram),
+//             visual_hash_cosine: TopMatches::new(n, max_distance_visual_hash),
+//             embedding_cosine: TopMatches::new(n, max_distance_embedding),
+//         }
+//     }
+// }

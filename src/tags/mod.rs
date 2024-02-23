@@ -8,6 +8,6 @@ mod util;
 pub use default::*;
 pub use download::*;
 pub use tag_manager::*;
-pub use tag_suggestions::suggest_tags;
+pub use tag_suggestions::{suggest_tags, ScoredTagSuggestion, Tfidf};
 pub use util::*;
 // pub use types::*;

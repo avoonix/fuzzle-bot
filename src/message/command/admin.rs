@@ -1,8 +1,8 @@
-use crate::bot::{Bot, BotError, BotExt, SendDocumentExt};
+use crate::background_tasks::send_daily_report;
+use crate::bot::{Bot, BotError, BotExt, RequestContext, SendDocumentExt};
 use crate::database::{export_database, Database};
 use crate::message::Keyboard;
 use crate::text::Markdown;
-use crate::worker::WorkerPool;
 use crate::Config;
 use flate2::read::GzEncoder;
 use flate2::Compression;
@@ -19,9 +19,6 @@ use super::user::RegularCommand;
 pub enum AdminCommand {
     #[command(description = "ADMIN ban a set (set name is case sensitive)")]
     BanSet { set_name: String },
-
-    #[command(description = "ADMIN queue all sets for refetching")]
-    RefetchAllSets,
 
     #[command(description = "ADMIN export json")]
     ExportJson,
@@ -41,37 +38,31 @@ impl AdminCommand {
 
     pub async fn execute(
         self,
-        bot: Bot,
         msg: Message,
-        database: Database,
-        worker: WorkerPool,
-        config: Config,
+        request_context: RequestContext,
     ) -> Result<(), BotError> {
         match self {
             Self::BanSet { set_name } => {
                 let set_name = set_name.trim();
                 if set_name.is_empty() {
-                    bot.send_markdown(msg.chat.id, Markdown::escaped("missing set name"))
+                    request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("missing set name"))
                         .await?;
                 } else {
-                    database.ban_set(set_name.to_string()).await?;
-                    bot.send_markdown(msg.chat.id, Markdown::escaped("banned set"))
+                    request_context.database.ban_set(set_name.to_string()).await?;
+                    request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("banned set"))
                         .await?;
                 }
             }
-            Self::RefetchAllSets => {
-                worker.refetch_all_sets().await;
-            }
             Self::ExportJson => {
-                send_database_export_to_chat(msg.chat.id, database.clone(), bot.clone()).await?;
+                send_database_export_to_chat(msg.chat.id, request_context.database.clone(), request_context.bot.clone()).await?;
             }
             Self::Ui => {
-                bot.send_markdown(msg.chat.id, Markdown::escaped("Log in with this button"))
-                    .reply_markup(Keyboard::ui(config.domain_name)?)
+                request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("Log in with this button"))
+                    .reply_markup(Keyboard::ui(request_context.config.domain_name.clone())?)
                     .await?;
             }
             Self::Report => {
-                worker.send_report().await;
+                send_daily_report(request_context.database, request_context.bot, request_context.config.get_admin_user_id()).await?;
             }
         }
 

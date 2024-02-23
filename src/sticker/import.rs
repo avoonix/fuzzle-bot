@@ -1,13 +1,13 @@
 use itertools::Itertools;
-use log::{info, warn};
+use log::{debug, info, warn};
 use teloxide::{requests::Requester, types::UserId};
 use tokio::task;
 
 use crate::{
-    bot::{Bot, BotError},
+    background_tasks::BackgroundTaskExt,
+    bot::{Bot, BotError, RequestContext},
     database::Database,
     util::{is_wrong_file_id_error, Emoji},
-    worker::WorkerPool,
 };
 
 use super::{
@@ -17,18 +17,15 @@ use super::{
 
 pub async fn import_all_stickers_from_set(
     set_name: String,
-    user_id: Option<UserId>,
     ignore_last_fetched: bool,
     bot: Bot,
     database: Database,
-    worker: WorkerPool,
 ) -> Result<(), BotError> {
     if !ignore_last_fetched {
         let fetched_recently = database
             .sticker_set_fetched_within_duration(set_name.clone(), chrono::Duration::hours(24))
             .await?;
         if fetched_recently {
-            info!("set fetched recently");
             return Ok(());
         }
     }
@@ -47,28 +44,24 @@ pub async fn import_all_stickers_from_set(
     };
     let set_name = set.name.clone(); // passed set name might be wrong casing (set names in databases are case sensitive)
 
-    if let Some(user_id) = user_id {
-        notify_admin_if_set_new(database.clone(), worker, set_name, user_id).await?;
-    }
-
     fetch_sticker_set_and_save_to_db(set, bot, database).await?;
 
     Ok(())
 }
 
-async fn notify_admin_if_set_new(
-    database: Database,
-    worker: WorkerPool,
+pub async fn notify_admin_if_set_new(
     set_name: String,
-    user_id: UserId,
+    request_context: RequestContext,
 ) -> anyhow::Result<()> {
-    let saved_set = database.get_sticker_set(set_name.clone()).await?;
+    let saved_set = request_context
+        .database
+        .get_sticker_set(set_name.clone())
+        .await?;
     if saved_set.is_none() {
         // TODO: this is sent even if the set is banned -> check if banned
-        worker
-            .dispatch_message_to_admin(
-                user_id,
-                crate::worker::AdminMessage::StickerSetAdded {
+        request_context
+            .send_message_to_admin_background(
+                crate::background_tasks::AdminMessage::StickerSetAdded {
                     set_name: set_name.clone(),
                 },
             )
@@ -89,10 +82,7 @@ async fn notify_admin_if_set_new(
 
 pub async fn import_individual_sticker_and_queue_set(
     sticker: teloxide::types::Sticker,
-    user_id: UserId,
-    bot: Bot,
-    database: Database,
-    worker: WorkerPool,
+    request_context: RequestContext,
 ) -> Result<(), BotError> {
     let Some(set_name) = sticker.set_name.clone() else {
         return Err(anyhow::anyhow!(
@@ -100,24 +90,36 @@ pub async fn import_individual_sticker_and_queue_set(
             &sticker.file.unique_id
         ))?;
     };
-    let sticker_in_database = database
+    let sticker_in_database = request_context
+        .database
         .get_sticker(sticker.file.unique_id.clone())
         .await?
         .is_some();
     if sticker_in_database {
         info!("sticker in database, queuing set");
-        worker.process_sticker_set(Some(user_id), set_name).await;
+        request_context
+            .process_sticker_set(set_name)
+            .await;
         return Ok(());
     }
 
     // sticker is not in database; ensure that the set exists before inserting the sticker
-    notify_admin_if_set_new(database.clone(), worker.clone(), set_name.clone(), user_id).await?;
-    database.create_sticker_set(set_name.clone(), None).await?;
+    notify_admin_if_set_new(
+        set_name.clone(),
+        request_context.clone(),
+    )
+    .await?;
+    request_context
+        .database
+        .create_sticker_set(set_name.clone(), None)
+        .await?;
     info!("sticker not in database");
 
-    fetch_sticker_and_save_to_db(sticker, set_name.clone(), bot, database).await?;
+    fetch_sticker_and_save_to_db(sticker, set_name.clone(), request_context.bot.clone(), request_context.database.clone()).await?;
 
-    worker.process_sticker_set(Some(user_id), set_name).await; // TODO: ignore last fetched? (in case multiple new stickers were added within the last 24 hours?)
+    request_context
+        .process_sticker_set(set_name)
+        .await; // TODO: ignore last fetched? (in case multiple new stickers were added within the last 24 hours?)
 
     Ok(())
 }
@@ -159,7 +161,6 @@ async fn fetch_sticker_set_and_save_to_db(
     database: Database,
 ) -> Result<(), BotError> {
     // TODO: result should be how many stickers were added/removed/updated
-    info!("fetching set {}", &set.name);
 
     database
         .create_sticker_set(set.name.clone(), Some(set.title.clone()))

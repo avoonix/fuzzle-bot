@@ -1,9 +1,10 @@
-use std::{collections::HashMap, iter::once};
+use std::{collections::HashMap, fmt::format, iter::once};
 
 use crate::{
     callback::TagOperation,
     database::{
-        AddedRemoved, AdminStats, FullUserStats, PopularTag, SavedStickerSet, Stats, UserSettings, UserStats
+        AddedRemoved, AdminStats, FullUserStats, PopularTag, SavedStickerSet, Stats, UserSettings,
+        UserStats,
     },
     message::{
         admin_command_description, escape_sticker_unique_id_for_command, user_command_description,
@@ -12,7 +13,10 @@ use crate::{
 };
 use itertools::Itertools;
 use log::warn;
-use teloxide::{types::Message, utils::markdown::escape};
+use teloxide::{
+    types::{Message, UserId},
+    utils::markdown::escape,
+};
 
 use super::Markdown;
 
@@ -38,6 +42,11 @@ impl Text {
     }
 
     #[must_use]
+    pub fn removed_set() -> Markdown {
+        Markdown::new("I can't add this sticker set\\.")
+    }
+
+    #[must_use]
     pub fn sticker_not_found() -> Markdown {
         Markdown::new("Sticker not found")
     }
@@ -49,11 +58,11 @@ impl Text {
             crate::database::StickerOrder::Random => "🔀 Random",
         };
 
-        Markdown::new(
-            format!("*Settings:*
+        Markdown::new(format!(
+            "*Settings:*
 Current Order: {order}
-"),
-        )
+"
+        ))
     }
 
     #[must_use]
@@ -107,6 +116,9 @@ Current Order: {order}
         "*Tagging:*
 Tag what you see\\. This is the same policy as e621\\. Tags are saved immediately\\.
 Infos \\(e621 wiki\\): [twys](https://e621.net/wiki_pages/1684), [genders](https://e621.net/wiki_pages/3294), [checklist](https://e621.net/wiki_pages/310)
+
+*Tag Locking:*
+Tag locking prevents adding or removing tags via set operations\\. This is useful for adding e\\.g\\. species or fur color tags to a whole set witout messing up the tags on attribution stickers\\.
 
 *Problems or Suggestions:*
 Create an issue on [GitHub](https://github.com/avoonix/fuzzle-bot/issues)\\.",
@@ -303,9 +315,60 @@ tag and wait for my reply before sending the next one\\.
                 })
         })
     }
+
+    #[must_use]
+    pub fn new_set(set_name: &str) -> Markdown {
+        Markdown::new(format!(
+            "Someone added the set {}",
+            format_set_as_markdown_link(set_name, set_name)
+        ))
+    }
+
+    #[must_use]
+    pub fn new_user(user_id: UserId) -> Markdown {
+        Markdown::new(format!(
+            "New user: {}",
+            format_user_id_as_markdown_link(user_id)
+        ))
+    }
+
+    #[must_use]
+    pub fn untagged_set(set_name: &str, tag: &str, count: u64) -> Markdown {
+        let tag = escape(tag);
+        let set = format_set_as_markdown_link(set_name, set_name);
+        Markdown::new(format!(
+            "Removed tag \"{tag}\" from set {set} \\({count} taggings changed\\)"
+        ))
+    }
+
+    #[must_use]
+    pub fn tagged_set(set_name: &str, tags: &[String], count: u64) -> Markdown {
+        let set = format_set_as_markdown_link(set_name, set_name);
+        let tags = tags
+            .iter()
+            .with_position()
+            .map(|(position, tag)| {
+                let tag = format!("\"{}\"", escape(tag));
+                match position {
+                    itertools::Position::Only => format!("tag {tag}"),
+                    itertools::Position::First => format!("tags {tag}"),
+                    itertools::Position::Middle => format!("{tag}"),
+                    itertools::Position::Last => format!("and {tag}"),
+                }
+            })
+            .join(", ");
+        Markdown::new(format!(
+            "Added {tags} for set {set} \\({count} taggings changed\\)"
+        ))
+    }
 }
 
 #[must_use]
 fn format_set_as_markdown_link(name: &str, title: &str) -> String {
     format!("[{}](https://t.me/addstickers/{})", escape(title), name)
+}
+
+#[must_use]
+fn format_user_id_as_markdown_link(user_id: UserId) -> String {
+    format!("[{}](tg://user?id={})", user_id, user_id)
 }

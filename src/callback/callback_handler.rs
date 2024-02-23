@@ -7,74 +7,92 @@ use teloxide::types::{
 };
 use url::Url;
 
-use crate::bot::{Bot, BotError, BotExt, UserMeta};
+use crate::bot::{Bot, BotError, BotExt, RequestContext, UserMeta};
 use crate::callback::TagOperation;
 use crate::database::{AddedRemoved, Database};
 use crate::message::Keyboard;
+use crate::sticker::import_all_stickers_from_set;
 use crate::tags::{suggest_tags, TagManager};
 use crate::text::{Markdown, Text};
 use crate::util::teloxide_error_can_safely_be_ignored;
-use crate::worker::WorkerPool;
 use std::sync::Arc;
 
 use crate::callback::CallbackData;
 
-async fn handle_sticker_lock(
+async fn change_sticker_locked_status(
     lock: bool,
     unique_id: String,
     q: CallbackQuery,
-    tag_manager: Arc<TagManager>,
-    user: UserMeta,
-    database: Database,
-    bot: Bot,
+    request_context: RequestContext,
 ) -> Result<(), BotError> {
-    if !user.can_tag_stickers() {
+    if !request_context.user.can_tag_stickers() {
         return Err(anyhow::anyhow!(
             "user is not permitted to change locked status"
         ))?;
     }
-    let Some(set_name) = database.get_set_name(unique_id.clone()).await? else {
+    let Some(set_name) = request_context
+        .database
+        .get_set_name(unique_id.clone())
+        .await?
+    else {
         // TODO: inform admin; this should not happen
-        return answer_callback_query(bot, q, Some(Text::sticker_not_found()), None, None).await;
+        return answer_callback_query(
+            request_context.clone(),
+            q,
+            Some(Text::sticker_not_found()),
+            None,
+            None,
+        )
+        .await;
     };
-    database
-        .set_locked(unique_id.clone(), user.id().0, lock)
+    request_context
+        .database
+        .set_locked(unique_id.clone(), request_context.user.id().0, lock)
         .await?;
 
-    // TODO: explain what locking does
-    send_tagging_keyboard(database, tag_manager, bot, set_name, None, unique_id, q).await
+    send_tagging_keyboard(request_context.clone(), set_name, None, unique_id, q).await
 }
 
 async fn handle_sticker_tag_action(
     operation: TagOperation,
     unique_id: String,
     q: CallbackQuery,
-    tag_manager: Arc<TagManager>,
-    user: UserMeta,
-    database: Database,
-    bot: Bot,
+    request_context: RequestContext,
 ) -> Result<(), BotError> {
-    if !user.can_tag_stickers() {
+    if !request_context.user.can_tag_stickers() {
         return Err(anyhow::anyhow!("user is not permitted to tag stickers"))?;
     }
-    let Some(set_name) = database.get_set_name(unique_id.clone()).await? else {
+    let Some(set_name) = request_context
+        .database
+        .get_set_name(unique_id.clone())
+        .await?
+    else {
         // TODO: inform admin; this should not happen
-        return answer_callback_query(bot, q, Some(Text::sticker_not_found()), None, None).await;
+        return answer_callback_query(
+            request_context.clone(),
+            q,
+            Some(Text::sticker_not_found()),
+            None,
+            None,
+        )
+        .await;
     };
 
     let notification;
 
     match operation {
         TagOperation::Tag(tag) => {
-            if let Some(implications) = tag_manager.get_implications(&tag) {
+            if let Some(implications) = request_context.tag_manager.get_implications(&tag) {
                 let tags = implications
                     .clone()
                     .into_iter()
                     .chain(std::iter::once(tag.clone()))
                     .collect_vec();
-                database
-                    .tag_sticker(unique_id.clone(), tags, Some(q.from.id.0))
+                request_context
+                    .database
+                    .tag_sticker(unique_id.clone(), tags, Some(request_context.user_id().0))
                     .await?;
+                request_context.tagging_worker.maybe_recompute().await?;
                 notification = if implications.is_empty() {
                     "Saved!".to_string()
                 } else {
@@ -85,10 +103,11 @@ async fn handle_sticker_tag_action(
             }
         }
         TagOperation::Untag(tag) => {
-            database
-                .untag_sticker(unique_id.clone(), tag.clone(), q.from.id.0)
+            request_context
+                .database
+                .untag_sticker(unique_id.clone(), tag.clone(), request_context.user_id().0)
                 .await?;
-            let implications = tag_manager.get_implications(&tag);
+            let implications = request_context.tag_manager.get_implications(&tag);
             notification = implications.map_or_else(
                 || "Tag does not exist!".to_string(),
                 |implications| {
@@ -105,37 +124,36 @@ async fn handle_sticker_tag_action(
         }
     }
 
-    send_tagging_keyboard(
-        database,
-        tag_manager,
-        bot,
-        set_name,
-        Some(notification),
-        unique_id,
-        q,
-    )
-    .await
+    send_tagging_keyboard(request_context, set_name, Some(notification), unique_id, q).await
 }
 
 async fn send_tagging_keyboard(
-    database: Database,
-    tag_manager: Arc<TagManager>,
-    bot: Bot,
+    request_context: RequestContext,
     set_name: String,
     notification: Option<String>,
     unique_id: String,
     q: CallbackQuery,
 ) -> Result<(), BotError> {
-    let tags = database.get_sticker_tags(unique_id.clone()).await?;
+    // database: Database,
+    // tag_manager: Arc<TagManager>,
+    // bot: Bot,
+    let tags = request_context
+        .database
+        .get_sticker_tags(unique_id.clone())
+        .await?;
     let suggested_tags = suggest_tags(
         &unique_id,
-        bot.clone(),
-        tag_manager.clone(),
-        database.clone(),
+        request_context.bot.clone(),
+        request_context.tag_manager.clone(),
+        request_context.database.clone(),
+        request_context.tagging_worker.clone(),
     )
     .await?;
-    let is_locked = database.sticker_is_locked(unique_id.clone()).await?;
-    let keyboard = Some(Keyboard::make_tag_keyboard(
+    let is_locked = request_context
+        .database
+        .sticker_is_locked(unique_id.clone())
+        .await?;
+    let keyboard = Some(Keyboard::tagging(
         &tags,
         &unique_id,
         &suggested_tags,
@@ -143,38 +161,41 @@ async fn send_tagging_keyboard(
         is_locked,
     ));
 
-    answer_callback_query(bot, q, None, keyboard, notification).await
+    answer_callback_query(request_context, q, None, keyboard, notification).await
 }
 
 pub async fn callback_handler(
-    bot: Bot,
     q: CallbackQuery,
-    tag_manager: Arc<TagManager>,
-    worker: WorkerPool,
-    database: Database,
-    user: UserMeta,
+    request_context: RequestContext,
 ) -> Result<(), BotError> {
+    // bot: Bot,
+    // tag_manager: Arc<TagManager>,
+    // database: Database,
+    // user: UserMeta,
     let data: CallbackData = q.data.clone().unwrap_or_default().try_into()?;
     match data {
         CallbackData::SetLock { lock, sticker_id } => {
-            handle_sticker_lock(lock, sticker_id, q, tag_manager, user, database, bot).await
+            change_sticker_locked_status(lock, sticker_id, q, request_context).await
         }
         CallbackData::Sticker {
             unique_id,
             operation,
-        } => {
-            handle_sticker_tag_action(operation, unique_id, q, tag_manager, user, database, bot)
-                .await
-        }
+        } => handle_sticker_tag_action(operation, unique_id, q, request_context).await,
         CallbackData::RemoveBlacklistedTag(tag) => {
-            remove_blacklist_tag(database, q, tag, bot).await
+            remove_blacklist_tag(q, tag, request_context).await
         }
-        CallbackData::RemoveSet(set_name) => remove_set(set_name, user, database, bot, q).await,
+        CallbackData::ChangeSetStatus { set_name, banned } => {
+            if banned {
+                ban_set(set_name, q, request_context).await
+            } else {
+                unban_set(set_name, q, request_context).await
+            }
+        }
         CallbackData::Help => {
             answer_callback_query(
-                bot,
+                request_context.clone(),
                 q,
-                Some(Text::get_help_text(user.is_admin)),
+                Some(Text::get_help_text(request_context.is_admin())),
                 Some(Keyboard::make_help_keyboard()),
                 None,
             )
@@ -182,18 +203,25 @@ pub async fn callback_handler(
         }
         CallbackData::Settings => {
             answer_callback_query(
-                bot,
+                request_context.clone(),
                 q,
-                Some(Text::get_settings_text(user.user.settings.clone())),
-                Some(Keyboard::make_settings_keyboard(user.user.settings)),
+                Some(Text::get_settings_text(
+                    request_context.user.user.settings.clone(),
+                )),
+                Some(Keyboard::make_settings_keyboard(
+                    request_context.user.user.settings.clone(),
+                )),
                 None,
             )
             .await
         }
         CallbackData::Blacklist => {
-            let blacklist = database.get_blacklist(q.from.id.0).await?;
+            let blacklist = request_context
+                .database
+                .get_blacklist(request_context.user_id().0)
+                .await?;
             answer_callback_query(
-                bot,
+                request_context,
                 q,
                 Some(Text::get_blacklist_text()),
                 Some(Keyboard::make_blacklist_keyboard(&blacklist)),
@@ -204,7 +232,7 @@ pub async fn callback_handler(
         // show main menu: show main menu, edit message, add keyboard
         CallbackData::Start => {
             answer_callback_query(
-                bot,
+                request_context,
                 q,
                 Some(Text::get_main_text()),
                 Some(Keyboard::make_main_keyboard()),
@@ -214,7 +242,7 @@ pub async fn callback_handler(
         }
         CallbackData::Info => {
             answer_callback_query(
-                bot,
+                request_context,
                 q,
                 Some(Text::infos()),
                 Some(Keyboard::make_info_keyboard()),
@@ -223,27 +251,33 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::UserInfo(user_id) => {
-            if !user.is_admin {
+            if !request_context.user.is_admin {
                 return Ok(());
             }
-            bot.answer_callback_query(&q.id).await?;
+            request_context.bot.answer_callback_query(&q.id).await?;
 
-            let user_stats = database.get_user_stats(user_id).await?;
+            let user_stats = request_context.database.get_user_stats(user_id).await?;
             // TODO: allow each user to view their own stats
 
-            bot.send_markdown(user.id(), Text::user_stats(user_stats, user_id))
+            request_context
+                .bot
+                .send_markdown(
+                    request_context.user_id(),
+                    Text::user_stats(user_stats, user_id),
+                )
                 .reply_markup(Keyboard::user_stats(user_id)?)
                 .await?;
             Ok(())
         }
         CallbackData::SetOrder(order) => {
-            let mut settings = user.user.settings.clone();
+            let mut settings = request_context.user.user.settings.clone();
             settings.order = Some(order);
-            database
-                .update_settings(user.id().0, settings.clone())
+            request_context
+                .database
+                .update_settings(request_context.user_id().0, settings.clone())
                 .await?;
             answer_callback_query(
-                bot,
+                request_context,
                 q,
                 Some(Text::get_settings_text(settings.clone())),
                 Some(Keyboard::make_settings_keyboard(settings)),
@@ -255,18 +289,21 @@ pub async fn callback_handler(
 }
 
 async fn remove_blacklist_tag(
-    database: Database,
     q: CallbackQuery,
     tag: String,
-    bot: Bot,
+    request_context: RequestContext,
 ) -> Result<(), BotError> {
-    database
-        .remove_blacklisted_tag(q.from.id.0, tag.clone())
+    request_context
+        .database
+        .remove_blacklisted_tag(request_context.user_id().0, tag.clone())
         .await?;
-    let blacklist = database.get_blacklist(q.from.id.0).await?;
+    let blacklist = request_context
+        .database
+        .get_blacklist(request_context.user_id().0)
+        .await?;
     let keyboard = Keyboard::make_blacklist_keyboard(&blacklist);
     answer_callback_query(
-        bot,
+        request_context,
         q,
         Some(Text::get_blacklist_text()),
         Some(keyboard),
@@ -276,26 +313,48 @@ async fn remove_blacklist_tag(
     Ok(())
 }
 
-async fn remove_set(
+async fn unban_set(
     set_name: String,
-    user: UserMeta,
-    database: Database,
-    bot: Bot,
     q: CallbackQuery,
+    request_context: RequestContext,
 ) -> Result<(), BotError> {
-    if !user.is_admin {
-        return Err(anyhow::anyhow!(
-            "user is not permitted to tag stickers (callback handler)"
-        ))?;
+    if !request_context.is_admin() {
+        return Err(anyhow::anyhow!("user is not permitted to unban sets"))?;
+    }
+    request_context.database.unban_set(set_name.clone()).await?;
+    import_all_stickers_from_set(
+        set_name.clone(),
+        true,
+        request_context.bot.clone(),
+        request_context.database.clone(),
+    )
+    .await?;
+    answer_callback_query(
+        request_context,
+        q,
+        Some(Markdown::escaped(format!("Added Set {}", set_name))),
+        Some(InlineKeyboardMarkup::new([[]])), // TODO: refactor
+        None,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn ban_set(
+    set_name: String,
+    q: CallbackQuery,
+    request_context: RequestContext,
+) -> Result<(), BotError> {
+    if !request_context.is_admin() {
+        return Err(anyhow::anyhow!("user is not permitted to remove sets"))?;
     }
     // TODO: maybe require a confirmation? or add a "undo" keyboard?
-    // TODO: only allow admin
-    database.ban_set(set_name).await?;
+    request_context.database.ban_set(set_name.clone()).await?;
     answer_callback_query(
-        bot,
+        request_context.clone(),
         q,
-        Some(Markdown::escaped("Deleted Set".to_string())),
-        None,
+        Some(Text::removed_set()),
+        Some(Keyboard::removed_set(request_context.is_admin(), set_name)),
         None,
     )
     .await?;
@@ -304,12 +363,13 @@ async fn remove_set(
 
 /// answers the user by editing the message
 async fn answer_callback_query(
-    bot: Bot,
+    request_context: RequestContext,
     q: CallbackQuery,
     text: Option<Markdown>,
     keyboard: Option<InlineKeyboardMarkup>,
     notification: Option<String>,
 ) -> Result<(), BotError> {
+    let bot = request_context.bot;
     if let Some(keyboard) = keyboard {
         if let Some(Message { id, chat, kind, .. }) = q.message {
             if let Some(text) = text {

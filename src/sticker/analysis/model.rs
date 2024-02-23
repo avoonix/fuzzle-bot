@@ -5,8 +5,24 @@ use std::{collections::HashMap, io::Cursor};
 use tokio::{fs::File, io::AsyncReadExt};
 use tract_itertools::Itertools;
 use tract_onnx::prelude::*;
+use thiserror::Error;
 
 use super::tokenizer::tokenize;
+
+#[derive(Error, Debug)]
+pub enum EmbeddingError {
+    #[error("unknown token")]
+    UnknownToken(String),
+
+    #[error("io error")]
+    Io(#[from] std::io::Error),
+
+    #[error("image decoding error")]
+    Image(#[from] image::ImageError),
+
+    #[error("other error")]
+    Other(#[from] anyhow::Error),
+}
 
 #[derive(Debug, Clone)]
 pub struct ModelEmbedding {
@@ -37,6 +53,12 @@ impl From<Vec<u8>> for ModelEmbedding {
     }
 }
 
+impl From<ModelEmbedding> for Vec<f32> {
+    fn from(value: ModelEmbedding) -> Self {
+        value.vec
+    }
+}
+
 impl From<ModelEmbedding> for Vec<f64> {
     fn from(value: ModelEmbedding) -> Self {
         value.vec.into_iter().map(|val| val as f64).collect()
@@ -58,11 +80,11 @@ static TEXTUAL_MODEL: Lazy<
     let mut gz = GzDecoder::new(model.as_slice());
     onnx()
         .model_for_read(&mut gz)
-        .unwrap()
+        .expect("hardcoded model to work")
         .into_optimized()
-        .unwrap()
+        .expect("hardcoded model to work")
         .into_runnable()
-        .unwrap()
+        .expect("hardcoded model to work")
 });
 
 static VISUAL_MODEL: Lazy<
@@ -74,15 +96,15 @@ static VISUAL_MODEL: Lazy<
     let mut gz = GzDecoder::new(model.as_slice());
     onnx()
         .model_for_read(&mut gz)
-        .unwrap()
+        .expect("hardcoded model to work")
         .into_optimized()
-        .unwrap()
+        .expect("hardcoded model to work")
         .into_runnable()
-        .unwrap()
+        .expect("hardcoded model to work")
 });
 
 impl ModelEmbedding {
-    pub fn from_text(text: &str) -> anyhow::Result<Self> {
+    pub fn from_text(text: &str) -> Result<Self, EmbeddingError> {
         let model = &TEXTUAL_MODEL;
         let tokens = tokenize(&[text.to_string()])?;
         let result = model.run(tvec!(tokens.into()))?;
@@ -95,7 +117,7 @@ impl ModelEmbedding {
             .into())
     }
 
-    pub fn from_image_buf(buf: Vec<u8>) -> anyhow::Result<Self> {
+    pub fn from_image_buf(buf: Vec<u8>) -> Result<Self, EmbeddingError> {
         let model = &VISUAL_MODEL;
         let img2 = ImageReader::new(Cursor::new(buf))
             .with_guessed_format()?

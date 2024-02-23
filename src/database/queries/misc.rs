@@ -80,23 +80,24 @@ impl Database {
             .fetch_one(&self.pool)
             .await?;
 
-        let affected_sets_24 = sqlx::query!("select 'tagged' as operation, set_id, count() as count from file_hash_tag left join sticker on sticker.file_hash = file_hash_tag.file_hash where file_hash_tag.added_by_user_id = ?1 AND julianday('now') - julianday(file_hash_tag.created_at) <= 1 group by set_id
+        let affected_sets_24 = sqlx::query!("select 'tagged' as operation, set_id, count() as count from file_hash_tag left join sticker on sticker.file_hash = file_hash_tag.file_hash where file_hash_tag.added_by_user_id = ?1 AND julianday('now') - julianday(file_hash_tag.created_at) <= 1 group by sticker.file_hash
 UNION
-select 'untagged' as operation, set_id, count() as count from file_hash_tag_history left join sticker on sticker.file_hash = file_hash_tag_history.file_hash where file_hash_tag_history.removed_by_user_id = ?1 AND julianday('now') - julianday(file_hash_tag_history.created_at) <= 1 group by set_id;", user_id)
+select 'untagged' as operation, set_id, count() as count from file_hash_tag_history left join sticker on sticker.file_hash = file_hash_tag_history.file_hash where file_hash_tag_history.removed_by_user_id = ?1 AND julianday('now') - julianday(file_hash_tag_history.created_at) <= 1 group by sticker.file_hash;", user_id)
             .fetch_all(&self.pool)
             .await?;
 
         let mut affected_24 = HashMap::new();
 
         for affected in affected_sets_24 {
+            // set id might be missing if the set was banned
             if let Some(set_id) = affected.set_id {
                 let entry = affected_24.entry(set_id).or_insert(AddedRemoved {
                     added: 0,
                     removed: 0,
                 });
                 match affected.operation.as_ref() {
-                    "tagged" => (*entry).added = affected.count,
-                    "untagged" => (*entry).removed = affected.count,
+                    "tagged" => (*entry).added += affected.count,
+                    "untagged" => (*entry).removed += affected.count,
                     _ => Err(anyhow::anyhow!("invalid operation {}", affected.operation))?,
                 }
             }

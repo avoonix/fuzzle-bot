@@ -1,4 +1,4 @@
-use crate::bot::{Bot, BotExt, UserMeta};
+use crate::bot::{Bot, BotExt, RequestContext, UserMeta};
 use crate::database::Database;
 use crate::message::Keyboard;
 use crate::tags::{suggest_tags, TagManager};
@@ -50,15 +50,15 @@ impl RegularCommand {
         Self::bot_commands()
     }
 
-    pub async fn execute(
-        self,
-        bot: Bot,
-        msg: Message,
-        tag_manager: Arc<TagManager>,
-        database: Database,
-        user: UserMeta,
-        config: Config,
-    ) -> Result<()> {
+    pub async fn execute(self, msg: Message, request_context: RequestContext) -> Result<()> {
+        let RequestContext {
+            config,
+            database,
+            tag_manager,
+            bot,
+            user,
+            ..
+        } = request_context;
         match self {
             Self::Help => {
                 bot.send_markdown(msg.chat.id, Text::get_help_text(user.is_admin))
@@ -73,7 +73,7 @@ impl RegularCommand {
                         .await?;
                 }
                 StartParameter::Regular | StartParameter::Greeting => {
-                    if let Some(greeting_sticker_id) = config.greeting_sticker_id {
+                    if let Some(greeting_sticker_id) = config.greeting_sticker_id.clone() {
                         let sticker = database.get_sticker(greeting_sticker_id).await?;
                         if let Some(sticker) = sticker {
                             bot.send_sticker(msg.chat.id, InputFile::file_id(sticker.file_id))
@@ -101,14 +101,20 @@ impl RegularCommand {
                 }
             },
             Self::EmbeddingSearch => {
-                bot.send_markdown(msg.chat.id, Markdown::escaped("Use the button below to search"))
-                    .reply_markup(Keyboard::embedding())
-                    .await?;
+                bot.send_markdown(
+                    msg.chat.id,
+                    Markdown::escaped("Use the button below to search"),
+                )
+                .reply_markup(Keyboard::embedding())
+                .await?;
             }
             Self::Settings => {
-                bot.send_markdown(msg.chat.id, Text::get_settings_text(user.user.settings.clone()))
-                    .reply_markup(Keyboard::make_settings_keyboard(user.user.settings))
-                    .await?;
+                bot.send_markdown(
+                    msg.chat.id,
+                    Text::get_settings_text(user.user.settings.clone()),
+                )
+                .reply_markup(Keyboard::make_settings_keyboard(user.user.settings.clone()))
+                .await?;
             }
             Self::PopularTags => {
                 let tags = database.get_popular_tags(20).await?;
@@ -131,12 +137,13 @@ impl RegularCommand {
                         bot.clone(),
                         tag_manager.clone(),
                         database.clone(),
+                        request_context.tagging_worker.clone(),
                     )
                     .await?;
                     let set_name = database.get_set_name(sticker.id.clone()).await?;
                     let is_locked = database.sticker_is_locked(sticker.id.clone()).await?;
                     bot.send_sticker(msg.chat.id, InputFile::file_id(sticker.file_id))
-                        .reply_markup(Keyboard::make_tag_keyboard(
+                        .reply_markup(Keyboard::tagging(
                             &tags,
                             &sticker.id,
                             &suggested_tags,

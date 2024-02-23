@@ -2,7 +2,7 @@
 ❔ ❓ ⁉️  => question_mark;
 ⛓ 🔗 🔓 🔏 🔒 🔐 => bondage bound;
 🗝 🔑 🔓 🔏 🔒 🔐 ⛓  🔗 => chastity_cage;
-🐾 👣 🦶 🧦 🦵 any_str("paws") => foot_focus foot_fetish paws;
+🐾 👣 🦶 🧦 🦵 any_str("paws") => foot_fetish paws;
 👙 👗 🚺 => girly;
 👙 🩲 => underwear;
 🧦 🦵 => thigh_highs;
@@ -32,7 +32,7 @@ any_str("cuddle") any_str("cuddly") => safe;
 🍼 👶 any_str("bab") any_str("smol") any_str("little") any_str("young") any_str("scoty") => young diaper;
 💋 👄 😙 😚 => kissing oral;
 😘 => kissing <3;
-👼 😇 => angel;
+👼 😇 => halo;
 🍩 => presenting_anus rimming;
 🍑 => presenting_hindquarters;
 🥚 => balls egg;

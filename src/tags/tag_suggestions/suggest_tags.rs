@@ -1,4 +1,5 @@
-use crate::bot::Bot;
+use crate::background_tasks::TaggingWorker;
+use crate::bot::{Bot, RequestContext};
 use crate::database::Database;
 
 use crate::tags::TagManager;
@@ -7,6 +8,7 @@ use anyhow::Result;
 use itertools::Itertools;
 use teloxide::requests::Requester;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::{suggest_tags_2, ScoredTagSuggestion};
@@ -16,7 +18,12 @@ pub async fn suggest_tags(
     bot: Bot,
     tag_manager: Arc<TagManager>,
     database: Database,
+    tagging_worker: TaggingWorker,
 ) -> Result<Vec<String>> {
+    let start = chrono::Utc::now();
+    let sticker = database.get_sticker(sticker_unique_id.to_string()).await?;
+    let sticker = sticker.unwrap();
+
     // TODO: redo these suggestion
     let suggested_tags = database
         .suggest_tags_for_sticker_based_on_other_stickers_in_set(sticker_unique_id.to_string())
@@ -28,8 +35,15 @@ pub async fn suggest_tags(
         .unwrap_or(1);
     let mut suggested_tags = suggested_tags
         .into_iter()
-        .map(|tag| ScoredTagSuggestion::new(tag.name, (tag.count as f64 / max_count as f64) * 0.75))
+        .map(|tag| ScoredTagSuggestion::new(tag.name, (tag.count as f64 / max_count as f64) * 0.5))
         .collect_vec(); // TODO: change scoring
+
+    suggested_tags = ScoredTagSuggestion::merge(
+        suggested_tags,
+        tagging_worker
+            .suggest(sticker_unique_id.to_string())
+            .await?,
+    );
 
     // TODO: single call
     let set = database.get_set(sticker_unique_id.to_string()).await?;
@@ -82,9 +96,13 @@ pub async fn suggest_tags(
     //
     // }
 
-    Ok(suggested_tags
+    let result = Ok(suggested_tags
         .into_iter()
+        .filter(|suggestion| !sticker_tags.contains(&suggestion.tag))
         .take(30)
         .map(|suggestion| suggestion.tag)
-        .collect_vec())
+        .collect_vec());
+    let elapsed = chrono::Utc::now() - start;
+    dbg!(elapsed.num_milliseconds());
+    result
 }

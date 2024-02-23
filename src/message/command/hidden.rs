@@ -1,11 +1,10 @@
-use crate::bot::{Bot, BotExt, UserMeta};
+use crate::bot::{Bot, BotExt, RequestContext, UserMeta};
 use crate::callback::TagOperation;
 use crate::database::Database;
 use crate::inline::SetOperation;
 use crate::message::Keyboard;
 use crate::tags::{suggest_tags, TagManager};
 use crate::text::{Markdown, Text};
-use crate::worker::WorkerPool;
 use anyhow::Result;
 use itertools::Itertools;
 use teloxide::types::{InputFile, ReplyMarkup};
@@ -53,15 +52,14 @@ pub enum HiddenCommand {
 }
 
 impl HiddenCommand {
-    pub async fn execute(
-        self,
-        bot: Bot,
-        msg: Message,
-        tag_manager: Arc<TagManager>,
-        worker: WorkerPool,
-        database: Database,
-        user: UserMeta,
-    ) -> Result<()> {
+    pub async fn execute(self, msg: Message, request_context: RequestContext) -> Result<()> {
+        let RequestContext {
+            user,
+            bot,
+            database,
+            tag_manager,
+            ..
+        } = request_context.clone();
         match self {
             Self::TagSticker {
                 sticker_unique_id,
@@ -82,6 +80,7 @@ impl HiddenCommand {
                         database
                             .tag_sticker(sticker_unique_id.clone(), tags, Some(user.id().0))
                             .await?;
+                        request_context.tagging_worker.maybe_recompute().await?;
                     }
                     let tags = database.get_sticker_tags(sticker_unique_id.clone()).await?;
                     let suggested_tags = suggest_tags(
@@ -89,20 +88,23 @@ impl HiddenCommand {
                         bot.clone(),
                         tag_manager,
                         database.clone(),
+                        request_context.tagging_worker.clone(),
                     )
                     .await?;
                     let set_name = database.get_set_name(sticker_unique_id.clone()).await?;
-                    let is_locked = database.sticker_is_locked(sticker_unique_id.clone()).await?;
+                    let is_locked = database
+                        .sticker_is_locked(sticker_unique_id.clone())
+                        .await?;
                     bot.send_sticker(msg.chat.id, InputFile::file_id(sticker.file_id)) // TODO: fetch
                         // file id
                         // from
                         // database
-                        .reply_markup(Keyboard::make_tag_keyboard(
+                        .reply_markup(Keyboard::tagging(
                             &tags,
                             &sticker_unique_id,
                             &suggested_tags,
                             set_name,
-                            is_locked
+                            is_locked,
                         ))
                         .await?;
                 } else {
@@ -157,32 +159,10 @@ impl HiddenCommand {
                     .await?;
             }
             Self::TagSet { set_name, tag } => {
-                set_tag_operation(
-                    tag,
-                    set_name,
-                    SetOperation::Tag,
-                    user,
-                    worker,
-                    tag_manager,
-                    bot,
-                    database,
-                    msg,
-                )
-                .await?;
+                set_tag_operation(tag, set_name, SetOperation::Tag, msg, request_context).await?;
             }
             Self::UntagSet { set_name, tag } => {
-                set_tag_operation(
-                    tag,
-                    set_name,
-                    SetOperation::Untag,
-                    user,
-                    worker,
-                    tag_manager,
-                    bot,
-                    database,
-                    msg,
-                )
-                .await?;
+                set_tag_operation(tag, set_name, SetOperation::Untag, msg, request_context).await?;
             }
             Self::TagContinuous { tag } => {
                 bot.send_markdown(
@@ -233,49 +213,52 @@ async fn set_tag_operation(
     tag: String,
     set_name: String,
     operation: SetOperation,
-    user: UserMeta,
-    worker: WorkerPool,
-    tag_manager: Arc<TagManager>,
-    bot: Bot,
-    database: Database,
     msg: Message,
+    request_context: RequestContext,
 ) -> Result<()> {
-    if !user.can_tag_sets() {
+    if !request_context.user.can_tag_sets() {
         return Err(anyhow::anyhow!(
             "user is not permitted to tag sets (hidden command)"
         ))?;
     }
     let message = match operation {
         SetOperation::Tag => {
-            if let Some(implications) = tag_manager.get_implications(&tag) {
+            if let Some(implications) = request_context.tag_manager.get_implications(&tag) {
                 let tags = implications
                     .into_iter()
                     .chain(std::iter::once(tag.clone()))
                     .collect_vec();
-                let taggings_changed = database
-                    .tag_all_stickers_in_set(set_name.clone(), tags, user.id().0)
+                let taggings_changed = request_context
+                    .database
+                    .tag_all_stickers_in_set(set_name.clone(), tags.clone(), request_context.user_id().0)
                     .await?;
-                Markdown::escaped(format!("Changed {taggings_changed} taggings (including implied tags) in set `{set_name}` with tag `{tag}`"))
+                request_context.tagging_worker.maybe_recompute().await?;
+                Text::tagged_set(&set_name, &tags, taggings_changed)
             } else {
                 Markdown::escaped("No tags changed".to_string())
             }
         }
         SetOperation::Untag => {
-            let taggings_changed = database
-                .untag_all_stickers_in_set(set_name.clone(), tag.clone(), user.id().0)
+            let taggings_changed = request_context
+                .database
+                .untag_all_stickers_in_set(
+                    set_name.clone(),
+                    tag.clone(),
+                    request_context.user_id().0,
+                )
                 .await?;
-            Markdown::escaped(format!(
-                "Changed {taggings_changed} taggings in set `{set_name}` (removed tag `{tag}`)"
-            ))
+            Text::untagged_set(&set_name, &tag, taggings_changed)
         }
     };
-    bot.send_markdown(
-        msg.chat.id,
-        message, // TODO: do not escape the `` -> tags should be inline code
-    )
-    .reply_to_message_id(msg.id)
-    .allow_sending_without_reply(true)
-    .reply_markup(Keyboard::make_set_keyboard(set_name))
-    .await?;
+    request_context
+        .bot
+        .send_markdown(
+            msg.chat.id,
+            message, // TODO: do not escape the `` -> tags should be inline code
+        )
+        .reply_to_message_id(msg.id)
+        .allow_sending_without_reply(true)
+        .reply_markup(Keyboard::make_set_keyboard(set_name))
+        .await?;
     Ok(())
 }

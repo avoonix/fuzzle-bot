@@ -9,7 +9,7 @@ use futures::Future;
 use itertools::Itertools;
 use ring::{digest, hmac};
 use serde::{Deserialize, Serialize};
-use std::pin::Pin;
+use std::{pin::Pin, sync::Arc};
 use teloxide::types::UserId;
 
 pub const AUTH_COOKIE_NAME: &str = "fuzzlebot_login_data";
@@ -62,8 +62,8 @@ impl AuthData {
 
 #[derive(Debug)]
 pub struct AuthenticatedUser {
-    pub auth_data: AuthData,
-    pub user_meta: UserMeta,
+    pub auth_data: Arc<AuthData>,
+    pub user_meta: Arc<UserMeta>,
 }
 
 impl FromRequest for AuthenticatedUser {
@@ -86,14 +86,14 @@ impl FromRequest for AuthenticatedUser {
                     UserId(auth_data.id),
                     data.config.clone(),
                     data.database.clone(),
-                    data.worker.clone(),
+                    data.bot.clone(),
                 )
                 .await
                 .map_err(|err| ErrorInternalServerError("failed to create/get user"))?; // TODO: properly handle
 
                 Ok(AuthenticatedUser {
-                    auth_data,
-                    user_meta,
+                    auth_data: auth_data.into(),
+                    user_meta: user_meta.into(),
                 })
             } else {
                 Err(ErrorUnauthorized("invalid auth data")) // TODO: properly handle

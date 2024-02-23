@@ -20,11 +20,12 @@ pub async fn get_default_tag_manager(dir: PathBuf) -> anyhow::Result<Arc<TagMana
         .set_match_distance(0.7)
         .set_allowed_statuses(vec!["active".to_string(), "pending".to_string()])
         .add_default_tags()
-        .add_tags_from_csv(tags, 1_000, true)
+        .add_tags_from_csv(tags, 500, 1_000, true, true)
         .add_default_aliases()
         .add_aliases_from_csv(aliases)
         .add_default_implications()
         .add_implications_from_csv(implications)
+        .compute_transitive_implications()
         .compute_inverse_implications();
     Ok(Arc::new(tags))
 }

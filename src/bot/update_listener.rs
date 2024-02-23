@@ -4,7 +4,8 @@ use crate::database::Database;
 use crate::inline::{inline_query_handler, inline_result_handler};
 use crate::message::{list_visible_admin_commands, list_visible_user_commands, message_handler};
 use crate::tags::{get_default_tag_manager, TagManager};
-use crate::worker::WorkerPool;
+use crate::util::Timer;
+use crate::background_tasks::{start_periodic_tasks, AnalysisWorker, TaggingWorker};
 use crate::Paths;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,16 +17,16 @@ use teloxide::types::{AllowedUpdate, ParseMode};
 use teloxide::update_listeners::Polling;
 
 use super::error_handler::ErrorHandler;
-use super::user_meta::inject_user;
+use super::user_meta::inject_context;
 use super::{Bot, BotError};
 
 #[derive(Debug)]
 pub struct UpdateListener {
     tags: Arc<TagManager>,
     bot: Bot,
-    config: Config,
+    config: Arc<Config>,
     database: Database,
-    paths: Paths,
+    paths: Arc<Paths>,
 }
 
 impl UpdateListener {
@@ -39,6 +40,8 @@ impl UpdateListener {
             .throttle(Limits::default())
             .parse_mode(ParseMode::MarkdownV2);
         let database = Database::new(paths.db()).await?;
+        let config = Arc::new(config);
+        let paths = Arc::new(paths);
 
         Ok(Self {
             tags,
@@ -69,27 +72,22 @@ impl UpdateListener {
     }
 
     pub async fn listen(&self) -> anyhow::Result<()> {
-        let (handle, worker) = WorkerPool::start_manager(
-            self.bot.clone(),
-            self.config.get_admin_user_id(),
-            self.database.clone(),
-            self.config.worker.queue_length,
-            self.config.worker.concurrency,
-            self.paths.clone(),
-        )
-        .await;
+        let analysis_worker = AnalysisWorker::start(self.database.clone());
+        let tagging_worker = TaggingWorker::start(self.database.clone());
+        start_periodic_tasks(self.bot.clone(), self.config.get_admin_user_id(), self.database.clone(), self.paths.clone(), analysis_worker.clone());
 
         crate::web::server::setup(
             self.config.clone(),
             self.database.clone(),
             self.tags.clone(),
-            worker.clone(),
             self.bot.clone(),
             self.paths.clone(),
+            analysis_worker.clone(),
+            tagging_worker.clone(),
         );
 
         let handler: Handler<'_, _, Result<(), BotError>, _> = dptree::entry()
-            .chain(dptree::filter_map_async(inject_user))
+            .chain(dptree::filter_map_async(inject_context))
             .branch(Update::filter_message().endpoint(message_handler))
             .branch(Update::filter_callback_query().endpoint(callback_handler))
             .branch(Update::filter_inline_query().endpoint(inline_query_handler))
@@ -113,8 +111,10 @@ impl UpdateListener {
             .dependencies(dptree::deps![
                 self.config.clone(),
                 self.tags.clone(),
-                worker,
-                self.database.clone()
+                self.database.clone(),
+                self.paths.clone(),
+                analysis_worker,
+                tagging_worker
             ])
             .default_handler(|upd| async move {
                 log::warn!("Unhandled update: {:?}", upd);
@@ -131,7 +131,6 @@ impl UpdateListener {
                 LoggingErrorHandler::with_custom_text("UPDATE LISTENER ERROR"),
             )
             .await;
-        drop(handle);
         Ok(())
     }
 }

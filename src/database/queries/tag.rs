@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::database::model::PopularTag;
 use crate::database::UserStats;
+use crate::util::Emoji;
 
 use super::DatabaseError;
 
@@ -156,5 +157,21 @@ impl Database {
         }
 
         Ok(result)
+    }
+
+    pub async fn get_all_tag_emoji_pairs(
+        &self,
+    ) -> Result<Vec<(Emoji, String, u64)>, DatabaseError> {
+        let result = sqlx::query!("select sticker.emoji as emoji, file_hash_tag.tag as tag, count() as count from file_hash_tag inner join sticker on sticker.file_hash = file_hash_tag.file_hash group by emoji, tag")
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(result
+            .into_iter()
+            .filter_map(|entry| {
+                Emoji::parse(&entry.emoji)
+                    .first()
+                    .map(|emoji| (emoji.clone(), entry.tag, entry.count as u64))
+            })
+            .collect_vec())
     }
 }

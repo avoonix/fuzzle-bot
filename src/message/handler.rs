@@ -3,20 +3,20 @@ use log::info;
 use std::sync::Arc;
 use teloxide::{
     payloads::SendMessageSetters,
-    types::{Me, Message, MessageEntityKind, MessageEntityRef, ReplyMarkup, Sticker},
+    types::{Message, MessageEntityKind, MessageEntityRef, ReplyMarkup, Sticker},
     utils::command::{BotCommands, ParseError},
 };
 use url::Url;
 
 use crate::{
-    bot::{Bot, BotError, BotExt, Config, UserMeta},
+    background_tasks::BackgroundTaskExt,
+    bot::{Bot, BotError, BotExt, Config, RequestContext, UserMeta},
     callback::TagOperation,
     database::Database,
     sticker::import_individual_sticker_and_queue_set,
     tags::{suggest_tags, TagManager},
     text::{Markdown, Text},
-    util::Emoji,
-    worker::WorkerPool,
+    util::{Emoji, Timer},
 };
 
 use super::{
@@ -63,118 +63,144 @@ fn get_sticker_set_name_from_url(url: &Url) -> Option<String> {
     }
 }
 
-pub async fn message_handler(
-    bot: Bot,
-    msg: Message,
-    me: Me,
-    config: Config,
-    tag_manager: Arc<TagManager>,
-    worker: WorkerPool,
-    database: Database,
-    user: UserMeta,
-) -> Result<(), BotError> {
-    let entities = get_all_entities_from_message(&msg);
+fn find_sticker_set_urls(msg: &Message) -> Vec<String> {
+    let entities = get_all_entities_from_message(msg);
     let urls = get_all_urls_from_entities(entities);
-    let potential_sticker_set_names = urls
-        .iter()
+    urls.iter()
         .filter_map(get_sticker_set_name_from_url)
-        .collect_vec();
+        .collect_vec()
+}
 
-    let continuous_tag_mode_tag = msg
-        .reply_to_message()
-        .and_then(Text::parse_continuous_tag_mode_message);
-
+async fn handle_sticker_sets(
+    msg: &Message,
+    potential_sticker_set_names: Vec<String>,
+    request_context: RequestContext,
+) -> Result<(), BotError> {
     for set_name in &potential_sticker_set_names {
-        worker
-            .process_sticker_set(Some(user.id()), set_name.to_string())
+        request_context
+            .process_sticker_set(set_name.to_string())
             .await;
     }
-    let found_sticker_set = !potential_sticker_set_names.is_empty();
-    if found_sticker_set {
-        bot.send_markdown(
+    request_context
+        .bot
+        .send_markdown(
             msg.chat.id,
             Text::get_processed_sticker_sets_text(potential_sticker_set_names),
         )
         .reply_to_message_id(msg.id)
         .await?;
-    }
-    if let Some(text) = msg.text() {
-        if !found_sticker_set {
-            let text = &fix_underline_command_separator(text);
-            let bot_user = me.username();
-            match RegularCommand::parse(text, bot_user) {
-                Ok(command) => {
-                    command
-                        .execute(bot, msg, tag_manager, database, user, config)
-                        .await?;
-                }
-                Err(err) => {
-                    if is_unknown_command(&err) {
-                        // hidden command
-                        match HiddenCommand::parse(text, bot_user) {
-                            Ok(command) => {
-                                command
-                                    .execute(bot, msg, tag_manager, worker, database, user)
-                                    .await?;
-                            }
-                            Err(err) => {
-                                if is_unknown_command(&err) && user.is_admin {
-                                    // admin command
-                                    match AdminCommand::parse(text, bot_user) {
-                                        Ok(command) => {
-                                            command.execute(bot, msg, database, worker, config).await?;
-                                        }
-                                        Err(err) => {
-                                            handle_command_error(bot, msg, err).await?;
-                                        }
-                                    }
-                                } else {
-                                    handle_command_error(bot, msg, err).await?;
+    Ok(())
+}
+
+async fn handle_text_message(
+    text: &str,
+    request_context: RequestContext,
+    msg: Message,
+) -> Result<(), BotError> {
+    let text = &fix_underline_command_separator(text);
+    match RegularCommand::parse(text, &request_context.config.telegram.username) {
+        Ok(command) => {
+            command.execute(msg, request_context).await?;
+        }
+        Err(err) => {
+            if is_unknown_command(&err) {
+                match HiddenCommand::parse(text, &request_context.config.telegram.username) {
+                    Ok(command) => {
+                        command.execute(msg, request_context).await?;
+                    }
+                    Err(err) => {
+                        if is_unknown_command(&err) && request_context.is_admin() {
+                            match AdminCommand::parse(
+                                text,
+                                &request_context.config.telegram.username,
+                            ) {
+                                Ok(command) => {
+                                    command.execute(msg, request_context).await?;
+                                }
+                                Err(err) => {
+                                    handle_command_error(request_context.bot, msg, err).await?;
                                 }
                             }
+                        } else {
+                            handle_command_error(request_context.bot, msg, err).await?;
                         }
-                    } else {
-                        handle_command_error(bot, msg, err).await?;
                     }
                 }
+            } else {
+                handle_command_error(request_context.bot, msg, err).await?;
             }
         }
-    } else if let Some(sticker) = msg.sticker() {
-        if let Some(set_name) = &sticker.set_name {
-            handle_sticker(
-                bot,
-                msg.clone(),
-                sticker,
-                set_name,
-                continuous_tag_mode_tag,
-                tag_manager,
-                worker,
-                database,
-                user,
-            )
+    }
+    Ok(())
+}
+
+async fn handle_sticker_message(
+    sticker: &Sticker,
+    request_context: RequestContext,
+    msg: Message,
+    continuous_tag_mode_tag: Option<TagOperation>,
+) -> Result<(), BotError> {
+    if let Some(set_name) = &sticker.set_name {
+        handle_sticker(
+            msg.clone(),
+            sticker,
+            set_name,
+            continuous_tag_mode_tag,
+            request_context.clone(),
+        )
+        .await?;
+    } else if let Some(tag) = continuous_tag_mode_tag {
+        let message = Text::get_continuous_tag_mode_text(
+            tag,
+            "Sticker must be part of a set to tag it".to_string(),
+        );
+        request_context
+            .bot
+            .send_markdown(msg.chat.id, message) // TODO: do not rely on this text
+            .reply_to_message_id(msg.id)
+            .reply_markup(ReplyMarkup::ForceReply(
+                teloxide::types::ForceReply::new()
+                    .input_field_placeholder(Some("Reply with a sticker".to_string())),
+            ))
             .await?;
-        } else if let Some(tag) = continuous_tag_mode_tag {
-            let message = Text::get_continuous_tag_mode_text(
-                tag,
-                "Sticker must be part of a set to tag it".to_string(),
-            );
-            bot.send_markdown(msg.chat.id, message) // TODO: do not rely on this text
-                .reply_to_message_id(msg.id)
-                .reply_markup(ReplyMarkup::ForceReply(
-                    teloxide::types::ForceReply::new()
-                        .input_field_placeholder(Some("Reply with a sticker".to_string())),
-                ))
-                .await?;
-        } else {
-            bot.send_markdown(
+    } else {
+        request_context
+            .bot
+            .send_markdown(
                 msg.chat.id,
                 Markdown::escaped("The sticker must be part of a set"),
             ) // TODO: do not rely on this text
             .reply_to_message_id(msg.id)
             .await?;
-        }
-    } else if !found_sticker_set {
-        bot.send_markdown(
+    }
+    Ok(())
+}
+
+pub async fn message_handler(
+    msg: Message,
+    request_context: RequestContext,
+) -> Result<(), BotError> {
+    let potential_sticker_set_names = find_sticker_set_urls(&msg);
+    if !potential_sticker_set_names.is_empty() {
+        return handle_sticker_sets(&msg, potential_sticker_set_names, request_context).await;
+    }
+
+    let continuous_tag_mode_tag = msg
+        .reply_to_message()
+        .and_then(Text::parse_continuous_tag_mode_message);
+
+    if let Some(text) = msg.text() {
+        return handle_text_message(text, request_context, msg.clone()).await;
+    } else if let Some(sticker) = msg.sticker() {
+        return handle_sticker_message(
+            sticker,
+            request_context,
+            msg.clone(),
+            continuous_tag_mode_tag,
+        )
+        .await;
+    } else {
+        request_context.bot.send_markdown(
             msg.chat.id,
             Markdown::escaped("I have no idea what to do with this. Send me text messages containing commands, stickers, or sticker set links!"),
         )
@@ -187,90 +213,116 @@ pub async fn message_handler(
 }
 
 async fn handle_sticker(
-    bot: Bot,
     msg: Message,
     sticker: &Sticker,
     set_name: &str,
     continuous_tag_mode_tag: Option<TagOperation>,
-    tag_manager: Arc<TagManager>,
-    worker: WorkerPool,
-    database: Database,
-    user: UserMeta,
+    request_context: RequestContext,
 ) -> Result<(), BotError> {
     // TODO: tell the user how many tags exist for the set/sticker already
-    import_individual_sticker_and_queue_set(
-        sticker.clone(),
-        user.id(),
-        bot.clone(),
-        database.clone(),
-        worker.clone(),
-    )
-    .await?;
+    let result =
+        import_individual_sticker_and_queue_set(sticker.clone(), request_context.clone()).await;
+    match result {
+        Err(BotError::Database(crate::database::DatabaseError::TryingToInsertRemovedSet)) => {
+            request_context
+                .bot
+                .send_markdown(msg.chat.id, Text::removed_set())
+                .reply_markup(Keyboard::removed_set(
+                    request_context.is_admin(),
+                    set_name.to_string(),
+                ))
+                .allow_sending_without_reply(true)
+                .reply_to_message_id(msg.id)
+                .await?;
+            return Ok(());
+        }
+        rest => rest?,
+    };
     // TODO: make return value indicate if the set is new or not -> message admin + tell user that set is new
 
     if let Some(tag_operation) = continuous_tag_mode_tag {
         match tag_operation.clone() {
             TagOperation::Tag(tag) => {
-                if let Some(implications) = tag_manager.get_implications(&tag) {
+                if let Some(implications) = request_context.tag_manager.get_implications(&tag) {
                     let tags = implications
                         .into_iter()
                         .chain(std::iter::once(tag.clone()))
                         .collect_vec();
-                    database
-                        .tag_sticker(sticker.file.unique_id.clone(), tags, Some(user.id().0))
+                    request_context
+                        .database
+                        .tag_sticker(
+                            sticker.file.unique_id.clone(),
+                            tags,
+                            Some(request_context.user_id().0),
+                        )
                         .await?;
+                    request_context.tagging_worker.maybe_recompute().await?;
                 }
             }
             TagOperation::Untag(tag) => {
-                database
-                    .untag_sticker(sticker.file.unique_id.clone(), tag, user.id().0)
+                request_context
+                    .database
+                    .untag_sticker(
+                        sticker.file.unique_id.clone(),
+                        tag,
+                        request_context.user_id().0,
+                    )
                     .await?;
             }
         }
-        bot.send_markdown(
-            msg.chat.id,
-            Text::get_continuous_tag_mode_text(
-                tag_operation,
-                "Sticker processed\\. Send the next one\\.".to_string(),
-            ),
-        )
-        // TODO: reply markup: undo
-        // .reply_markup(make_tag_keyboard(&tags, sticker.file.unique_id.clone(), &suggested_tags, set_name.to_string()))
-        .allow_sending_without_reply(true)
-        .reply_to_message_id(msg.id)
-        .reply_markup(ReplyMarkup::ForceReply(
-            teloxide::types::ForceReply::new()
-                .input_field_placeholder(Some("Reply with a sticker".to_string())),
-        ))
-        .await?;
+        request_context
+            .bot
+            .send_markdown(
+                msg.chat.id,
+                Text::get_continuous_tag_mode_text(
+                    tag_operation,
+                    "Sticker processed\\. Send the next one\\.".to_string(),
+                ),
+            )
+            // TODO: reply markup: undo
+            // .reply_markup(make_tag_keyboard(&tags, sticker.file.unique_id.clone(), &suggested_tags, set_name.to_string()))
+            .allow_sending_without_reply(true)
+            .reply_to_message_id(msg.id)
+            .reply_markup(ReplyMarkup::ForceReply(
+                teloxide::types::ForceReply::new()
+                    .input_field_placeholder(Some("Reply with a sticker".to_string())),
+            ))
+            .await?;
     } else {
-        let tags: Vec<String> = database
+        let tags: Vec<String> = request_context
+            .database
             .get_sticker_tags(sticker.file.unique_id.clone())
             .await?;
         let suggested_tags = suggest_tags(
             &sticker.file.unique_id,
-            bot.clone(),
-            tag_manager.clone(),
-            database.clone(),
+            request_context.bot.clone(),
+            request_context.tag_manager.clone(),
+            request_context.database.clone(),
+            request_context.tagging_worker.clone(),
         )
         .await?;
         let emojis = Emoji::parse(sticker.emoji.as_ref().unwrap_or(&String::new()));
-        let is_locked = database.sticker_is_locked(sticker.file.unique_id.clone()).await?;
+        let is_locked = request_context
+            .database
+            .sticker_is_locked(sticker.file.unique_id.clone())
+            .await?;
         // TODO: get the actual set name
-        bot.send_markdown(
-            msg.chat.id,
-            Text::get_sticker_text(set_name, set_name, &sticker.file.unique_id, emojis),
-        )
-        .reply_markup(Keyboard::make_tag_keyboard(
-            &tags,
-            &sticker.file.unique_id.clone(),
-            &suggested_tags,
-            Some(set_name.to_string()),
-            is_locked,
-        ))
-        .allow_sending_without_reply(true)
-        .reply_to_message_id(msg.id)
-        .await?;
+        request_context
+            .bot
+            .send_markdown(
+                msg.chat.id,
+                Text::get_sticker_text(set_name, set_name, &sticker.file.unique_id, emojis),
+            )
+            .reply_markup(Keyboard::tagging(
+                &tags,
+                &sticker.file.unique_id.clone(),
+                &suggested_tags,
+                Some(set_name.to_string()),
+                is_locked,
+            ))
+            .allow_sending_without_reply(true)
+            .reply_to_message_id(msg.id)
+            .await?;
     }
     Ok(())
 }

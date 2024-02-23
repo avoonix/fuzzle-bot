@@ -8,14 +8,14 @@ use crate::{
     tags::{self, all_count_tags, all_rating_tags, character_count, rating, Characters},
 };
 use itertools::Itertools;
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, LoginUrl};
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, LoginUrl, UserId};
 use url::Url;
 
 pub struct Keyboard;
 
 impl Keyboard {
     #[must_use]
-    pub fn make_tag_keyboard(
+    pub fn tagging(
         current_tags: &[String],
         sticker_unique_id: &str,
         suggested_tags: &[String],
@@ -123,23 +123,28 @@ impl Keyboard {
             ),
         ]);
 
-        keyboard.push(vec![if tagging_locked {
-            InlineKeyboardButton::callback(
-                "🔒 Bulk Tagging Locked",
-                CallbackData::SetLock {
-                    lock: false,
-                    sticker_id: sticker_unique_id.to_string(),
-                },
-            )
-        } else {
-            InlineKeyboardButton::callback(
-                "🔓 Bulk Tagging Unlocked",
-                CallbackData::SetLock {
-                    lock: true,
-                    sticker_id: sticker_unique_id.to_string(),
-                },
-            )
-        }]);
+        let show_lock_buttons =
+            tagging_locked || current_tags.contains(&"meta_sticker".to_string());
+
+        if show_lock_buttons {
+            keyboard.push(vec![if tagging_locked {
+                InlineKeyboardButton::callback(
+                    "🔒 Bulk Tagging Locked",
+                    CallbackData::SetLock {
+                        lock: false,
+                        sticker_id: sticker_unique_id.to_string(),
+                    },
+                )
+            } else {
+                InlineKeyboardButton::callback(
+                    "🔓 Bulk Tagging Unlocked",
+                    CallbackData::SetLock {
+                        lock: true,
+                        sticker_id: sticker_unique_id.to_string(),
+                    },
+                )
+            }]);
+        }
 
         InlineKeyboardMarkup::new(keyboard)
     }
@@ -189,6 +194,18 @@ impl Keyboard {
         ]);
 
         InlineKeyboardMarkup::new(keyboard)
+    }
+
+    #[must_use]
+    pub fn removed_set(is_admin: bool, set_name: String) -> InlineKeyboardMarkup {
+        if is_admin {
+            InlineKeyboardMarkup::new([[InlineKeyboardButton::callback(
+                "Unban Set",
+                CallbackData::change_set_status(&set_name, false),
+            )]])
+        } else {
+            InlineKeyboardMarkup::new([[]])
+        }
     }
 
     #[must_use]
@@ -342,6 +359,33 @@ impl Keyboard {
             ),
         ))
     }
+
+    #[must_use]
+    pub fn new_user(user_id: UserId) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new([[user_button(user_id)]])
+    }
+
+    #[must_use]
+    pub fn new_set(submitted_by: UserId, set_name: &str) -> Result<InlineKeyboardMarkup, BotError> {
+        Ok(InlineKeyboardMarkup::new([
+            [InlineKeyboardButton::url(
+                "Show Set",
+                Url::parse(format!("https://t.me/addstickers/{}", set_name).as_str())?,
+            )],
+            [InlineKeyboardButton::callback(
+                "Delete/Ban Set",
+                CallbackData::change_set_status(set_name, true),
+            )],
+            [user_button(submitted_by)],
+        ]))
+    }
+}
+
+fn user_button(user_id: UserId) -> InlineKeyboardButton {
+    InlineKeyboardButton::url(
+        format!("Show User {user_id}"),
+        Url::parse(format!("tg://user?id={}", user_id.0).as_str()).expect("url to be valid"),
+    )
 }
 
 fn button_layout_to_keyboard_layout(

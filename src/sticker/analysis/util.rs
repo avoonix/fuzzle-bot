@@ -1,30 +1,30 @@
 // adapted from https://docs.rs/acap/latest/src/acap/cos.rs.html#1-580
-pub fn vec_u8_to_f64(x: Vec<u8>) -> Vec<f64> {
-    x.into_iter().map(|val| val as f64).collect()
+pub fn vec_u8_to_f32(x: Vec<u8>) -> Vec<f32> {
+    x.into_iter().map(|val| val as f32).collect()
 }
 
-pub fn cosine_similarity(x: Vec<f64>, y: Vec<f64>) -> f64 {
-    debug_assert!(x.len() == y.len());
+// pub fn cosine_similarity(x: Vec<f32>, y: Vec<f32>) -> f32 {
+//     debug_assert!(x.len() == y.len());
 
-    let mut dot = 0.0;
-    let mut xx = 0.0;
-    let mut yy = 0.0;
+//     let mut dot = 0.0;
+//     let mut xx = 0.0;
+//     let mut yy = 0.0;
 
-    for i in 0..x.len() {
-        let xi = x[i];
-        let yi = y[i];
-        dot += xi * yi;
-        xx += xi * xi;
-        yy += yi * yi;
-    }
+//     for i in 0..x.len() {
+//         let xi = x[i];
+//         let yi = y[i];
+//         dot += xi * yi;
+//         xx += xi * xi;
+//         yy += yi * yi;
+//     }
 
-    let similarity = dot / (xx * yy).sqrt();
-    if similarity.is_finite() {
-        similarity
-    } else {
-        0.0
-    }
-}
+//     let similarity = dot / (xx * yy).sqrt();
+//     if similarity.is_finite() {
+//         similarity
+//     } else {
+//         0.0
+//     }
+// }
 
 // pub fn euclidian_distance(x: Vec<u8>, y: Vec<u8>) -> f64 {
 //     debug_assert!(x.len() == y.len());

@@ -36,9 +36,9 @@ pub fn suggest_tags_by_reverse_implication(
 const fn compute_score_for_implication_count(count: usize) -> f64 {
     match count {
         1 => 0.1,
-        2 => 0.6,
-        3 => 0.8,
-        4 => 0.9,
-        _ => 0.99,
+        2 => 0.3,
+        3 => 0.4,
+        4 => 0.5,
+        _ => 0.6,
     }
 }

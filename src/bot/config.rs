@@ -9,7 +9,6 @@ pub struct Config {
     pub admin: String,
     pub admin_telegram_user_id: u64,
     pub telegram: Telegram,
-    pub worker: Worker,
     pub default_blacklist: Vec<String>,
     pub greeting_sticker_id: Option<String>,
     pub domain_name: String,
@@ -43,12 +42,6 @@ pub struct Telegram {
     pub username: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct Worker {
-    pub queue_length: usize,
-    pub concurrency: usize,
-}
-
 impl Config {
     #[must_use]
     pub const fn get_admin_user_id(&self) -> UserId {
@@ -63,7 +56,6 @@ impl Default for Config {
             admin: "admin".to_string(),
             admin_telegram_user_id: 0,
             telegram: Telegram::default(),
-            worker: Worker::default(),
             default_blacklist: vec![
                 "meta_sticker".to_string(),
                 "gore".to_string(),
@@ -80,15 +72,6 @@ impl Default for Telegram {
         Self {
             token: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".to_string(),
             username: "botname".to_string(),
-        }
-    }
-}
-
-impl Default for Worker {
-    fn default() -> Self {
-        Self {
-            queue_length: 128,
-            concurrency: 4,
         }
     }
 }

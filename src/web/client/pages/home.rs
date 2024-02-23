@@ -12,8 +12,8 @@ use crate::web::shared::*;
 
 #[derive(Params, PartialEq)]
 struct HomeSearch {
-    q: String,
-    offset: usize,
+    q: Option<String>,
+    offset: Option<usize>,
 }
 
 #[component]
@@ -61,12 +61,12 @@ fn QueryInput() -> impl IntoView {
         query.with(|query| {
             query
                 .as_ref()
-                .map(|query| query.q.clone())
+                .map(|query| query.q.clone().unwrap_or_default())
                 .unwrap_or_default()
         })
     };
     let offset =
-        move || query.with(|query| query.as_ref().map(|query| query.offset).unwrap_or_default());
+        move || query.with(|query| query.as_ref().map(|query| query.offset.unwrap_or_default()).unwrap_or_default());
 
     let limit = 100;
     let search_results = create_resource(

@@ -41,7 +41,7 @@ mod server_only_stuff {
             .enable_all()
             .thread_stack_size(stack_size)
             .build()
-            .unwrap()
+            .expect("runtime to initialize")
             .block_on(fut)
     }
 

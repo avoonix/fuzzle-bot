@@ -29,7 +29,6 @@ use crate::{
     database::Database,
     sticker::{calculate_color_histogram, create_historgram_image, fetch_possibly_cached_sticker_file, fetch_sticker_file, Histogram},
     tags::TagManager,
-    worker::WorkerPool,
     Config,
 };
 use web::Data;
@@ -105,7 +104,7 @@ async fn login(
     }
     let cookie = Cookie::build(AUTH_COOKIE_NAME, serde_json::to_string(&info)?)
         .max_age(Duration::DAY * 5)
-        .same_site(SameSite::Strict)
+        .same_site(SameSite::Lax)
         .secure(true)
         .http_only(true)
         .finish();

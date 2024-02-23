@@ -1,13 +1,22 @@
+#[cfg(feature = "ssr")]
 use nom::bytes::complete::tag;
+#[cfg(feature = "ssr")]
 use nom::combinator::{fail, map, success};
+#[cfg(feature = "ssr")]
 use nom::sequence::preceded;
+#[cfg(feature = "ssr")]
 use nom::IResult;
+#[cfg(feature = "ssr")]
 use nom::{branch::alt, character::complete::u64};
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
+#[cfg(feature = "ssr")]
 use crate::database::StickerOrder;
+#[cfg(feature = "ssr")]
 use crate::util::{sticker_id_literal, tag_literal};
 
+#[cfg(feature = "ssr")]
 fn parse_tag_operation(input: &str) -> IResult<&str, TagOperation> {
     alt((
         map(preceded(tag("t"), parse_tag), TagOperation::Tag),
@@ -15,13 +24,14 @@ fn parse_tag_operation(input: &str) -> IResult<&str, TagOperation> {
     ))(input)
 }
 
+#[cfg(feature = "ssr")]
 fn parse_tag(input: &str) -> IResult<&str, String> {
     let (input, _) = tag(";")(input)?;
     let (input, tag) = tag_literal(input)?;
     Ok((input, tag.to_string()))
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum TagOperation {
     Tag(String),
     Untag(String),
@@ -35,6 +45,7 @@ impl Display for TagOperation {
     }
 }
 
+#[cfg(feature = "ssr")]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CallbackData {
     Sticker {
@@ -47,7 +58,10 @@ pub enum CallbackData {
     Blacklist,
     RemoveBlacklistedTag(String),
     Info,
-    RemoveSet(String),
+    ChangeSetStatus {
+        set_name: String,
+        banned: bool,
+    },
     UserInfo(u64),
     SetOrder(StickerOrder),
     SetLock {
@@ -56,6 +70,7 @@ pub enum CallbackData {
     },
 }
 
+#[cfg(feature = "ssr")]
 impl CallbackData {
     pub fn tag_sticker(unique_id: impl Into<String>, tag: impl Into<String>) -> Self {
         Self::Sticker {
@@ -69,8 +84,11 @@ impl CallbackData {
             operation: TagOperation::Untag(tag.into()),
         }
     }
-    pub fn remove_set(set_name: impl Into<String>) -> Self {
-        Self::RemoveSet(set_name.into())
+    pub fn change_set_status(set_name: impl Into<String>, banned: bool) -> Self {
+        Self::ChangeSetStatus {
+            banned,
+            set_name: set_name.into(),
+        }
     }
 
     pub fn user_info(user_id: impl Into<u64>) -> Self {
@@ -78,6 +96,7 @@ impl CallbackData {
     }
 }
 
+#[cfg(feature = "ssr")]
 fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
     alt((
         map(tag("start"), |_| CallbackData::Start),
@@ -94,16 +113,24 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
     ))(input)
 }
 
+#[cfg(feature = "ssr")]
 fn parse_lock_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("lock;")(input)?;
     let (input, sticker_id) = sticker_id_literal(input)?;
     let (input, _) = tag(";")(input)?;
     alt((
-        map(tag("lock"), |_| CallbackData::SetLock { lock: true, sticker_id: sticker_id.to_string() }),
-        map(tag("unlock"), |_| CallbackData::SetLock { lock: false, sticker_id: sticker_id.to_string() })
+        map(tag("lock"), |_| CallbackData::SetLock {
+            lock: true,
+            sticker_id: sticker_id.to_string(),
+        }),
+        map(tag("unlock"), |_| CallbackData::SetLock {
+            lock: false,
+            sticker_id: sticker_id.to_string(),
+        }),
     ))(input)
 }
 
+#[cfg(feature = "ssr")]
 fn parse_order_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("order")(input)?;
     let (input, _) = tag(";")(input)?;
@@ -114,6 +141,7 @@ fn parse_order_data(input: &str) -> IResult<&str, CallbackData> {
     }
 }
 
+#[cfg(feature = "ssr")]
 fn parse_user_info_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("userinfo")(input)?;
     let (input, _) = tag(";")(input)?;
@@ -121,13 +149,22 @@ fn parse_user_info_data(input: &str) -> IResult<&str, CallbackData> {
     Ok((input, CallbackData::UserInfo(user_id)))
 }
 
+#[cfg(feature = "ssr")]
 fn parse_remove_set_data(input: &str) -> IResult<&str, CallbackData> {
-    let (input, _) = tag("rmset")(input)?;
+    let (input, _) = tag("chset;")(input)?;
+    let (input, set_name) = tag_literal(input)?; // TODO: add separate set_name parser
     let (input, _) = tag(";")(input)?;
-    let (input, tag) = tag_literal(input)?; // TODO: add separate set_name parser
-    Ok((input, CallbackData::RemoveSet(tag.to_string())))
+    let (input, banned) = alt((map(tag("ban"), |_| true), map(tag("unban"), |_| false)))(input)?;
+    Ok((
+        input,
+        CallbackData::ChangeSetStatus {
+            banned,
+            set_name: set_name.to_string(),
+        },
+    ))
 }
 
+#[cfg(feature = "ssr")]
 fn parse_remove_blacklist_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("removebl")(input)?;
     let (input, _) = tag(";")(input)?;
@@ -135,6 +172,7 @@ fn parse_remove_blacklist_data(input: &str) -> IResult<&str, CallbackData> {
     Ok((input, CallbackData::RemoveBlacklistedTag(tag.to_string())))
 }
 
+#[cfg(feature = "ssr")]
 fn parse_sticker_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("s")(input)?;
     let (input, _) = tag(";")(input)?;
@@ -150,6 +188,7 @@ fn parse_sticker_data(input: &str) -> IResult<&str, CallbackData> {
     ))
 }
 
+#[cfg(feature = "ssr")]
 impl TryFrom<String> for CallbackData {
     type Error = anyhow::Error;
 
@@ -164,6 +203,7 @@ impl TryFrom<String> for CallbackData {
     }
 }
 
+#[cfg(feature = "ssr")]
 impl Display for CallbackData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -176,7 +216,10 @@ impl Display for CallbackData {
             Self::Start => write!(f, "start"),
             Self::Blacklist => write!(f, "blacklist"),
             Self::RemoveBlacklistedTag(tag) => write!(f, "removebl;{tag}"),
-            Self::RemoveSet(set_name) => write!(f, "rmset;{set_name}"),
+            Self::ChangeSetStatus { set_name, banned } => {
+                let action = if *banned { "ban" } else { "unban" };
+                write!(f, "chset;{set_name};{action}")
+            }
             Self::Info => write!(f, "info"),
             Self::UserInfo(user_id) => write!(f, "userinfo;{user_id}"),
             Self::SetOrder(order) => {
@@ -191,6 +234,7 @@ impl Display for CallbackData {
     }
 }
 
+#[cfg(feature = "ssr")]
 impl From<CallbackData> for String {
     fn from(value: CallbackData) -> Self {
         value.to_string()
