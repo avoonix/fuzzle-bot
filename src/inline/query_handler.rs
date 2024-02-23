@@ -1,5 +1,5 @@
 use crate::background_tasks::BackgroundTaskExt;
-use crate::bot::{Bot, BotExt, RequestContext};
+use crate::bot::{BotExt, RequestContext};
 use crate::bot::{BotError, UserMeta};
 use crate::database::{Database, SavedSticker};
 use crate::inline::{InlineQueryData, InlineQueryDataMode, SetOperation};
@@ -251,7 +251,7 @@ async fn handle_similar_sticker_query(
 
     let sticker_result = stickers
         .into_iter()
-        .filter_map(|sticker| sticker)
+        .flatten()
         .map(|sticker| {
             InlineQueryResultCachedSticker::new(
                 InlineQueryResultId::Sticker(sticker.id).to_string(),
@@ -529,7 +529,7 @@ async fn handle_embedding_query(
 
     let sticker_result = stickers
         .into_iter()
-        .filter_map(|sticker| sticker)
+        .flatten()
         .map(|sticker| {
             InlineQueryResultCachedSticker::new(
                 InlineQueryResultId::Sticker(sticker.id).to_string(),

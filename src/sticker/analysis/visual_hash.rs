@@ -1,9 +1,9 @@
-use crate::sticker::download::FileKind;
-use base64::{engine::general_purpose, Engine};
+
+
 use itertools::Itertools;
-use std::{collections::HashMap, io::Cursor};
-use image::{Rgb, RgbImage, Rgba, RgbaImage};
-use palette::{Hsv, IntoColor, Srgb};
+
+
+
 
 
 
@@ -20,7 +20,7 @@ impl From<VisualHash> for Vec<u8> {
 
 impl From<Vec<u8>> for VisualHash {
     fn from(value: Vec<u8>) -> Self {
-        VisualHash {
+        Self {
             normalized_vec: value,
         }
     }

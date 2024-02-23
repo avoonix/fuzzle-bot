@@ -29,7 +29,7 @@ pub struct TopMatches {
 impl TopMatches {
     #[cfg(feature = "ssr")]
     pub fn new(n: usize, max_distance: f64) -> Self {
-        TopMatches {
+        Self {
             max_distance,
             worst_distance: f64::INFINITY,
             n,

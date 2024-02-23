@@ -1,17 +1,17 @@
-use crate::background_tasks::TaggingWorker;
-use crate::bot::{Bot, RequestContext};
+
+
 use crate::database::Database;
 
-use crate::tags::TagManager;
+
 use crate::util::Emoji;
 use anyhow::Result;
 use itertools::Itertools;
-use teloxide::requests::Requester;
+
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use super::{suggest_tags_2, ScoredTagSuggestion};
+
+use super::{ScoredTagSuggestion};
 
 
 pub struct Tfidf {
@@ -57,7 +57,7 @@ impl Tfidf {
         for term in terms {
             let mut list: Vec<(Document, f32)> = Vec::new();
             for document in documents_2.clone() {
-                let tfidf = tfidf.clone();
+                let tfidf = tfidf;
                 let weight = tfidf(term.clone(), document.1);
                 if weight > 0.0 {
                     list.push((document.0, weight));
@@ -70,7 +70,7 @@ impl Tfidf {
             // TODO: take top n list entries
             for list_entry in list {
                 let entry = lookup.entry(list_entry.0).or_default();
-                if entry.iter().find(|t| t.0 == term).is_none() {
+                if !entry.iter().any(|t| t.0 == term) {
                     entry.push((term.clone(), list_entry.1));
                 }
             }
@@ -87,7 +87,7 @@ impl Tfidf {
             .into_iter()
             .sorted_by(|a, b| b.1.total_cmp(&a.1))
             .map(|entry| ScoredTagSuggestion {
-                score: entry.1 as f64,
+                score: f64::from(entry.1),
                 tag: entry.0,
             })
             .collect_vec();

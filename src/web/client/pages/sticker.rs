@@ -1,4 +1,4 @@
-use std::vec;
+
 
 use itertools::Itertools;
 use leptos::html::*;
@@ -23,8 +23,8 @@ pub fn StickerPage() -> impl IntoView {
         move || params.with(|params| params.as_ref().map(|params| params.sticker_id.clone().unwrap_or_default()).unwrap_or_default());
 
     let sticker_info = create_resource(
-        move || (id()),
-        |sticker_id| fetch_sticker_info(sticker_id),
+        id,
+        fetch_sticker_info,
     );
 
     view! { <div>"sticker" {move || view! {
@@ -67,7 +67,7 @@ fn StickerInfo(#[prop(into)] info: StickerInfoDto) -> impl IntoView {
             <h2>Histogram</h2>
 
             <img
-                src=format!("/files/histograms/{}", info.id.clone())
+                src=format!("/files/histograms/{}", info.id)
                 alt="Color histogram of sticker"
                 loading="lazy"
                 style="image-rendering: pixelated; width: 100%; height: 20vh; outline: 1px solid grey;"

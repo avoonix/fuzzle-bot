@@ -1495,7 +1495,6 @@ dependencies = [
  "clap",
  "console_error_panic_hook",
  "csv",
- "dashmap",
  "emojis",
  "faiss",
  "flate2",

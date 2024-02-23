@@ -6,6 +6,6 @@ use super::download::FileKind;
 
 type Blake2b128 = Blake2b<U16>;
 pub fn calculate_sticker_file_hash(buf: Vec<u8>, file_kind: FileKind) -> Result<String> {
-    let hash = Blake2b128::digest(&buf);
+    let hash = Blake2b128::digest(buf);
     Ok(general_purpose::URL_SAFE_NO_PAD.encode(hash))
 }

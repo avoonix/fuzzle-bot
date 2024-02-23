@@ -1,7 +1,7 @@
 use teloxide::prelude::*;
 
 use crate::{
-    background_tasks::{BackgroundTaskExt}, bot::{BotError, RequestContext, UserMeta}, database::Database
+    background_tasks::{BackgroundTaskExt}, bot::{BotError, RequestContext}
 };
 
 use super::result_id::InlineQueryResultId;

@@ -36,8 +36,8 @@ impl BackgroundTaskErrorHandler {
 
 pub fn start_periodic_tasks(bot: Bot, admin_id: UserId, database: Database, paths: Arc<Paths>, worker: AnalysisWorker) {
     let bot_clone = bot.clone();
-    let database_clone = database.clone();
-    let paths_clone = paths.clone();
+    let database_clone = database;
+    let paths_clone = paths;
     let error_handler_clone = BackgroundTaskErrorHandler {
         bot,
         admin_id
@@ -47,7 +47,7 @@ pub fn start_periodic_tasks(bot: Bot, admin_id: UserId, database: Database, path
 
     let bot = bot_clone.clone();
     let database = database_clone.clone();
-    let paths = paths_clone.clone();
+    let paths = paths_clone;
     let error_handler = error_handler_clone.clone();
     tokio::spawn(async move {
         loop {
@@ -76,9 +76,9 @@ pub fn start_periodic_tasks(bot: Bot, admin_id: UserId, database: Database, path
         }
     });
 
-    let bot = bot_clone.clone();
-    let database = database_clone.clone();
-    let error_handler = error_handler_clone.clone();
+    let bot = bot_clone;
+    let database = database_clone;
+    let error_handler = error_handler_clone;
     tokio::spawn(async move {
         loop {
             sleep(Duration::days(7).to_std().expect("no overflow")).await;

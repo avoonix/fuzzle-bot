@@ -1,7 +1,7 @@
 #[cfg(feature = "ssr")]
 use nom::bytes::complete::tag;
 #[cfg(feature = "ssr")]
-use nom::combinator::{fail, map, success};
+use nom::combinator::{fail, map};
 #[cfg(feature = "ssr")]
 use nom::sequence::preceded;
 #[cfg(feature = "ssr")]
@@ -136,7 +136,7 @@ fn parse_order_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag(";")(input)?;
     let order = serde_json::from_str(input);
     match order {
-        Err(err) => return fail(input),
+        Err(err) => fail(input),
         Ok(order) => Ok(("", CallbackData::SetOrder(order))),
     }
 }

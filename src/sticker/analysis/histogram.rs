@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Cursor};
 
-use image::{Rgb, RgbImage, Rgba, RgbaImage};
+use image::{Rgba, RgbaImage};
 use itertools::Itertools;
 use palette::{Hsv, IntoColor, Srgb};
 
@@ -19,16 +19,16 @@ impl From<Histogram> for Vec<u8> {
 
 impl From<Vec<u8>> for Histogram {
     fn from(value: Vec<u8>) -> Self {
-        Histogram {
+        Self {
             normalized_vec: value,
         }
     }
 }
 
 impl Histogram {
-    fn from_map(map: HashMap<(u8, u8, u8), u32>) -> Histogram {
+    fn from_map(map: HashMap<(u8, u8, u8), u32>) -> Self {
         let max = {
-            let max = map.values().max().cloned().unwrap_or_default() as f32; // TODO: make sure this is > 0 because of division
+            let max = map.values().max().copied().unwrap_or_default() as f32; // TODO: make sure this is > 0 because of division
             if max == 0.0 {
                 1.0
             } else {
@@ -41,11 +41,11 @@ impl Histogram {
         let normalized_vec = all_colors
             .into_iter()
             .map(|color| {
-                ((map.get(&color).cloned().unwrap_or_default() as f32 / max) * 255.0) as u8
+                ((map.get(&color).copied().unwrap_or_default() as f32 / max) * 255.0) as u8
             })
             .collect();
 
-        Histogram { normalized_vec }
+        Self { normalized_vec }
     }
 
     fn get_map(self) -> HashMap<(u8, u8, u8), f32> {
@@ -57,7 +57,7 @@ impl Histogram {
         {
             if value != 0 {
                 // TODO: approximate match?
-                map.insert(color, value as f32 / 255.0);
+                map.insert(color, f32::from(value) / 255.0);
             }
         }
         map
@@ -70,11 +70,11 @@ pub fn calculate_color_histogram(buf: Vec<u8>) -> anyhow::Result<Histogram> {
     let mut image = dynamic_image.into_rgba8();
     let mut colors = HashMap::new();
     for (x, y, pixel) in image.enumerate_pixels_mut() {
-        let r = ((pixel.0[0] as u32 * BINS) / 255) as u8;
-        let g = ((pixel.0[1] as u32 * BINS) / 255) as u8;
-        let b = ((pixel.0[2] as u32 * BINS) / 255) as u8;
+        let r = ((u32::from(pixel.0[0]) * BINS) / 255) as u8;
+        let g = ((u32::from(pixel.0[1]) * BINS) / 255) as u8;
+        let b = ((u32::from(pixel.0[2]) * BINS) / 255) as u8;
         let entry: &mut u32 = colors.entry((r, g, b)).or_default();
-        *entry += pixel.0[3] as u32; // more opaque = higher weight
+        *entry += u32::from(pixel.0[3]); // more opaque = higher weight
     }
 
     Ok(Histogram::from_map(colors))
@@ -99,12 +99,12 @@ pub fn create_historgram_image(histogram: Histogram) -> anyhow::Result<Vec<u8>> 
         .into_iter()
         .sorted_by(|a, b| {
             let rgb = Srgb::new(
-                (a.0 * scale) as f32 / 255.0,
-                (a.1 * scale) as f32 / 255.0,
-                (a.2 * scale) as f32 / 255.0,
+                f32::from(a.0 * scale) / 255.0,
+                f32::from(a.1 * scale) / 255.0,
+                f32::from(a.2 * scale) / 255.0,
             );
             let hsl_a: Hsv = rgb.into_color();
-            let rgb = Srgb::new(b.0 as f32 / 255.0, b.1 as f32 / 255.0, b.2 as f32 / 255.0);
+            let rgb = Srgb::new(f32::from(b.0) / 255.0, f32::from(b.1) / 255.0, f32::from(b.2) / 255.0);
             let hsl_b: Hsv = rgb.into_color();
 
             let a = hsl_a.hue.into_positive_degrees();
@@ -120,7 +120,7 @@ pub fn create_historgram_image(histogram: Histogram) -> anyhow::Result<Vec<u8>> 
     for x in 0..img.width() {
         for y in 0..img.height() {
             let hist_entry = all_colors[x as usize];
-            let value = map.get(&hist_entry).cloned().unwrap_or_default();
+            let value = map.get(&hist_entry).copied().unwrap_or_default();
             let height = (value * height as f32).log10() / max_height;
             let pixel_color = if 1.0 - y as f32 / img.height() as f32 <= height {
                 Rgba([

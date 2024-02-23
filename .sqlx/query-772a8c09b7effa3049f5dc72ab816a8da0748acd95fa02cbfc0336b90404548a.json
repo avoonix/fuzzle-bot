@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT file_analysis.*, sticker.id AS sticker_id FROM file_analysis INNER JOIN sticker WHERE sticker.file_hash = file_analysis.id AND EXISTS (SELECT * FROM file_hash_tag WHERE file_hash_tag.file_hash = sticker.file_hash) GROUP BY file_analysis.id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "thumbnail_file_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "visual_hash",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "histogram",
+        "ordinal": 3,
+        "type_info": "Blob"
+      },
+      {
+        "name": "embedding",
+        "ordinal": 4,
+        "type_info": "Blob"
+      },
+      {
+        "name": "sticker_id",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "772a8c09b7effa3049f5dc72ab816a8da0748acd95fa02cbfc0336b90404548a"
+}

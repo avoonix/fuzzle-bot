@@ -1,35 +1,27 @@
-use std::{pin::Pin, sync::Arc};
 
-use actix_files::Files;
+
+
 use actix_web::{
     cookie::{
-        time::{Duration, OffsetDateTime},
+        time::{Duration},
         Cookie, SameSite,
     },
-    error::{ErrorBadRequest, ErrorInternalServerError, ErrorNotFound, ErrorUnauthorized},
+    error::{ErrorInternalServerError, ErrorNotFound, ErrorUnauthorized},
     get,
-    http::header,
-    post, web, App, FromRequest, HttpRequest, HttpResponse, HttpServer, Responder,
+    http::header, web, HttpRequest, HttpResponse, Responder,
 };
 use actix_web_lab::extract::{Path, Query};
-use chrono::naive::serde::ts_seconds;
-use futures::{
-    future::{err, ok, Ready},
-    Future,
-};
-use itertools::Itertools;
-use leptos::*;
-use leptos_actix::{generate_route_list, LeptosRoutes};
-use ring::{digest, hmac};
-use serde::{Deserialize, Serialize};
-use teloxide::requests::Requester;
+
+
+
+use leptos::LeptosOptions;
+
+
+
+
 
 use crate::{
-    bot::{get_or_create_user, Bot, UserMeta},
-    database::Database,
-    sticker::{calculate_color_histogram, create_historgram_image, fetch_possibly_cached_sticker_file, fetch_sticker_file, Histogram},
-    tags::TagManager,
-    Config,
+    sticker::{create_historgram_image, fetch_possibly_cached_sticker_file},
 };
 use web::Data;
 

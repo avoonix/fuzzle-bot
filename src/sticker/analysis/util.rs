@@ -1,6 +1,6 @@
 // adapted from https://docs.rs/acap/latest/src/acap/cos.rs.html#1-580
 pub fn vec_u8_to_f32(x: Vec<u8>) -> Vec<f32> {
-    x.into_iter().map(|val| val as f32).collect()
+    x.into_iter().map(f32::from).collect()
 }
 
 // pub fn cosine_similarity(x: Vec<f32>, y: Vec<f32>) -> f32 {

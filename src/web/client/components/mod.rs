@@ -1,5 +1,3 @@
-use std::vec;
-
 use itertools::Itertools;
 use leptos::html::*;
 use leptos::*;
@@ -36,12 +34,12 @@ fn Tagger(
             <For
                 each=combined
                 key=|tag| tag.0.clone()
-                children=move |(tag)| {
+                children=move |tag| {
                     let tag_action = tag.1.clone();
                     view! {
                         <li on:click=move |_| {
                             on_click.call(tag_action.clone());
-                        }>{match tag.1.clone() {
+                        }>{match tag.1 {
 
 TagOperation::Untag(tag) => format!("remove tag {tag}"),
 TagOperation::Tag(tag) => format!("add tag {tag}"),
@@ -84,7 +82,7 @@ pub fn Sticker(id: String) -> impl IntoView {
                 height="128"
                 loading="lazy"
             />
-            <p>{move || submitted.get().and_then(|_| Some("Submitted..."))}</p>
+            <p>{move || submitted.get().map(|_| "Submitted...")}</p>
             <p>{move || pending.get().then(|| view! { <Loader/> })}</p>
 
             {move || match todo_id.get() {
@@ -93,12 +91,12 @@ pub fn Sticker(id: String) -> impl IntoView {
                     match results {
                         Ok(info) => {
                             let sticker_id = sticker_id_clone.clone();
-                            let fetch_sticker_infos = fetch_sticker_infos.clone();
+                            let fetch_sticker_infos = fetch_sticker_infos;
                             view! {
                                 // TODO: only fetch tags and suggested tags; no similarities
                                 <Tagger
                                     on_click=move |tag_action: TagOperation| {
-                                        fetch_sticker_infos.dispatch((sticker_id.clone(), Some(tag_action.clone())));
+                                        fetch_sticker_infos.dispatch((sticker_id.clone(), Some(tag_action)));
                                     }
                                     tags=move || info.tags.clone()
                                     suggested_tags=move || info.suggested_tags.clone()

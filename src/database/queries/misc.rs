@@ -96,8 +96,8 @@ select 'untagged' as operation, set_id, count() as count from file_hash_tag_hist
                     removed: 0,
                 });
                 match affected.operation.as_ref() {
-                    "tagged" => (*entry).added += affected.count,
-                    "untagged" => (*entry).removed += affected.count,
+                    "tagged" => entry.added += affected.count,
+                    "untagged" => entry.removed += affected.count,
                     _ => Err(anyhow::anyhow!("invalid operation {}", affected.operation))?,
                 }
             }

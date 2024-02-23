@@ -244,7 +244,7 @@ impl TagManager {
         while has_changed {
             has_changed = false;
             let old_implications = implications.clone();
-            for (tag, implied_tags) in implications.iter_mut() {
+            for (tag, implied_tags) in &mut implications {
                 for implied_tag in implied_tags.clone() {
                     let transitive_implications = old_implications.get(&implied_tag);
                     if let Some(transitive_implications) = transitive_implications {

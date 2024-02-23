@@ -8,8 +8,8 @@ pub struct Timer {
 }
 
 impl Timer {
-    pub fn new(update: Update) -> Timer {
-        Timer {
+    pub fn new(update: Update) -> Self {
+        Self {
             start: chrono::Utc::now(),
             update,
         }

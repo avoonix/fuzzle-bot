@@ -48,7 +48,7 @@ pub async fn inject_context(
         }),
         Err(err) => {
             // TODO: handle error
-            dbg!(err);
+            drop(err);
             None
         }
     }

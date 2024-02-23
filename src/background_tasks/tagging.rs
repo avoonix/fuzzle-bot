@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc},
 };
 use log::error;
 
@@ -8,11 +8,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     bot::BotError,
-    database::{Database, FileAnalysisWithStickerId},
-    inline::SimilarityAspect,
-    sticker::{vec_u8_to_f32, IndexInput, IndexResult, ModelEmbedding, MyIndex, TopMatches},
+    database::{Database},
+    sticker::{vec_u8_to_f32, IndexResult, ModelEmbedding},
     tags::{ScoredTagSuggestion, Tfidf},
-    util,
 };
 
 use super::recompute_index;
@@ -63,7 +61,6 @@ impl TaggingWorker {
                                 tokio::task::spawn_blocking(move || recompute_index(analysis))
                                     .await
                                     .unwrap();
-                            dbg!("recomputed tagging index");
                             tfidf = Arc::new(Tfidf::generate(database.clone()).await.unwrap());
                             last_computed = chrono::Utc::now();
                         }
@@ -160,7 +157,7 @@ async fn get_all_tags_from_stickers(
         };
         let sticker_tags = database.get_sticker_tags(id.to_string()).await?;
         for tag in sticker_tags {
-            res.push(ScoredTagSuggestion { tag, score: weight })
+            res.push(ScoredTagSuggestion { tag, score: weight });
         }
         weight *= 0.9;
     }

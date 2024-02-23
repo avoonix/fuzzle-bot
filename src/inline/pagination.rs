@@ -12,16 +12,16 @@ impl QueryPage {
         query_offset: &str,
         page_size: usize,
     ) -> Result<Self, anyhow::Error> {
-        let mut value = query_offset.split(";");
+        let mut value = query_offset.split(';');
         let mut rng = rand::thread_rng();
 
         match (value.next(), value.next()) {
-            (Some(offset), Some(seed)) => Ok(QueryPage {
+            (Some(offset), Some(seed)) => Ok(Self {
                 page_size,
                 current_offset: offset.parse()?,
                 seed: seed.parse()?,
             }),
-            _ => Ok(QueryPage {
+            _ => Ok(Self {
                 page_size,
                 current_offset: 0,
                 seed: rng.gen(),

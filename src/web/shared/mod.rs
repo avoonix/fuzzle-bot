@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use leptos::*;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, str::FromStr, vec};
+use std::{vec};
 
 use crate::{callback::TagOperation, sticker::Measures};
 
@@ -15,9 +15,9 @@ pub mod ssr {
     pub use crate::web::server::AuthenticatedUser;
     pub use actix_web::error::ErrorInternalServerError;
     pub use actix_web::error::ErrorNotFound;
-    pub use actix_web::web;
-    pub use actix_web::web::{Data, Query};
-    pub use actix_web::HttpRequest;
+    
+    pub use actix_web::web::{Data};
+    
     pub use leptos::ServerFnError;
     pub use leptos_actix::extract;
 }
@@ -28,7 +28,7 @@ pub async fn fetch_results(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<StickerDto>, ServerFnError> {
-    use self::ssr::*;
+    use self::ssr::{AppState, AuthenticatedUser, Data, InlineQueryData, ServerFnError, extract, query_stickers};
     let (user, data): (AuthenticatedUser, Data<AppState>) = extract().await?;
 
     let query =
@@ -36,7 +36,8 @@ pub async fn fetch_results(
 
     let result = match query.mode.clone() {
         crate::inline::InlineQueryDataMode::StickerSearch { emoji } => {
-            let result = query_stickers(
+             // TODO: limit, offset, proper error handling
+            query_stickers(
                 query,
                 data.database.clone(),
                 emoji,
@@ -47,8 +48,7 @@ pub async fn fetch_results(
                 0,
             )
             .await
-            .map_err(|err| ServerFnError::new("bot error"))?; // TODO: limit, offset, proper error handling
-            result
+            .map_err(|err| ServerFnError::new("bot error"))?
         }
         _ => Err(ServerFnError::new("query not implemented"))?,
     };
@@ -154,11 +154,7 @@ pub async fn fetch_sticker_info(id: String) -> Result<StickerInfoDto, ServerFnEr
     //         ErrorInternalServerError("could not compute similar")
     //     })?;
 
-    let similar = Measures {
-        embedding_cosine,
-        histogram_cosine,
-        visual_hash_cosine,
-    };
+    let similar = Measures { histogram_cosine, visual_hash_cosine, embedding_cosine };
 
     Ok(StickerInfoDto {
         id,
@@ -232,9 +228,7 @@ pub async fn tag_sticker(
                     .tag_sticker(sticker_id.clone(), tags, Some(user.user_meta.id().0))
                     .await?;
                 data.tagging_worker.maybe_recompute().await?;
-            } else {
-                dbg!("invalid tag");
-            }
+            } // TODO: error for invalid tag
         }
         Some(TagOperation::Untag(tag)) => {
             data.database

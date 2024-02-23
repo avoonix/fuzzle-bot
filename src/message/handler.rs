@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use log::info;
-use std::sync::Arc;
+
 use teloxide::{
     payloads::SendMessageSetters,
     types::{Message, MessageEntityKind, MessageEntityRef, ReplyMarkup, Sticker},
@@ -10,13 +10,12 @@ use url::Url;
 
 use crate::{
     background_tasks::BackgroundTaskExt,
-    bot::{Bot, BotError, BotExt, Config, RequestContext, UserMeta},
+    bot::{Bot, BotError, BotExt, RequestContext},
     callback::TagOperation,
-    database::Database,
     sticker::import_individual_sticker_and_queue_set,
-    tags::{suggest_tags, TagManager},
+    tags::{suggest_tags},
     text::{Markdown, Text},
-    util::{Emoji, Timer},
+    util::{Emoji},
 };
 
 use super::{
@@ -334,7 +333,7 @@ pub async fn handle_command_error(bot: Bot, msg: Message, err: ParseError) -> Re
         }
         command => {
             // TODO: handle more kinds of errors
-            dbg!(command);
+            drop(command);
             "an error occured".to_string()
         }
     };

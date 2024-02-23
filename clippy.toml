@@ -15,3 +15,7 @@ disallowed-methods = [
     { path = "teloxide::prelude::Requester::edit_message_caption", reason = "if this method is required, create a method that only accepts markdown instead" },
     { path = "teloxide::prelude::Requester::edit_message_caption_inline", reason = "if this method is required, create a method that only accepts markdown instead" }
 ]
+
+cognitive-complexity-threshold = 8
+too-many-lines-threshold = 70
+too-many-arguments-threshold = 10

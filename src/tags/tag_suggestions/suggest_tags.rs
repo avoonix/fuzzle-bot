@@ -1,5 +1,5 @@
 use crate::background_tasks::TaggingWorker;
-use crate::bot::{Bot, RequestContext};
+use crate::bot::{Bot};
 use crate::database::Database;
 
 use crate::tags::TagManager;
@@ -8,7 +8,7 @@ use anyhow::Result;
 use itertools::Itertools;
 use teloxide::requests::Requester;
 
-use std::collections::HashMap;
+
 use std::sync::Arc;
 
 use super::{suggest_tags_2, ScoredTagSuggestion};
@@ -103,6 +103,5 @@ pub async fn suggest_tags(
         .map(|suggestion| suggestion.tag)
         .collect_vec());
     let elapsed = chrono::Utc::now() - start;
-    dbg!(elapsed.num_milliseconds());
     result
 }

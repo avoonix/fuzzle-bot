@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::format, iter::once};
+use std::{collections::HashMap};
 
 use crate::{
     callback::TagOperation,
@@ -352,7 +352,7 @@ tag and wait for my reply before sending the next one\\.
                 match position {
                     itertools::Position::Only => format!("tag {tag}"),
                     itertools::Position::First => format!("tags {tag}"),
-                    itertools::Position::Middle => format!("{tag}"),
+                    itertools::Position::Middle => tag,
                     itertools::Position::Last => format!("and {tag}"),
                 }
             })
@@ -370,5 +370,5 @@ fn format_set_as_markdown_link(name: &str, title: &str) -> String {
 
 #[must_use]
 fn format_user_id_as_markdown_link(user_id: UserId) -> String {
-    format!("[{}](tg://user?id={})", user_id, user_id)
+    format!("[{user_id}](tg://user?id={user_id})")
 }

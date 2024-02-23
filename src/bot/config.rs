@@ -22,16 +22,16 @@ pub struct Paths {
 }
 
 impl Paths {
-    pub fn config(&self) -> PathBuf {
+    #[must_use] pub fn config(&self) -> PathBuf {
         self.config_file_path.clone().into()
     }
-    pub fn db(&self) -> PathBuf {
+    #[must_use] pub fn db(&self) -> PathBuf {
         self.db_file_path.clone().into()
     }
-    pub fn image_cache(&self) -> PathBuf {
+    #[must_use] pub fn image_cache(&self) -> PathBuf {
         format!("{}/images", self.cache_dir_path).into()
     }
-    pub fn tag_cache(&self) -> PathBuf {
+    #[must_use] pub fn tag_cache(&self) -> PathBuf {
         format!("{}/tags", self.cache_dir_path).into()
     }
 }

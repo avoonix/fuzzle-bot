@@ -33,7 +33,7 @@ impl AuthData {
             Ok(hash) => {
                 // TODO: does not check age yet
                 let data_check_string = self.data_check_string();
-                let secret_key = digest::digest(&digest::SHA256, &bot_token.as_bytes());
+                let secret_key = digest::digest(&digest::SHA256, bot_token.as_bytes());
                 let v_key = hmac::Key::new(hmac::HMAC_SHA256, secret_key.as_ref());
                 hmac::verify(&v_key, data_check_string.as_bytes(), &hash).is_ok()
             }
@@ -91,7 +91,7 @@ impl FromRequest for AuthenticatedUser {
                 .await
                 .map_err(|err| ErrorInternalServerError("failed to create/get user"))?; // TODO: properly handle
 
-                Ok(AuthenticatedUser {
+                Ok(Self {
                     auth_data: auth_data.into(),
                     user_meta: user_meta.into(),
                 })

@@ -1,21 +1,21 @@
 use itertools::Itertools;
-use teloxide::dispatching::dialogue::GetChatId;
+
 use teloxide::payloads::AnswerCallbackQuerySetters;
 use teloxide::prelude::*;
 use teloxide::types::{
-    InlineKeyboardButton, InlineKeyboardMarkup, MediaKind, MessageCommon, MessageKind,
+    InlineKeyboardMarkup, MediaKind, MessageCommon, MessageKind,
 };
-use url::Url;
 
-use crate::bot::{Bot, BotError, BotExt, RequestContext, UserMeta};
+
+use crate::bot::{BotError, BotExt, RequestContext};
 use crate::callback::TagOperation;
-use crate::database::{AddedRemoved, Database};
+
 use crate::message::Keyboard;
 use crate::sticker::import_all_stickers_from_set;
-use crate::tags::{suggest_tags, TagManager};
+use crate::tags::{suggest_tags};
 use crate::text::{Markdown, Text};
 use crate::util::teloxide_error_can_safely_be_ignored;
-use std::sync::Arc;
+
 
 use crate::callback::CallbackData;
 
@@ -332,7 +332,7 @@ async fn unban_set(
     answer_callback_query(
         request_context,
         q,
-        Some(Markdown::escaped(format!("Added Set {}", set_name))),
+        Some(Markdown::escaped(format!("Added Set {set_name}"))),
         Some(InlineKeyboardMarkup::new([[]])), // TODO: refactor
         None,
     )

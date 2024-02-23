@@ -1,5 +1,3 @@
-use std::vec;
-
 use itertools::Itertools;
 use leptos::html::*;
 use leptos::*;
@@ -43,7 +41,7 @@ fn ResultsList(#[prop(into)] results: Vec<StickerDto>) -> impl IntoView {
                 .map(|r| {
                     view! {
                         <div>
-                            <A href=format!("/sticker/{}", r.id.clone())>
+                            <A href=format!("/sticker/{}", r.id)>
                                 <Sticker id=r.id/>
                             </A>
                         </div>

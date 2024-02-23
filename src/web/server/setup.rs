@@ -1,30 +1,20 @@
-use std::{pin::Pin, sync::Arc};
+use std::{sync::Arc};
 
 use actix_files::Files;
 use actix_web::{
-    cookie::{
-        time::{Duration, OffsetDateTime},
-        Cookie, SameSite,
-    },
-    error::ErrorBadRequest,
-    get,
-    http::header,
-    middleware, post, web, App, FromRequest, HttpRequest, HttpResponse, HttpServer, Responder,
+    middleware, web, App, HttpServer,
 };
-use chrono::naive::serde::ts_seconds;
-use futures::{
-    future::{err, ok, Ready},
-    Future,
-};
-use itertools::Itertools;
-use leptos::*;
+
+
+
+use leptos::get_configuration;
 use leptos_actix::{generate_route_list, LeptosRoutes};
-use ring::{digest, hmac};
-use serde::{Deserialize, Serialize};
-use teloxide::requests::Requester;
+
+
+
 
 use crate::{
-    background_tasks::{AnalysisWorker, TaggingWorker}, bot::{get_or_create_user, Bot, UserMeta}, database::Database, sticker::fetch_sticker_file, tags::TagManager, Config, Paths
+    background_tasks::{AnalysisWorker, TaggingWorker}, bot::{Bot}, database::Database, tags::TagManager, Config, Paths
 };
 
 use super::service;
@@ -76,7 +66,7 @@ pub fn setup(
                 .service(service::histogram_files)
                 .leptos_routes(
                     leptos_options.to_owned(),
-                    routes.to_owned(),
+                    routes.clone(),
                     crate::web::client::App,
                 )
                 .app_data(web::Data::new(leptos_options.to_owned()))
@@ -86,6 +76,6 @@ pub fn setup(
         .expect("address not to be in use")
         .run()
         .await
-        .expect("server not to die")
+        .expect("server not to die");
     });
 }

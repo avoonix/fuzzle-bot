@@ -4,10 +4,10 @@ use crate::database::Database;
 use crate::inline::{inline_query_handler, inline_result_handler};
 use crate::message::{list_visible_admin_commands, list_visible_user_commands, message_handler};
 use crate::tags::{get_default_tag_manager, TagManager};
-use crate::util::Timer;
+
 use crate::background_tasks::{start_periodic_tasks, AnalysisWorker, TaggingWorker};
 use crate::Paths;
-use std::path::PathBuf;
+
 use std::sync::Arc;
 use std::time::Duration;
 use teloxide::adaptors::throttle::Limits;

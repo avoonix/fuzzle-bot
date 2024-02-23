@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap};
 
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -123,7 +123,7 @@ pub struct UserSettings {
 
 impl UserSettings {
     pub fn order(&self) -> StickerOrder {
-        self.order.clone().unwrap_or_default()
+        self.order.unwrap_or_default()
     }
 }
 

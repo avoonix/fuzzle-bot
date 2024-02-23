@@ -7,8 +7,6 @@ mod server_only_stuff {
     use fuzzle_bot::{Config, Paths, UpdateListener};
     use tokio::fs::{read_to_string, write, File};
 
-    use std::path::PathBuf;
-
     #[derive(Debug, Parser)]
     #[command(name = "fuzzle-bot")]
     #[command(about = "A telegram bot for tagging stickers", long_about = None)]
@@ -55,8 +53,8 @@ mod server_only_stuff {
 
         let paths = Paths {
             cache_dir_path,
-            config_file_path,
             db_file_path,
+            config_file_path,
         };
 
         match command {
@@ -91,7 +89,7 @@ mod server_only_stuff {
 
 #[cfg(feature = "ssr")]
 fn main() -> anyhow::Result<()> {
-    use server_only_stuff::*;
+    use server_only_stuff::{init, with_enough_stack};
     std::env::set_var("RUST_LOG", "info");
     pretty_env_logger::init();
     with_enough_stack(init())

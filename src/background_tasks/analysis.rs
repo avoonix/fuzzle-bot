@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use log::{error, warn};
+use log::{error};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
@@ -83,7 +83,7 @@ impl AnalysisWorker {
                             let Some(id) = lookup.get(&res.label) else {
                                 continue;
                             };
-                            top_matches.push(1.0 - res.distance as f64, id.to_string());
+                            top_matches.push(1.0 - f64::from(res.distance), id.to_string());
                         }
                         resp.send(Ok(top_matches)).unwrap();
                     }
@@ -141,7 +141,7 @@ pub(super) fn recompute_index(
             input_embedding.push(IndexInput {
                 label: id,
                 vec: embedding,
-            })
+            });
         }
         if let Some(histogram) = analysis.histogram {
             let histogram = vec_u8_to_f32(histogram);

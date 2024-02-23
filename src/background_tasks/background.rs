@@ -1,5 +1,5 @@
 use log::warn;
-use teloxide::types::UserId;
+
 
 use crate::{
     bot::{log_error_and_send_to_admin, RequestContext},
@@ -22,7 +22,7 @@ impl BackgroundTaskExt for RequestContext {
         tokio::spawn(async move {
             let result = send_message_to_admin(msg, source_user, bot.clone(), admin_id).await;
             match result {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => log_error_and_send_to_admin(err, bot.clone(), admin_id).await,
             };
         });
@@ -41,7 +41,7 @@ impl BackgroundTaskExt for RequestContext {
         tokio::spawn(async move {
             let result = notify_admin_if_set_new(set_name.clone(), request_context.clone()).await;
             match result {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => log_error_and_send_to_admin(err.into(), bot.clone(), admin_id).await,
             };
             let result = import_all_stickers_from_set(
@@ -52,12 +52,12 @@ impl BackgroundTaskExt for RequestContext {
             )
             .await;
             match result {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => log_error_and_send_to_admin(err, bot.clone(), admin_id).await,
             };
             let result = analyze_n_stickers(database, bot.clone(), 120, paths, worker.clone()).await;
             match result {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => log_error_and_send_to_admin(err, bot.clone(), admin_id).await,
             };
         });
@@ -84,7 +84,7 @@ impl BackgroundTaskExt for RequestContext {
             )
             .await;
             match result {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(err) => log_error_and_send_to_admin(err, bot.clone(), admin_id).await,
             };
         });

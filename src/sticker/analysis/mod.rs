@@ -19,21 +19,20 @@ pub use index::*;
 pub use measures::{Match, Measures, TopMatches};
 
 #[cfg(feature = "ssr")]
-pub use histogram::{calculate_color_histogram, create_historgram_image, Histogram};
+pub use histogram::{calculate_color_histogram, create_historgram_image};
 #[cfg(feature = "ssr")]
 pub use model::{EmbeddingError, ModelEmbedding};
-#[cfg(feature = "ssr")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "ssr")]
-pub use visual_hash::{calculate_visual_hash, VisualHash};
 
 #[cfg(feature = "ssr")]
-use log::{info, warn};
+pub use visual_hash::{calculate_visual_hash};
+
+#[cfg(feature = "ssr")]
+use log::{warn};
 
 #[cfg(feature = "ssr")]
 use crate::{
     bot::{Bot, BotError},
-    database::{Database, SavedSticker},
+    database::{Database},
     sticker::fetch_possibly_cached_sticker_file,
     Paths,
 };
@@ -57,13 +56,13 @@ pub async fn find_with_text_embedding(
     worker: AnalysisWorker,
     n: usize,
 ) -> Result<TopMatches, BotError> {
-    use crate::sticker::analysis::{model::ModelEmbedding, tokenizer::tokenize};
+    use crate::sticker::analysis::{model::ModelEmbedding};
 
     let query_embedding = ModelEmbedding::from_text(&text)?;
-    let result = worker
+    
+    worker
         .retrieve(query_embedding.into(), n, SimilarityAspect::Embedding)
-        .await;
-    return result;
+        .await
 }
 
 #[cfg(feature = "ssr")]

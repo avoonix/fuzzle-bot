@@ -1,15 +1,15 @@
-use crate::bot::{Bot, BotExt, RequestContext, UserMeta};
+use crate::bot::{BotExt, RequestContext};
 use crate::callback::TagOperation;
-use crate::database::Database;
+
 use crate::inline::SetOperation;
 use crate::message::Keyboard;
-use crate::tags::{suggest_tags, TagManager};
+use crate::tags::{suggest_tags};
 use crate::text::{Markdown, Text};
 use anyhow::Result;
 use itertools::Itertools;
 use teloxide::types::{InputFile, ReplyMarkup};
 
-use std::sync::Arc;
+
 use teloxide::{prelude::*, utils::command::BotCommands};
 
 use super::unescape_sticker_unique_id_from_command;

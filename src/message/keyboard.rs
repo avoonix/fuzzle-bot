@@ -201,7 +201,7 @@ impl Keyboard {
         if is_admin {
             InlineKeyboardMarkup::new([[InlineKeyboardButton::callback(
                 "Unban Set",
-                CallbackData::change_set_status(&set_name, false),
+                CallbackData::change_set_status(set_name, false),
             )]])
         } else {
             InlineKeyboardMarkup::new([[]])
@@ -370,7 +370,7 @@ impl Keyboard {
         Ok(InlineKeyboardMarkup::new([
             [InlineKeyboardButton::url(
                 "Show Set",
-                Url::parse(format!("https://t.me/addstickers/{}", set_name).as_str())?,
+                Url::parse(format!("https://t.me/addstickers/{set_name}").as_str())?,
             )],
             [InlineKeyboardButton::callback(
                 "Delete/Ban Set",

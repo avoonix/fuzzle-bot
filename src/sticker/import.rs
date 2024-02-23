@@ -1,6 +1,6 @@
 use itertools::Itertools;
-use log::{debug, info, warn};
-use teloxide::{requests::Requester, types::UserId};
+use log::{info, warn};
+use teloxide::{requests::Requester};
 use tokio::task;
 
 use crate::{

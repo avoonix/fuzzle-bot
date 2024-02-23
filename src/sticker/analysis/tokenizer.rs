@@ -1,10 +1,10 @@
 use flate2::read::GzDecoder;
 use indexmap::{IndexMap, IndexSet};
-use log::warn;
+
 use once_cell::sync::Lazy;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
-use std::path::Path;
+
+use std::io::{BufRead, Read};
+
 use std::sync::{Mutex, PoisonError};
 use tract_itertools::Itertools;
 use tract_onnx::prelude::*;
@@ -35,7 +35,7 @@ pub fn tokenize(input: &[String]) -> Result<Tensor, EmbeddingError> {
         .map(|text| {
             Ok(vec![sot_token]
                 .into_iter()
-                .chain(tokenizer.encode(text)?.into_iter())
+                .chain(tokenizer.encode(text)?)
                 .take(CONTEXT_LENGTH - 1) // always truncate
                 .chain(vec![eot_token])
                 .collect())
@@ -81,7 +81,7 @@ fn bytes_to_unicode() -> IndexMap<u32, char> {
 }
 
 fn get_pairs(word: &Vec<String>) -> IndexSet<(String, String)> {
-    word.into_iter()
+    word.iter()
         .tuple_windows()
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect()
@@ -124,7 +124,7 @@ impl SimpleTokenizer {
             byte_encoder.iter().map(|(&b, &c)| (c, b)).collect();
 
         let merges = bpe_vocab
-            .split("\n")
+            .split('\n')
             .skip(1)
             .take(49152 - 256 - 2)
             .collect_vec();
@@ -140,13 +140,13 @@ impl SimpleTokenizer {
         let vocab = vocab.values().collect_vec();
         let vocab = vocab
             .iter()
-            .map(|v| v.to_string())
+            .map(std::string::ToString::to_string)
             .chain(vocab.iter().map(|v| format!("{v}</w>")))
             .collect_vec();
         let vocab = vocab
             .into_iter()
             .chain(merges.iter().map(|merge| format!("{}{}", merge.0, merge.1)))
-            .chain(["<|startoftext|>".to_string(), "<|endoftext|>".to_string()].into_iter())
+            .chain(["<|startoftext|>".to_string(), "<|endoftext|>".to_string()])
             .collect_vec();
 
         let encoder: IndexMap<_, _> = vocab.iter().cloned().zip(0..vocab.len()).collect();
@@ -158,9 +158,9 @@ impl SimpleTokenizer {
         cache.insert("<|startoftext|>".to_string(), "<|startoftext|>".to_string());
         cache.insert("<|endoftext|>".to_string(), "<|endoftext|>".to_string());
 
-        let pat = regex::Regex::new(r#"(?i)<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+"#).expect("hardcoded regex to parse");
+        let pat = regex::Regex::new(r"(?i)<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+").expect("hardcoded regex to parse");
 
-        SimpleTokenizer {
+        Self {
             byte_encoder,
             #[cfg(test)]
             byte_decoder,
@@ -245,17 +245,17 @@ impl SimpleTokenizer {
                 .map(|c| self.byte_encoder[&(c as u32)])
                 .collect();
             let tokens = self.bpe(&token)?;
-            let tokens = tokens.split(" ").collect_vec();
+            let tokens = tokens.split(' ').collect_vec();
             let result: Vec<Result<_, _>> = tokens
                 .iter()
                 .map(|bpe_token| {
                     self.encoder
                         .get(*bpe_token)
-                        .ok_or(EmbeddingError::UnknownToken(bpe_token.to_string()))
+                        .ok_or(EmbeddingError::UnknownToken((*bpe_token).to_string()))
                 })
                 .collect_vec();
             let result: Result<Vec<_>, _> = result.into_iter().collect();
-            bpe_tokens.extend(result?)
+            bpe_tokens.extend(result?);
         }
         Ok(bpe_tokens)
     }

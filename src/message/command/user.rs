@@ -1,14 +1,14 @@
-use crate::bot::{Bot, BotExt, RequestContext, UserMeta};
-use crate::database::Database;
+use crate::bot::{BotExt, RequestContext};
+
 use crate::message::Keyboard;
-use crate::tags::{suggest_tags, TagManager};
+use crate::tags::{suggest_tags};
 use crate::text::{Markdown, Text};
-use crate::Config;
+
 use anyhow::Result;
 use log::warn;
 use teloxide::types::{BotCommand, InputFile};
 
-use std::sync::Arc;
+
 use teloxide::{prelude::*, utils::command::BotCommands};
 
 use super::StartParameter;

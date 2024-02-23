@@ -8,3 +8,4 @@ Dockerfile
 tags
 container-data
 .git
+rust-toolchain.toml
