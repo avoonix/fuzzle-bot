@@ -126,7 +126,7 @@ Create an issue on [GitHub](https://github.com/avoonix/fuzzle-bot/issues)\\.",
     }
 
     #[must_use]
-    pub fn get_blacklist_text() -> Markdown {
+    pub fn blacklist() -> Markdown {
         Markdown::new(
         "*Blacklist Info:*
 The blacklist is not very useful as of now because the majority of stickers are not properly tagged yet\\.
@@ -249,12 +249,10 @@ user taggings (24 hours):",
 
         Markdown::new(format!(
             "User: {user_id}
-Interactions: {}
 Total taggings: \\+{} \\-{}
 Taggings \\(24 hours\\): \\+{} \\-{}
 Taggings per set \\(24 hours\\):
 {}",
-            user_stats.interactions,
             user_stats.total_tagged,
             user_stats.total_untagged,
             user_stats.tagged_24hrs,

@@ -10,7 +10,6 @@ pub struct RawDatabaseUser {
     pub id: i64,
     pub blacklist: String,
     pub settings: Option<String>,
-    pub interactions: i64,
     pub can_tag_stickers: bool,
     pub can_tag_sets: bool,
     pub created_at: SqlDateTime,

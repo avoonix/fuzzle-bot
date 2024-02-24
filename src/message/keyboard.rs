@@ -171,7 +171,7 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn make_blacklist_keyboard(current_blacklist: &[String]) -> InlineKeyboardMarkup {
+    pub fn blacklist(current_blacklist: &[String]) -> InlineKeyboardMarkup {
         let mut keyboard: Vec<Vec<InlineKeyboardButton>> = vec![];
 
         keyboard.push(vec![InlineKeyboardButton::callback(

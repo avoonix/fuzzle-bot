@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT * FROM user WHERE id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "blacklist",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "can_tag_stickers",
+        "ordinal": 2,
+        "type_info": "Bool"
+      },
+      {
+        "name": "can_tag_sets",
+        "ordinal": 3,
+        "type_info": "Bool"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "settings",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "b6660a5c3695998ea94b98065a99db440aff659492fd02ed9a987b0d9e339030"
+}

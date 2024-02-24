@@ -40,6 +40,7 @@ impl BackgroundTaskExt for RequestContext {
         let request_context = self.clone();
         tokio::spawn(async move {
             let result = notify_admin_if_set_new(set_name.clone(), request_context.clone()).await;
+            drop(request_context); // for timer
             match result {
                 Ok(()) => {}
                 Err(err) => log_error_and_send_to_admin(err.into(), bot.clone(), admin_id).await,

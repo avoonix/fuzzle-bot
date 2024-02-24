@@ -17,12 +17,14 @@ impl Database {
         user: Option<u64>,
     ) -> Result<(), DatabaseError> {
         let user = user.map(|u| u as i64);
+        let mut transaction = self.pool.begin().await?;
         for tag_name in tag_names {
             sqlx::query!("INSERT INTO file_hash_tag (file_hash, tag, added_by_user_id) VALUES ((SELECT file_hash FROM sticker WHERE id = ?1), ?2, ?3)
                          ON CONFLICT(file_hash, tag) DO NOTHING ", sticker_unique_id, tag_name, user)
-                .execute(&self.pool)
+                .execute(&mut *transaction)
                 .await?;
         }
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -35,15 +37,17 @@ impl Database {
     ) -> Result<u64, DatabaseError> {
         let user = user as i64;
         let mut tags_affected = 0;
+        let mut transaction = self.pool.begin().await?;
         for tag in tags {
             tags_affected += sqlx::query!("INSERT INTO file_hash_tag (file_hash, tag, added_by_user_id)
                                            SELECT DISTINCT file_hash, ?1, ?2 FROM sticker 
                                                 WHERE set_id = ?3 AND NOT EXISTS (SELECT * FROM file_hash WHERE sticker.file_hash = file_hash.id AND file_hash.tags_locked_by_user_id IS NOT NULL)
                                            ON CONFLICT (file_hash, tag) DO NOTHING", tag, user, set_name)
-                .execute(&self.pool)
+                .execute(&mut *transaction)
                 .await?
                 .rows_affected();
         }
+        transaction.commit().await?;
 
         Ok(tags_affected)
     }

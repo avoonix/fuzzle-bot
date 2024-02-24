@@ -74,24 +74,23 @@ pub async fn get_or_create_user(
     database: Database,
     bot: Bot,
 ) -> Result<UserMeta, BotError> {
-    let user_exists = database.has_user(user_id.0).await?;
-    if !user_exists {
-        send_message_to_admin(
-            AdminMessage::NewUser,
-            user_id,
-            bot,
-            config.get_admin_user_id(),
-        )
-        .await?;
-    }
-
-    let is_admin = user_id == config.get_admin_user_id();
-    let user = database // TODO: don't update user every time?
-        .add_user_if_not_exist(user_id.0, config.default_blacklist.clone())
-        .await?;
+    let user = database.get_user(user_id.0).await?;
+    let user = match user {
+        Some(user) => user,
+        None => {
+            send_message_to_admin(
+                AdminMessage::NewUser,
+                user_id,
+                bot,
+                config.get_admin_user_id(),
+            )
+            .await?;
+            database.create_user(user_id.0, config.default_blacklist.clone()).await?
+        }
+    };
 
     // TODO: check if user is banned?
-
+    let is_admin = user_id == config.get_admin_user_id();
     Ok(UserMeta { user, is_admin })
 }
 

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "INSERT INTO user (id, blacklist) VALUES (?1, ?2)\n                                                ON CONFLICT(id) DO UPDATE SET interactions = interactions + 1\n                                                RETURNING *",
+  "query": "INSERT INTO user (id, blacklist) VALUES (?1, ?2) RETURNING *",
   "describe": {
     "columns": [
       {
@@ -32,11 +32,6 @@
         "name": "settings",
         "ordinal": 5,
         "type_info": "Text"
-      },
-      {
-        "name": "interactions",
-        "ordinal": 6,
-        "type_info": "Int64"
       }
     ],
     "parameters": {
@@ -48,9 +43,8 @@
       false,
       false,
       false,
-      true,
-      false
+      true
     ]
   },
-  "hash": "64bbe11969982bb0c327c2e6fc99d153c33c6ed7ca6e2700077b131869f7d4eb"
+  "hash": "70321dcab008e5a99071eb2d7c6d6798a9f453a27b71d6999804c8e5653e3ef1"
 }

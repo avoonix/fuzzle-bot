@@ -41,7 +41,6 @@ impl StickerTagQuery {
         self
     }
 
-    // bad performance, but at least makes use of (the limited) indexes
     #[must_use]
     pub(super) fn generate(&self) -> QueryBuilder<'_, Sqlite> {
         // TODO: test if exists or in is faster:

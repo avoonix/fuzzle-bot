@@ -171,9 +171,8 @@ pub async fn query_stickers(
             .get_recently_used_stickers(user.id().0, limit, offset)
             .await?;
         if stickers.is_empty() {
-            let blacklist = database.get_blacklist(user.id().0).await?;
             database
-                .get_stickers_for_tag_query(vec![], blacklist, limit, offset, order)
+                .get_stickers_for_tag_query(vec![], user.user.blacklist.clone(), limit, offset, order)
                 .await?
         } else {
             stickers
@@ -336,10 +335,7 @@ async fn handle_blacklist_query(
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
-    let blacklist = request_context
-        .database
-        .get_blacklist(request_context.user_id().0)
-        .await?;
+    let blacklist = &request_context.user.user.blacklist;
     let suggested_tags = request_context.tag_manager.find_tags(&query.tags);
     let suggested_tags = suggested_tags
         .into_iter()

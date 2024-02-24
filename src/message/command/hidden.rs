@@ -3,12 +3,11 @@ use crate::callback::TagOperation;
 
 use crate::inline::SetOperation;
 use crate::message::Keyboard;
-use crate::tags::{suggest_tags};
+use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
 use anyhow::Result;
 use itertools::Itertools;
 use teloxide::types::{InputFile, ReplyMarkup};
-
 
 use teloxide::{prelude::*, utils::command::BotCommands};
 
@@ -153,9 +152,13 @@ impl HiddenCommand {
             }
             Self::BlacklistTag { tag } => {
                 database.add_tag_to_blacklist(user.id().0, tag).await?;
-                let blacklist = database.get_blacklist(user.id().0).await?;
-                bot.send_markdown(msg.chat.id, Text::get_blacklist_text())
-                    .reply_markup(Keyboard::make_blacklist_keyboard(&blacklist))
+                let user = request_context
+                    .database
+                    .get_user(request_context.user_id().0)
+                    .await?
+                    .ok_or(anyhow::anyhow!("user does not exist (should never happen)"))?;
+                bot.send_markdown(msg.chat.id, Text::blacklist())
+                    .reply_markup(Keyboard::blacklist(&user.blacklist))
                     .await?;
             }
             Self::TagSet { set_name, tag } => {
@@ -230,7 +233,11 @@ async fn set_tag_operation(
                     .collect_vec();
                 let taggings_changed = request_context
                     .database
-                    .tag_all_stickers_in_set(set_name.clone(), tags.clone(), request_context.user_id().0)
+                    .tag_all_stickers_in_set(
+                        set_name.clone(),
+                        tags.clone(),
+                        request_context.user_id().0,
+                    )
                     .await?;
                 request_context.tagging_worker.maybe_recompute().await?;
                 Text::tagged_set(&set_name, &tags, taggings_changed)

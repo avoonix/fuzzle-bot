@@ -2,20 +2,16 @@ use itertools::Itertools;
 
 use teloxide::payloads::AnswerCallbackQuerySetters;
 use teloxide::prelude::*;
-use teloxide::types::{
-    InlineKeyboardMarkup, MediaKind, MessageCommon, MessageKind,
-};
-
+use teloxide::types::{InlineKeyboardMarkup, MediaKind, MessageCommon, MessageKind};
 
 use crate::bot::{BotError, BotExt, RequestContext};
 use crate::callback::TagOperation;
 
 use crate::message::Keyboard;
 use crate::sticker::import_all_stickers_from_set;
-use crate::tags::{suggest_tags};
+use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
 use crate::util::teloxide_error_can_safely_be_ignored;
-
 
 use crate::callback::CallbackData;
 
@@ -216,15 +212,11 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::Blacklist => {
-            let blacklist = request_context
-                .database
-                .get_blacklist(request_context.user_id().0)
-                .await?;
             answer_callback_query(
-                request_context,
+                request_context.clone(),
                 q,
-                Some(Text::get_blacklist_text()),
-                Some(Keyboard::make_blacklist_keyboard(&blacklist)),
+                Some(Text::blacklist()),
+                Some(Keyboard::blacklist(&request_context.user.user.blacklist)),
                 None,
             )
             .await
@@ -297,15 +289,16 @@ async fn remove_blacklist_tag(
         .database
         .remove_blacklisted_tag(request_context.user_id().0, tag.clone())
         .await?;
-    let blacklist = request_context
+    let user = request_context
         .database
-        .get_blacklist(request_context.user_id().0)
-        .await?;
-    let keyboard = Keyboard::make_blacklist_keyboard(&blacklist);
+        .get_user(request_context.user_id().0)
+        .await?
+        .ok_or(anyhow::anyhow!("user does not exist (should never happen)"))?;
+    let keyboard = Keyboard::blacklist(&user.blacklist);
     answer_callback_query(
         request_context,
         q,
-        Some(Text::get_blacklist_text()),
+        Some(Text::blacklist()),
         Some(keyboard),
         None,
     )

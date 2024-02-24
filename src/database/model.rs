@@ -79,7 +79,6 @@ pub struct AdminStats {
 
 #[derive(Debug, Clone)]
 pub struct FullUserStats {
-    pub interactions: i64,
     pub total_tagged: i64,
     pub total_untagged: i64,
     pub tagged_24hrs: i64,

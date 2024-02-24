@@ -56,20 +56,18 @@ impl RegularCommand {
             database,
             tag_manager,
             bot,
-            user,
             ..
         } = request_context;
         match self {
             Self::Help => {
-                bot.send_markdown(msg.chat.id, Text::get_help_text(user.is_admin))
+                bot.send_markdown(msg.chat.id, Text::get_help_text(request_context.user.is_admin))
                     .reply_markup(Keyboard::make_help_keyboard())
                     .await?;
             }
             Self::Start { start_parameter } => match start_parameter {
                 StartParameter::Blacklist => {
-                    let blacklist = database.get_blacklist(user.id().0).await?;
-                    bot.send_markdown(msg.chat.id, Text::get_blacklist_text())
-                        .reply_markup(Keyboard::make_blacklist_keyboard(&blacklist))
+                    bot.send_markdown(msg.chat.id, Text::blacklist())
+                        .reply_markup(Keyboard::blacklist(&request_context.user.user.blacklist))
                         .await?;
                 }
                 StartParameter::Regular | StartParameter::Greeting => {
@@ -95,7 +93,7 @@ impl RegularCommand {
                         .await?;
                 }
                 StartParameter::Help => {
-                    bot.send_markdown(msg.chat.id, Text::get_help_text(user.is_admin))
+                    bot.send_markdown(msg.chat.id, Text::get_help_text(request_context.user.is_admin))
                         .reply_markup(Keyboard::make_help_keyboard())
                         .await?;
                 }
@@ -111,9 +109,9 @@ impl RegularCommand {
             Self::Settings => {
                 bot.send_markdown(
                     msg.chat.id,
-                    Text::get_settings_text(user.user.settings.clone()),
+                    Text::get_settings_text(request_context.user.user.settings.clone()),
                 )
-                .reply_markup(Keyboard::make_settings_keyboard(user.user.settings.clone()))
+                .reply_markup(Keyboard::make_settings_keyboard(request_context.user.user.settings.clone()))
                 .await?;
             }
             Self::PopularTags => {
@@ -167,7 +165,7 @@ impl RegularCommand {
                 .await?;
             }
             Self::ClearRecentlyUsed => {
-                database.clear_recently_used_stickers(user.id().0).await?;
+                database.clear_recently_used_stickers(request_context.user.id().0).await?;
                 bot.send_markdown(
                     msg.chat.id,
                     Markdown::escaped("Cleared recently used stickers"),

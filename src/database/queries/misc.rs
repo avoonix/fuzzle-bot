@@ -76,10 +76,6 @@ impl Database {
             .fetch_one(&self.pool)
             .await?;
 
-        let interactions = sqlx::query!("SELECT interactions FROM user WHERE id = ?1", user_id)
-            .fetch_one(&self.pool)
-            .await?;
-
         let affected_sets_24 = sqlx::query!("select 'tagged' as operation, set_id, count() as count from file_hash_tag left join sticker on sticker.file_hash = file_hash_tag.file_hash where file_hash_tag.added_by_user_id = ?1 AND julianday('now') - julianday(file_hash_tag.created_at) <= 1 group by sticker.file_hash
 UNION
 select 'untagged' as operation, set_id, count() as count from file_hash_tag_history left join sticker on sticker.file_hash = file_hash_tag_history.file_hash where file_hash_tag_history.removed_by_user_id = ?1 AND julianday('now') - julianday(file_hash_tag_history.created_at) <= 1 group by sticker.file_hash;", user_id)
@@ -104,7 +100,6 @@ select 'untagged' as operation, set_id, count() as count from file_hash_tag_hist
         }
 
         let stats = FullUserStats {
-            interactions: interactions.interactions,
             tagged_24hrs: added_result_24.count,
             untagged_24hrs: removed_result_24.count,
             total_tagged: added_result.count,
