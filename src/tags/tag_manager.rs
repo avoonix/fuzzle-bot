@@ -64,6 +64,7 @@ impl TagManager {
         tags.insert("felisrandomis".to_string(), Category::Artist);
         tags.insert("stumblinbear".to_string(), Category::Artist);
         tags.insert("spookyfoxinc".to_string(), Category::Artist);
+        tags.insert("niuka_folfsky".to_string(), Category::Artist);
 
         tags.insert("yes".to_string(), Category::General);
         tags.insert("no".to_string(), Category::General);
@@ -74,6 +75,8 @@ impl TagManager {
         tags.insert("yeet".to_string(), Category::General);
         tags.insert("holding_heart".to_string(), Category::General);
         tags.insert("segufix".to_string(), Category::General);
+        tags.insert("hiding_behind_tail".to_string(), Category::General);
+        tags.insert("diaper_creature".to_string(), Category::Species);
 
         self.tags = tags;
         self
@@ -151,6 +154,8 @@ impl TagManager {
 
         aliases.insert("nal".to_string(), "nowandlater".to_string());
         aliases.insert("nav".to_string(), "nowandlater".to_string()); // logo looks like nav
+        aliases.insert("niuka".to_string(), "niuka_folfsky".to_string());
+        aliases.insert("niu-ka".to_string(), "niuka_folfsky".to_string());
 
         aliases.insert("moved_info".to_string(), "meta_sticker".to_string());
         aliases.insert("additional_info".to_string(), "meta_sticker".to_string());

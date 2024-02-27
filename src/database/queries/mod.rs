@@ -29,9 +29,9 @@ impl Database {
             .connect_with(
                 sqlx::sqlite::SqliteConnectOptions::new()
                     .statement_cache_capacity(500)
-                    .pragma("cache_size", format_cache_size(512 * MB))
+                    .pragma("cache_size", format_cache_size(2 * GB))
                     .pragma("temp_store", "memory")
-                    .pragma("mmap_size", (2 * GB).to_string())
+                    .pragma("mmap_size", (4 * GB).to_string())
                     .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
                     .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
                     .optimize_on_close(true, 1000)

@@ -1,5 +1,5 @@
-use crate::background_tasks::TaggingWorker;
-use crate::bot::{Bot};
+use crate::background_tasks::{SuggestTags, TaggingWorker};
+use crate::bot::Bot;
 use crate::database::Database;
 
 use crate::tags::TagManager;
@@ -7,7 +7,6 @@ use crate::util::Emoji;
 use anyhow::Result;
 use itertools::Itertools;
 use teloxide::requests::Requester;
-
 
 use std::sync::Arc;
 
@@ -20,10 +19,6 @@ pub async fn suggest_tags(
     database: Database,
     tagging_worker: TaggingWorker,
 ) -> Result<Vec<String>> {
-    let start = chrono::Utc::now();
-    let sticker = database.get_sticker(sticker_unique_id.to_string()).await?;
-    let sticker = sticker.unwrap();
-
     // TODO: redo these suggestion
     let suggested_tags = database
         .suggest_tags_for_sticker_based_on_other_stickers_in_set(sticker_unique_id.to_string())
@@ -41,7 +36,7 @@ pub async fn suggest_tags(
     suggested_tags = ScoredTagSuggestion::merge(
         suggested_tags,
         tagging_worker
-            .suggest(sticker_unique_id.to_string())
+            .execute(SuggestTags::new(sticker_unique_id.to_string()))
             .await?,
     );
 
@@ -67,41 +62,11 @@ pub async fn suggest_tags(
         suggested_tags = ScoredTagSuggestion::merge(suggested_tags, suggestions);
     }
 
-    // let mut implied_by_tags = vec![];
-    // for tag in sticker_tags {
-    //     let implied_by = tag_manager.get_inverse_implications(&tag);
-    //     implied_by_tags.extend(implied_by);
-    // }
-    // dbg!(&implied_by_tags);
-    // dbg!(implied_suggestions.collect_vec());
-
-    // if let Some(sticker) = sticker {
-    //     let (buf, file) = fetch_sticker_file(sticker.file_id, bot.clone()).await?;
-    //     let file_kind = file.path.as_str().try_into().ok();
-    //     if let Some(file_kind) = file_kind {
-    //         match file_kind {
-    //             FileKind::Webp => {
-    //                 let image = image::load_from_memory_with_format(&buf, ImageFormat::WebP).unwrap();
-    //                 let suggestions = suggest_tags_by_counting_pixel_colors(&image);
-    //
-    //                 for suggestion in suggestions {
-    //                     if !suggested_tags.contains(&suggestion.tag) {
-    //                         // TODO: use TagSuggestion and rank all tags according to score
-    //                         suggested_tags.push(suggestion.tag);
-    //                     }
-    //                 }
-    //             },
-    //         }
-    //     }
-    //
-    // }
-
     let result = Ok(suggested_tags
         .into_iter()
         .filter(|suggestion| !sticker_tags.contains(&suggestion.tag))
         .take(30)
         .map(|suggestion| suggestion.tag)
         .collect_vec());
-    let elapsed = chrono::Utc::now() - start;
     result
 }

@@ -1,146 +1,138 @@
+use chrono::{DateTime, Utc};
+use log::warn;
 use std::{
     collections::HashMap,
-    sync::{Arc},
+    sync::{Arc, Mutex, PoisonError},
 };
-use log::error;
 
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     bot::BotError,
-    database::{Database},
-    sticker::{vec_u8_to_f32, IndexResult, ModelEmbedding},
+    database::Database,
+    sticker::{vec_u8_to_f32, IndexResult, ModelEmbedding, MyIndex},
     tags::{ScoredTagSuggestion, Tfidf},
 };
 
-use super::recompute_index;
+use super::{recompute_index, Comm, State, Worker};
 
 #[derive(Clone, Debug)]
-pub struct TaggingWorker {
-    tx: mpsc::Sender<TaggingWorkerCommand>,
+pub struct TaggingState {
+    embedding_index: Arc<Mutex<MyIndex>>,
+    color_index: Arc<Mutex<MyIndex>>,
+    lookup: HashMap<u64, String>,
+    tfidf: Arc<Tfidf>,
+    last_computed: DateTime<Utc>,
+    database: Database, // TODO: dont put in state
 }
 
-type Responder<T> = oneshot::Sender<Result<T, BotError>>;
+impl TaggingState {
+    async fn new(database: Database) -> Result<Arc<Self>, BotError> {
+        let analysis = database.get_analysis_for_all_stickers_with_tags().await?;
+        let (embedding_index, color_index, _, lookup) =
+            tokio::task::spawn_blocking(move || recompute_index(analysis)).await??;
+        let tfidf = Arc::new(Tfidf::generate(database.clone()).await?);
+        let last_computed = chrono::Utc::now();
 
-#[derive(Debug)]
-pub enum TaggingWorkerCommand {
-    MaybeRecompute,
-    SuggestTags {
-        sticker_id: String,
-        resp: Responder<Vec<ScoredTagSuggestion>>,
-    },
+        Ok(Arc::new(Self {
+            embedding_index,
+            color_index,
+            lookup,
+            tfidf,
+            last_computed,
+            database,
+        }))
+    }
+    async fn needs_recomputation(&self, database: Database) -> Result<bool, BotError> {
+        Ok(chrono::Utc::now() - self.last_computed > chrono::Duration::minutes(5))
+    }
 }
 
-impl TaggingWorker {
-    pub fn start(database: Database) -> Self {
-        let (tx, mut rx) = mpsc::channel(10);
-        tokio::spawn(async move {
-            let analysis = database
-                .get_analysis_for_all_stickers_with_tags()
-                .await
-                .unwrap_or_else(|err| {
-                    error!("{}", err);
-                    vec![]
-                });
-            let mut tfidf = Arc::new(Tfidf::generate(database.clone()).await.unwrap());
-            let (mut embedding_index, mut color_index, _, mut lookup) =
-                tokio::task::spawn_blocking(move || recompute_index(analysis))
-                    .await
-                    .unwrap();
-            let mut last_computed = chrono::Utc::now();
+impl State for TaggingState {
+    fn generate(
+        database: Database,
+    ) -> impl std::future::Future<Output = Result<Arc<Self>, BotError>> + Send {
+        Self::new(database)
+    }
+    fn needs_recomputation(
+        &self,
+        database: Database,
+    ) -> impl std::future::Future<Output = Result<bool, BotError>> + Send {
+        self.needs_recomputation(database)
+    }
+}
 
-            while let Some(cmd) = rx.recv().await {
-                match cmd {
-                    TaggingWorkerCommand::MaybeRecompute => {
-                        if chrono::Utc::now() - last_computed > chrono::Duration::minutes(5) {
-                            let analysis = database
-                                .get_analysis_for_all_stickers_with_tags()
-                                .await
-                                .unwrap();
-                            (embedding_index, color_index, _, lookup) =
-                                tokio::task::spawn_blocking(move || recompute_index(analysis))
-                                    .await
-                                    .unwrap();
-                            tfidf = Arc::new(Tfidf::generate(database.clone()).await.unwrap());
-                            last_computed = chrono::Utc::now();
-                        }
-                    }
-                    TaggingWorkerCommand::SuggestTags { sticker_id, resp } => {
-                        let analysis = database
-                            .get_analysis_for_sticker_id(sticker_id.clone())
-                            .await;
-                        let analysis = match analysis {
-                            Err(err) => {
-                                resp.send(Err(err.into())).unwrap();
-                                continue;
-                            }
-                            Ok(None) => {
-                                resp.send(Err(anyhow::anyhow!("missing analysis").into())).unwrap();
-                                continue;
-                            }
-                            Ok(Some(value)) => value,
-                        };
-                        let embedding_res = if let Some(embedding) = analysis.embedding {
-                            let query_embedding: ModelEmbedding = embedding.into();
-                            let embedding_query = query_embedding.into();
-                            let embedding_index = embedding_index.clone();
-                            tokio::task::spawn_blocking(move || {
-                                let mut embedding_index = embedding_index.lock().unwrap();
-                                embedding_index.lookup(embedding_query, 20).unwrap()
-                            })
-                            .await
-                            .unwrap()
-                        } else {
-                            vec![]
-                        };
-                        let color_res = if let Some(histogram) = analysis.histogram {
-                            let color_query = vec_u8_to_f32(histogram);
-                            let color_index = color_index.clone();
-                            tokio::task::spawn_blocking(move || {
-                                let mut color_index = color_index.lock().unwrap();
-                                color_index.lookup(color_query, 20).unwrap()
-                            })
-                            .await
-                            .unwrap()
-                        } else {
-                            vec![]
-                        };
-                        let sticker = database.get_sticker(sticker_id.to_string()).await.unwrap();
-                        let sticker = sticker.unwrap();
-                        let tags_0 = tfidf.suggest_tags(sticker.emoji.unwrap());
-                        let tags_1 =
-                            get_all_tags_from_stickers(embedding_res, database.clone(), &lookup)
-                                .await
-                                .unwrap_or_default();
-                        let tags_2 =
-                            get_all_tags_from_stickers(color_res, database.clone(), &lookup)
-                                .await
-                                .unwrap_or_default();
-                        let merged = ScoredTagSuggestion::merge(
-                            ScoredTagSuggestion::merge(tags_0, tags_1),
-                            tags_2,
-                        );
-                        resp.send(Ok(merged)).unwrap();
-                    }
-                }
-            }
-        });
+pub type TaggingWorker = Worker<TaggingState>;
 
-        Self { tx }
+pub struct SuggestTags {
+    sticker_id: String,
+}
+
+impl SuggestTags {
+    pub fn new(sticker_id: String) -> Self {
+        Self { sticker_id }
     }
 
-    /// does not wait for completion
-    pub async fn maybe_recompute(&self) -> Result<(), BotError> {
-        self.tx.send(TaggingWorkerCommand::MaybeRecompute).await?;
-        Ok(())
+    async fn apply(&self, state: Arc<TaggingState>) -> Result<Vec<ScoredTagSuggestion>, BotError> {
+        let database = state.database.clone();
+        let analysis = database
+            .get_analysis_for_sticker_id(self.sticker_id.clone())
+            .await?
+            .ok_or(anyhow::anyhow!("analysis missing"))?;
+        let embedding_res = if let Some(embedding) = analysis.embedding {
+            let query_embedding: ModelEmbedding = embedding.into();
+            let embedding_query = query_embedding.into();
+            let embedding_index = state.embedding_index.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut embedding_index = embedding_index.lock().unwrap_or_else(PoisonError::into_inner);
+                embedding_index.lookup(embedding_query, 20)
+            })
+            .await??
+        } else {
+            vec![]
+        };
+        let color_res = if let Some(histogram) = analysis.histogram {
+            let color_query = vec_u8_to_f32(histogram);
+            let color_index = state.color_index.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut color_index = color_index.lock().unwrap_or_else(PoisonError::into_inner);
+                color_index.lookup(color_query, 20)
+            })
+            .await??
+        } else {
+            vec![]
+        };
+        let tags_0 = database
+            .get_sticker(self.sticker_id.to_string())
+            .await
+            .map(|sticker| {
+                sticker
+                    .map(|sticker| sticker.emoji.map(|emoji| state.tfidf.suggest_tags(emoji)))
+                    .flatten()
+            })
+            .unwrap_or_else(|err| {
+                warn!("{:?}", err);
+                Some(vec![])
+            })
+            .unwrap_or_default();
+        let tags_1 = get_all_tags_from_stickers(embedding_res, database.clone(), &state.lookup)
+            .await
+            .unwrap_or_default();
+        let tags_2 = get_all_tags_from_stickers(color_res, database.clone(), &state.lookup)
+            .await
+            .unwrap_or_default();
+        let merged = ScoredTagSuggestion::merge(ScoredTagSuggestion::merge(tags_0, tags_1), tags_2);
+        Ok(merged)
     }
+}
 
-    pub async fn suggest(&self, sticker_id: String) -> Result<Vec<ScoredTagSuggestion>, BotError> {
-        let (resp, receive) = oneshot::channel();
-        self.tx
-            .send(TaggingWorkerCommand::SuggestTags { sticker_id, resp })
-            .await?;
-        receive.await?
+impl Comm<TaggingState> for SuggestTags {
+    type ReturnType = Vec<ScoredTagSuggestion>;
+    fn apply(
+        &self,
+        state: Arc<TaggingState>,
+    ) -> impl std::future::Future<Output = Result<Self::ReturnType, BotError>> + Send {
+        Self::apply(&self, state)
     }
 }
 

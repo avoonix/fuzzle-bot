@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine};
 use once_cell::sync::Lazy;
-use std::{collections::HashMap, path::PathBuf, sync::Mutex};
+use std::{collections::HashMap, path::PathBuf, sync::{Mutex, PoisonError}};
 use teloxide::{net::Download, requests::Requester};
 use tokio::{
     fs::{create_dir_all, try_exists, File},
@@ -40,7 +40,7 @@ pub async fn fetch_possibly_cached_sticker_file(
 ) -> Result<Vec<u8>, BotError> {
     let filename = general_purpose::URL_SAFE_NO_PAD.encode(file_id.clone());
     let path = image_cache_path.join(filename);
-    if let Some(buf) = CACHED_STICKER_FILE.lock().unwrap().get(&path) {
+    if let Some(buf) = CACHED_STICKER_FILE.lock().unwrap_or_else(PoisonError::into_inner).get(&path) {
         return Ok(buf.clone());
     }
 
@@ -63,7 +63,7 @@ pub async fn fetch_possibly_cached_sticker_file(
     };
     CACHED_STICKER_FILE
         .lock()
-        .unwrap()
+        .unwrap_or_else(PoisonError::into_inner)
         .insert(path, buf.clone());
     Ok(buf)
 }

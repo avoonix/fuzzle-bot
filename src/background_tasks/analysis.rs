@@ -1,10 +1,7 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, PoisonError},
 };
-
-use log::{error};
-use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     bot::BotError,
@@ -13,118 +10,109 @@ use crate::{
     sticker::{vec_u8_to_f32, IndexInput, ModelEmbedding, MyIndex, TopMatches},
 };
 
+use super::{Comm, State, Worker};
+
 #[derive(Clone, Debug)]
-pub struct AnalysisWorker {
-    tx: mpsc::Sender<Command>,
+pub struct AnalysisState {
+    embedding_index: Arc<Mutex<MyIndex>>,
+    color_index: Arc<Mutex<MyIndex>>,
+    shape_index: Arc<Mutex<MyIndex>>,
+    lookup: HashMap<u64, String>,
 }
 
-type Responder<T> = oneshot::Sender<Result<T, BotError>>;
+impl AnalysisState {
+    async fn new(database: Database) -> Result<Arc<Self>, BotError> {
+        let analysis = database.get_analysis_for_all_stickers().await?;
 
-#[derive(Debug)]
-pub enum Command {
-    Recompute,
-    Get {
-        aspect: SimilarityAspect,
-        query: Vec<f32>,
-        n: usize,
-        resp: Responder<TopMatches>,
-    },
+        let (embedding_index, color_index, shape_index, lookup) =
+            tokio::task::spawn_blocking(move || recompute_index(analysis)).await??;
+
+        Ok(Arc::new(Self {
+            color_index,
+            shape_index,
+            embedding_index,
+            lookup,
+        }))
+    }
+    async fn needs_recomputation(&self, database: Database) -> Result<bool, BotError> {
+        Ok(true) // TODO: change
+    }
 }
 
-impl AnalysisWorker {
-    pub fn start(database: Database) -> Self {
-        let (tx, mut rx) = mpsc::channel(10);
-        tokio::spawn(async move {
-            let analysis = database
-                .get_analysis_for_all_stickers()
-                .await
-                .unwrap_or_else(|err| {
-                    error!("{}", err);
-                    vec![]
-                });
-            let (mut embedding_index, mut color_index, mut shape_index, mut lookup) =
-                tokio::task::spawn_blocking(move || recompute_index(analysis))
-                    .await
-                    .unwrap();
-
-            while let Some(cmd) = rx.recv().await {
-                match cmd {
-                    Command::Recompute => {
-                        let analysis = database
-                            .get_analysis_for_all_stickers()
-                            .await
-                            .unwrap_or_default();
-                        if !analysis.is_empty() {
-                            (embedding_index, color_index, shape_index, lookup) =
-                                tokio::task::spawn_blocking(move || recompute_index(analysis))
-                                    .await
-                                    .unwrap();
-                        }
-                    }
-                    Command::Get {
-                        aspect,
-                        query,
-                        n,
-                        resp,
-                    } => {
-                        let embedding_index = match aspect {
-                            SimilarityAspect::Embedding => embedding_index.clone(),
-                            SimilarityAspect::Color => color_index.clone(),
-                            SimilarityAspect::Shape => shape_index.clone(),
-                        };
-                        let res = tokio::task::spawn_blocking(move || {
-                            let mut embedding_index = embedding_index.lock().unwrap();
-                            embedding_index.lookup(query, n).unwrap()
-                        })
-                        .await
-                        .unwrap();
-                        let mut top_matches = TopMatches::new(n, 1.0);
-                        for res in res {
-                            let Some(id) = lookup.get(&res.label) else {
-                                continue;
-                            };
-                            top_matches.push(1.0 - f64::from(res.distance), id.to_string());
-                        }
-                        resp.send(Ok(top_matches)).unwrap();
-                    }
-                }
-            }
-        });
-
-        Self { tx }
+impl State for AnalysisState {
+    fn generate(
+        database: Database,
+    ) -> impl std::future::Future<Output = Result<Arc<Self>, BotError>> + Send {
+        Self::new(database)
     }
-
-    /// does not wait for completion
-    pub async fn recompute(&self) -> Result<(), BotError> {
-        self.tx.send(Command::Recompute).await?;
-        Ok(())
-    }
-
-    pub async fn retrieve(
+    fn needs_recomputation(
         &self,
-        query: Vec<f32>,
-        n: usize,
-        aspect: SimilarityAspect,
-    ) -> Result<TopMatches, BotError> {
-        let (resp, receive) = oneshot::channel();
-        self.tx.send(Command::Get {
-            query,
-            aspect,
-            n,
-            resp,
-        }).await?;
-        receive.await?
+        database: Database,
+    ) -> impl std::future::Future<Output = Result<bool, BotError>> + Send {
+        self.needs_recomputation(database)
+    }
+}
+
+pub type AnalysisWorker = Worker<AnalysisState>;
+
+pub struct Retrieve {
+    aspect: SimilarityAspect,
+    query: Vec<f32>,
+    n: usize,
+}
+
+impl Retrieve {
+    pub fn new(query: Vec<f32>, n: usize, aspect: SimilarityAspect) -> Self {
+        Self { aspect, n, query }
+    }
+
+    async fn apply(&self, state: Arc<AnalysisState>) -> Result<TopMatches, BotError> {
+        let embedding_index = match self.aspect {
+            SimilarityAspect::Embedding => state.embedding_index.clone(),
+            SimilarityAspect::Color => state.color_index.clone(),
+            SimilarityAspect::Shape => state.shape_index.clone(),
+        };
+        let query = self.query.clone();
+        let n = self.n.clone();
+        let res = tokio::task::spawn_blocking(move || {
+            let mut embedding_index = embedding_index
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            embedding_index.lookup(query, n)
+        })
+        .await??;
+        let mut top_matches = TopMatches::new(self.n, 1.0);
+        for res in res {
+            let Some(id) = state.lookup.get(&res.label) else {
+                continue;
+            };
+            top_matches.push(1.0 - f64::from(res.distance), id.to_string());
+        }
+        Ok(top_matches)
+    }
+}
+
+impl Comm<AnalysisState> for Retrieve {
+    type ReturnType = TopMatches;
+    fn apply(
+        &self,
+        state: Arc<AnalysisState>,
+    ) -> impl std::future::Future<Output = Result<Self::ReturnType, BotError>> + Send {
+        Self::apply(&self, state)
     }
 }
 
 pub(super) fn recompute_index(
     analysis: Vec<FileAnalysisWithStickerId>,
-) -> (
-    Arc<Mutex<MyIndex>>,
-    Arc<Mutex<MyIndex>>,
-    Arc<Mutex<MyIndex>>,
-    HashMap<u64, String>,
-) {
+) -> Result<
+    (
+        Arc<Mutex<MyIndex>>,
+        Arc<Mutex<MyIndex>>,
+        Arc<Mutex<MyIndex>>,
+        HashMap<u64, String>,
+    ),
+    BotError,
+> {
     let mut lookup = HashMap::new();
     let mut input_embedding = Vec::new();
     let mut input_color = Vec::new();
@@ -160,9 +148,9 @@ pub(super) fn recompute_index(
 
         id += 1;
     }
-    let embedding_index = Arc::new(Mutex::new(MyIndex::new(input_embedding).unwrap()));
-    let color_index = Arc::new(Mutex::new(MyIndex::new(input_color).unwrap()));
-    let shape_index = Arc::new(Mutex::new(MyIndex::new(input_shape).unwrap()));
+    let embedding_index = Arc::new(Mutex::new(MyIndex::new(input_embedding)?));
+    let color_index = Arc::new(Mutex::new(MyIndex::new(input_color)?));
+    let shape_index = Arc::new(Mutex::new(MyIndex::new(input_shape)?));
 
-    (embedding_index, color_index, shape_index, lookup)
+    Ok((embedding_index, color_index, shape_index, lookup))
 }

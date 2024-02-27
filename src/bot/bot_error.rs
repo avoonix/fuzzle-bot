@@ -69,5 +69,3 @@ impl_other_error!(url::ParseError);
 impl_other_error!(std::fmt::Error);
 impl_other_error!(tokio::task::JoinError);
 impl_other_error!(tokio::sync::oneshot::error::RecvError);
-impl_other_error!(tokio::sync::mpsc::error::SendError<background_tasks::analysis::Command>);
-impl_other_error!(tokio::sync::mpsc::error::SendError<background_tasks::tagging::TaggingWorkerCommand>);

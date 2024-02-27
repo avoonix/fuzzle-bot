@@ -64,8 +64,12 @@ pub async fn clean_dir(dir: PathBuf) -> Result<()> {
     let yesterday = yesterday.to_string();
     let paths = fs::read_dir(dir)?;
     for res in paths {
-        let path = res.unwrap().path();
-        let filename = path.file_name().unwrap().to_str().unwrap();
+        let path = res?.path();
+        let filename = path
+            .file_name()
+            .ok_or(anyhow::anyhow!("file name missing"))?
+            .to_str()
+            .ok_or(anyhow::anyhow!("could not convert filename to string"))?;
         let is_correct_file_type = filename.ends_with(".csv.gz");
         let is_old = !filename.contains(yesterday.as_str());
         if is_correct_file_type && is_old {

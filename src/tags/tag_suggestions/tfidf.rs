@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use super::{ScoredTagSuggestion};
 
 
+#[derive(Debug)]
 pub struct Tfidf {
     lookup: HashMap<Emoji, Vec<(String, f32)>>,
 }

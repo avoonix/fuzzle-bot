@@ -56,13 +56,11 @@ pub async fn find_with_text_embedding(
     worker: AnalysisWorker,
     n: usize,
 ) -> Result<TopMatches, BotError> {
-    use crate::sticker::analysis::{model::ModelEmbedding};
+    use crate::{background_tasks::Retrieve, sticker::analysis::model::ModelEmbedding};
 
     let query_embedding = ModelEmbedding::from_text(&text)?;
     
-    worker
-        .retrieve(query_embedding.into(), n, SimilarityAspect::Embedding)
-        .await
+    worker.execute(Retrieve::new(query_embedding.into(), n, SimilarityAspect::Embedding)).await
 }
 
 #[cfg(feature = "ssr")]
@@ -73,6 +71,8 @@ pub async fn compute_similar(
     worker: AnalysisWorker,
     n: usize,
 ) -> Result<TopMatches, BotError> {
+    use crate::background_tasks::Retrieve;
+
     let sticker = database
         .get_analysis_for_sticker_id(sticker_id)
         .await?
@@ -85,18 +85,14 @@ pub async fn compute_similar(
                     .ok_or(anyhow::anyhow!("histogram not found"))?,
             ); // TODO: no anyhow
 
-            worker
-                .retrieve(query_histogram, n, SimilarityAspect::Color)
-                .await
+            worker.execute(Retrieve::new(query_histogram, n, SimilarityAspect::Color)).await
         }
         SimilarityAspect::Embedding => {
             let query_embedding: ModelEmbedding = sticker
                 .embedding
                 .ok_or(anyhow::anyhow!("embedding not found"))?
                 .into(); // TODO: no anyhow
-            worker
-                .retrieve(query_embedding.into(), n, SimilarityAspect::Embedding)
-                .await
+            worker.execute(Retrieve::new(query_embedding.into(), n, SimilarityAspect::Embedding)).await
         }
         SimilarityAspect::Shape => {
             let query_visual_hash = vec_u8_to_f32(
@@ -104,9 +100,7 @@ pub async fn compute_similar(
                     .visual_hash
                     .ok_or(anyhow::anyhow!("visual_hash not found"))?,
             ); // TODO: no anyhow
-            worker
-                .retrieve(query_visual_hash, n, SimilarityAspect::Shape)
-                .await
+            worker.execute(Retrieve::new(query_visual_hash, n, SimilarityAspect::Shape)).await
         }
     }
 }
@@ -165,7 +159,7 @@ pub async fn analyze_n_stickers(
     }
 
     if changed {
-        worker.recompute().await?;
+        worker.maybe_recompute().await?;
     }
 
     Ok(())

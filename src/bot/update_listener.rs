@@ -5,7 +5,7 @@ use crate::inline::{inline_query_handler, inline_result_handler};
 use crate::message::{list_visible_admin_commands, list_visible_user_commands, message_handler};
 use crate::tags::{get_default_tag_manager, TagManager};
 
-use crate::background_tasks::{start_periodic_tasks, AnalysisWorker, TaggingWorker};
+use crate::background_tasks::{start_periodic_tasks, AnalysisWorker, TaggingWorker, Worker};
 use crate::Paths;
 
 use std::sync::Arc;
@@ -74,7 +74,13 @@ impl UpdateListener {
     pub async fn listen(&self) -> anyhow::Result<()> {
         let analysis_worker = AnalysisWorker::start(self.database.clone());
         let tagging_worker = TaggingWorker::start(self.database.clone());
-        start_periodic_tasks(self.bot.clone(), self.config.get_admin_user_id(), self.database.clone(), self.paths.clone(), analysis_worker.clone());
+        start_periodic_tasks(
+            self.bot.clone(),
+            self.config.get_admin_user_id(),
+            self.database.clone(),
+            self.paths.clone(),
+            analysis_worker.clone(),
+        );
 
         crate::web::server::setup(
             self.config.clone(),

@@ -95,6 +95,7 @@ Current Order: {order}
                     format_set_as_markdown_link(&set.id.clone(), &set.title.unwrap_or(set.id));
                 format!("Set {}: {link}", id + 1)
             })
+            .chain(std::iter::once(format!("\nUse the buttons below to find non\\-exact matches \\(may take a while to compute if the sticker is new to me\\)")))
             .collect_vec();
         lines
             .chunks(32)

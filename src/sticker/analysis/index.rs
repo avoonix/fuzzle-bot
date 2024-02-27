@@ -17,6 +17,7 @@ pub struct IndexResult {
     pub distance: f32,
 }
 
+#[derive(Debug)]
 pub struct MyIndex {
     index: Option<IndexImpl>,
 }
