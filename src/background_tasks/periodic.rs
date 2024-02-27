@@ -1,4 +1,3 @@
-
 use std::sync::Arc;
 
 use chrono::Duration;
@@ -14,6 +13,7 @@ use crate::database::Database;
 use crate::message::send_database_export_to_chat;
 use crate::sticker::analyze_n_stickers;
 use crate::sticker::import_all_stickers_from_set;
+use crate::tags::TagManager;
 use crate::Paths;
 
 use super::send_daily_report;
@@ -34,14 +34,18 @@ impl BackgroundTaskErrorHandler {
     }
 }
 
-pub fn start_periodic_tasks(bot: Bot, admin_id: UserId, database: Database, paths: Arc<Paths>, worker: AnalysisWorker) {
+pub fn start_periodic_tasks(
+    bot: Bot,
+    admin_id: UserId,
+    database: Database,
+    paths: Arc<Paths>,
+    worker: AnalysisWorker,
+    tag_manager: Arc<TagManager>,
+) {
     let bot_clone = bot.clone();
     let database_clone = database;
     let paths_clone = paths;
-    let error_handler_clone = BackgroundTaskErrorHandler {
-        bot,
-        admin_id
-    };
+    let error_handler_clone = BackgroundTaskErrorHandler { bot, admin_id };
 
     // TODO: make intervals and counts configurable
 
@@ -77,15 +81,57 @@ pub fn start_periodic_tasks(bot: Bot, admin_id: UserId, database: Database, path
     });
 
     let bot = bot_clone;
-    let database = database_clone;
-    let error_handler = error_handler_clone;
+    let database = database_clone.clone();
+    let error_handler = error_handler_clone.clone();
     tokio::spawn(async move {
         loop {
             sleep(Duration::days(7).to_std().expect("no overflow")).await;
-            let result = send_database_export_to_chat(admin_id.into(), database.clone(), bot.clone()).await;
+            let result =
+                send_database_export_to_chat(admin_id.into(), database.clone(), bot.clone()).await;
             error_handler.handle(result).await;
         }
     });
+
+    let database = database_clone.clone();
+    let error_handler = error_handler_clone.clone();
+    tokio::spawn(async move {
+        // TODO: download new tags from e621 periodically
+        loop {
+            let result = fix_missing_tag_implications(database.clone(), tag_manager.clone()).await;
+            error_handler.handle(result).await;
+            sleep(Duration::hours(23).to_std().expect("no overflow")).await;
+        }
+    });
+}
+
+async fn fix_missing_tag_implications(database: Database, tag_manager: Arc<TagManager>) -> Result<(), BotError> {
+    let used_tags = database.get_used_tags().await?;
+    for tag in used_tags {
+        let Some(implications) = tag_manager.get_implications(&tag) else {
+            continue;
+        };
+        for implication in implications {
+            let result = database
+                .get_stickers_for_tag_query(
+                    vec![tag.clone()],
+                    vec![implication.clone()],
+                    1000,
+                    0,
+                    crate::database::Order::LatestFirst,
+                )
+                .await?;
+            if !result.is_empty() {
+                for sticker in result {
+                    database
+                        .tag_sticker(sticker.id, vec![implication.clone()], None)
+                        .await?;
+                    sleep(Duration::seconds(1).to_std().expect("no overflow")).await;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn refetch_and_analyze_stickers(
@@ -97,14 +143,15 @@ async fn refetch_and_analyze_stickers(
 ) -> Result<(), BotError> {
     let set_names = database.get_n_least_recently_fetched_set_ids(count).await?;
     for (i, set_name) in set_names.into_iter().enumerate() {
-        import_all_stickers_from_set(
-            set_name,
-            false,
-            bot.clone(),
-            database.clone(),
-        )
-        .await?;
+        import_all_stickers_from_set(set_name, false, bot.clone(), database.clone()).await?;
     }
-    analyze_n_stickers(database.clone(), bot.clone(), 100 * count, paths.clone(), worker).await?;
+    analyze_n_stickers(
+        database.clone(),
+        bot.clone(),
+        100 * count,
+        paths.clone(),
+        worker,
+    )
+    .await?;
     Ok(())
 }

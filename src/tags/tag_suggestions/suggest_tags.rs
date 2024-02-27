@@ -2,12 +2,13 @@ use crate::background_tasks::{SuggestTags, TaggingWorker};
 use crate::bot::Bot;
 use crate::database::Database;
 
-use crate::tags::TagManager;
+use crate::tags::{Category, TagManager};
 use crate::util::Emoji;
 use anyhow::Result;
 use itertools::Itertools;
 use teloxide::requests::Requester;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::{suggest_tags_2, ScoredTagSuggestion};
@@ -58,13 +59,25 @@ pub async fn suggest_tags(
             .map(|emoji_string| Emoji::parse(&emoji_string))
             .unwrap_or_default();
         let suggestions =
-            suggest_tags_2(&sticker_tags, tag_manager, emojis, &set_title, &set_name)?;
+            suggest_tags_2(&sticker_tags, tag_manager.clone(), emojis, &set_title, &set_name)?;
         suggested_tags = ScoredTagSuggestion::merge(suggested_tags, suggestions);
     }
+
+    let mut limits = HashMap::new();
+    limits.insert(Category::General, 25);
+    limits.insert(Category::Species, 4);
+    limits.insert(Category::Meta, 5);
 
     let result = Ok(suggested_tags
         .into_iter()
         .filter(|suggestion| !sticker_tags.contains(&suggestion.tag))
+        .filter(|suggestion| {
+            tag_manager.get_category(&suggestion.tag).map(|category| {
+                let entry = limits.entry(category).or_insert(2);
+                *entry -= 1;
+                *entry >= 0
+            }).unwrap_or_default()
+        })
         .take(30)
         .map(|suggestion| suggestion.tag)
         .collect_vec());

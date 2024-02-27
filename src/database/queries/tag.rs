@@ -178,4 +178,11 @@ impl Database {
             })
             .collect_vec())
     }
+
+    pub async fn get_used_tags(&self) -> Result<Vec<String>, DatabaseError> {
+        let result = sqlx::query!("select distinct tag from file_hash_tag;")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(result.into_iter().map(|entry| entry.tag).collect_vec())
+    }
 }

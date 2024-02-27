@@ -106,8 +106,8 @@ Current Order: {order}
     #[must_use]
     pub fn get_stats_text(stats: Stats) -> Markdown {
         Markdown::new(format!(
-            "Sets: {}\nStickers: {}\nTaggings: {}",
-            stats.sets, stats.stickers, stats.taggings
+            "Sets: {}\nStickers: {}\nTagged Stickers: {}\nTaggings: {}",
+            stats.sets, stats.stickers, stats.tagged_stickers, stats.taggings
         ))
     }
 
@@ -206,12 +206,13 @@ If you send me some stickers in this chat, I will add them to the database\\. He
             });
         let text = escape(&format!(
             "Daily Report:
-- {} stickers ({} sets) with {} taggings
+- {} stickers ({} tagged, {} sets) with {} taggings
 - {} sets fetched within 24 hours
 - least recently fetched set age: {}
 
 user taggings (24 hours):",
             counts.stickers,
+            counts.tagged_stickers,
             counts.sets,
             counts.taggings,
             stats.number_of_sets_fetched_in_24_hours,

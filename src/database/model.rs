@@ -69,6 +69,7 @@ pub struct Stats {
     pub sets: i64,
     pub stickers: i64,
     pub taggings: i64,
+    pub tagged_stickers: i64,
 }
 
 #[derive(Debug, Clone, Copy)]

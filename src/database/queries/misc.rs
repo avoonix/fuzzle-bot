@@ -25,10 +25,16 @@ impl Database {
                 .fetch_one(&self.pool)
                 .await?;
 
+        let number_of_tagged_stickers: i64 =
+            sqlx::query_scalar_unchecked!("select count(distinct file_hash) from file_hash_tag")
+                .fetch_one(&self.pool)
+                .await?;
+
         let stats = Stats {
             sets: number_of_sets,
             stickers: number_of_stickers,
             taggings: number_of_taggings,
+            tagged_stickers: number_of_tagged_stickers,
         };
         Ok(stats)
     }

@@ -80,6 +80,7 @@ impl UpdateListener {
             self.database.clone(),
             self.paths.clone(),
             analysis_worker.clone(),
+            self.tags.clone(),
         );
 
         crate::web::server::setup(
