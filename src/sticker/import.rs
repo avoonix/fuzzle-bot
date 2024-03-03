@@ -111,7 +111,7 @@ pub async fn import_individual_sticker_and_queue_set(
     .await?;
     request_context
         .database
-        .create_sticker_set(set_name.clone(), None)
+        .create_sticker_set(set_name.clone(), None, !sticker.format.is_raster())
         .await?;
     info!("sticker not in database");
 
@@ -134,10 +134,9 @@ async fn fetch_sticker_and_save_to_db(
     let emojis = sticker.emoji.map(|e| Emoji::parse(&e)).unwrap_or_default();
 
     let (buf, file) = fetch_sticker_file(sticker.file.id.clone(), bot.clone()).await?;
-    let file_kind = FileKind::from(file.path.as_str());
 
     let file_hash =
-        task::spawn_blocking(move || calculate_sticker_file_hash(buf, file_kind)).await??;
+        task::spawn_blocking(move || calculate_sticker_file_hash(buf)).await??;
 
     database.create_file(file_hash.clone()).await?;
     database
@@ -163,8 +162,8 @@ async fn fetch_sticker_set_and_save_to_db(
     // TODO: result should be how many stickers were added/removed/updated
 
     database
-        .create_sticker_set(set.name.clone(), Some(set.title.clone()))
-        .await?; // does not update last_fetched
+        .create_sticker_set(set.name.clone(), Some(set.title.clone()), !set.format.is_raster())
+        .await?; 
     let saved_stickers = database.get_all_stickers_in_set(set.name.clone()).await?;
     let stickers_not_in_database_yet = set.stickers.clone().into_iter().filter(|sticker| {
         saved_stickers

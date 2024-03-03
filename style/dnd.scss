@@ -1,0 +1,23 @@
+.box {
+  border: 3px solid #666;
+  background-color: #ddd;
+  border-radius: .5em;
+  padding: 10px;
+  cursor: move;
+}
+
+.box.over {
+  border: 3px dotted #666;
+}
+
+.box.over * {
+ pointer-events: none;
+}
+
+[draggable] {
+  user-select: none;
+}
+
+.dragging {
+    opacity: 0.5;
+}

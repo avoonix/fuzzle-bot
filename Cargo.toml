@@ -145,12 +145,12 @@ ssr = [
 actix-files = { version = "0.6", optional = true }
 actix-web = { version = "4", optional = true, features = ["macros"] }
 console_error_panic_hook = "0.1"
-http = { version = "0.2", optional = true }
+http = { version = "1.0.0", optional = true }
 leptos = { version = "0.6", features = [] }
 leptos_meta = { version = "0.6", features = [] }
 leptos_actix = { version = "0.6", optional = true }
 leptos_router = { version = "0.6", features = [] }
-wasm-bindgen = "=0.2.89"
+wasm-bindgen = "=0.2.91"
 anyhow = { version = "1.0.75", optional = true }
 chrono = { version = "0.4.31", features = ["serde"], optional = true }
 clap = { version = "4.4.7", features = ["derive", "env"], optional = true }
@@ -182,7 +182,7 @@ rustdct = { version = "0.7.1", optional = true }
 sqlx = { version = "0.7.3", default-features = false, features = ["macros", "migrate", "sqlx-macros", "sqlite", "runtime-tokio", "chrono"], optional = true }
 emojis = { version = "0.6.1", optional = true }
 thiserror = { version = "1.0.56", optional = true }
-cached = { version = "0.48.1", optional = true }
+cached = { version = "0.49.2", optional = true }
 hex = { version = "0.4.3", optional = true }
 ring = { version = "0.17.7", optional = true }
 actix-web-lab = { version = "0.20.2", optional = true }
@@ -191,6 +191,7 @@ serde_repr = "0.1.18"
 tract-onnx = { version = "0.21.1", optional = true }
 indexmap = { version = "2.2.3", optional = true }
 faiss = { version = "0.12.1", features = ["static"], optional = true }
+web-sys = { version = "0.3.68", features = ["DataTransfer"] }
 
 # Defines a size-optimized profile for the WASM bundle in release mode
 [profile.wasm-release]

@@ -43,6 +43,14 @@ pub struct SavedStickerSet {
     // pub last_fetched: chrono::NaiveDateTime,
     pub last_fetched: Option<SqlDateTime>,
     pub created_at: SqlDateTime,
+    pub is_animated: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileInfo {
+    pub id: String,
+    pub created_at: SqlDateTime,
+    pub sticker_count: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -114,6 +122,7 @@ pub struct SavedSticker {
     pub file_id: String,
     pub file_hash: String,
     pub emoji: Option<Emoji>, // TODO: every sticker has an emoji
+    pub set_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

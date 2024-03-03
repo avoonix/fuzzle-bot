@@ -4,9 +4,7 @@ use sqlx::Row;
 
 use crate::{
     database::{
-        model::{Relationship, SavedSticker, SavedStickerSet},
-        query_builder::StickerTagQuery,
-        FileAnalysis, FileAnalysisWithStickerId, Order,
+        model::{Relationship, SavedSticker, SavedStickerSet}, query_builder::StickerTagQuery, FileAnalysis, FileAnalysisWithStickerId, FileInfo, Order
     },
     util::Emoji,
 };
@@ -91,17 +89,20 @@ impl Database {
     }
 
     /// title is sometimes not known immediately
+    /// does not update last_fetched
     pub async fn create_sticker_set(
         &self,
         name: String,
         title: Option<String>,
+        is_animated: bool,
     ) -> Result<(), DatabaseError> {
         if let Some(title) = title {
             sqlx::query!(
-                "INSERT INTO sticker_set (id, title, last_fetched) VALUES (?1, ?2, NULL)
-                     ON CONFLICT(id) DO UPDATE SET title = ?2",
+                "INSERT INTO sticker_set (id, title, is_animated, last_fetched) VALUES (?1, ?2, ?3, NULL)
+                     ON CONFLICT(id) DO UPDATE SET title = ?2, is_animated = ?3",
                 name,
-                title
+                title,
+                is_animated
             )
             // "INSERT INTO sticker_set (id, title, last_fetched) VALUES (?1, ?2, datetime('now'))
             //          ON CONFLICT(id) DO UPDATE SET title = ?2, last_fetched = datetime('now')
@@ -110,9 +111,10 @@ impl Database {
             .await?;
         } else {
             sqlx::query!(
-                "INSERT INTO sticker_set (id, title, last_fetched) VALUES (?1, NULL, NULL)
+                "INSERT INTO sticker_set (id, title, is_animated, last_fetched) VALUES (?1, NULL, ?2, NULL)
                      ON CONFLICT(id) DO NOTHING",
-                name
+                name,
+                is_animated
             )
             .execute(&self.pool)
             .await?;
@@ -179,6 +181,7 @@ impl Database {
                 id: sticker.id,
                 file_hash: sticker.file_hash,
                 emoji: None,
+                set_id: sticker.set_id,
             })
             .collect_vec())
     }
@@ -196,6 +199,7 @@ impl Database {
             id: sticker.id,
             file_hash: sticker.file_hash,
             emoji: Emoji::parse(&sticker.emoji).first().cloned(),
+            set_id: sticker.set_id,
         }))
     }
 
@@ -235,6 +239,7 @@ impl Database {
                 id: sticker.id,
                 file_hash: sticker.file_hash,
                 emoji: None,
+                set_id: sticker.set_id,
             })
             .collect_vec())
     }
@@ -263,6 +268,7 @@ impl Database {
                 id: row.get("id"),
                 file_hash: row.get("file_hash"),
                 emoji: None,
+                set_id: row.get("set_id"),
             })
             .collect_vec())
     }
@@ -277,6 +283,7 @@ impl Database {
             id: sticker.id,
             file_hash: sticker.file_hash,
             emoji: None,
+            set_id: sticker.set_id,
         }))
     }
 
@@ -344,6 +351,21 @@ impl Database {
                 out: relationship.id,
             })
             .collect_vec())
+    }
+
+    pub async fn get_file_info(
+        &self,
+        sticker_unique_id: String,
+    ) -> Result<Option<FileInfo>, DatabaseError> {
+        let file_info: Option<FileInfo> = sqlx::query_as!(
+            FileInfo,
+            "select count(distinct sticker.id) as sticker_count, file_hash.created_at, file_hash.id from file_hash join sticker on sticker.file_hash = file_hash.id where file_hash.id = (select file_hash from sticker where id = ?1);",
+            sticker_unique_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(file_info)
     }
 
     pub async fn get_sets_containing_sticker(
@@ -593,6 +615,7 @@ impl Database {
                 id: sticker.id,
                 file_hash: sticker.file_hash,
                 emoji: None,
+                set_id: sticker.set_id,
             })
             .collect_vec())
     }

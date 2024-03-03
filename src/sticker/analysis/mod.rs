@@ -24,15 +24,15 @@ pub use histogram::{calculate_color_histogram, create_historgram_image};
 pub use model::{EmbeddingError, ModelEmbedding};
 
 #[cfg(feature = "ssr")]
-pub use visual_hash::{calculate_visual_hash};
+pub use visual_hash::calculate_visual_hash;
 
 #[cfg(feature = "ssr")]
-use log::{warn};
+use log::warn;
 
 #[cfg(feature = "ssr")]
 use crate::{
     bot::{Bot, BotError},
-    database::{Database},
+    database::Database,
     sticker::fetch_possibly_cached_sticker_file,
     Paths,
 };
@@ -47,7 +47,7 @@ use crate::inline::SimilarityAspect;
 use std::sync::Arc;
 
 #[cfg(feature = "ssr")]
-pub use util::vec_u8_to_f32;
+pub use util::{vec_u8_to_f32, cosine_similarity};
 
 #[cfg(feature = "ssr")]
 pub async fn find_with_text_embedding(
@@ -59,8 +59,14 @@ pub async fn find_with_text_embedding(
     use crate::{background_tasks::Retrieve, sticker::analysis::model::ModelEmbedding};
 
     let query_embedding = ModelEmbedding::from_text(&text)?;
-    
-    worker.execute(Retrieve::new(query_embedding.into(), n, SimilarityAspect::Embedding)).await
+
+    worker
+        .execute(Retrieve::new(
+            query_embedding.into(),
+            n,
+            SimilarityAspect::Embedding,
+        ))
+        .await
 }
 
 #[cfg(feature = "ssr")]
@@ -85,14 +91,22 @@ pub async fn compute_similar(
                     .ok_or(anyhow::anyhow!("histogram not found"))?,
             ); // TODO: no anyhow
 
-            worker.execute(Retrieve::new(query_histogram, n, SimilarityAspect::Color)).await
+            worker
+                .execute(Retrieve::new(query_histogram, n, SimilarityAspect::Color))
+                .await
         }
         SimilarityAspect::Embedding => {
             let query_embedding: ModelEmbedding = sticker
                 .embedding
                 .ok_or(anyhow::anyhow!("embedding not found"))?
                 .into(); // TODO: no anyhow
-            worker.execute(Retrieve::new(query_embedding.into(), n, SimilarityAspect::Embedding)).await
+            worker
+                .execute(Retrieve::new(
+                    query_embedding.into(),
+                    n,
+                    SimilarityAspect::Embedding,
+                ))
+                .await
         }
         SimilarityAspect::Shape => {
             let query_visual_hash = vec_u8_to_f32(
@@ -100,7 +114,9 @@ pub async fn compute_similar(
                     .visual_hash
                     .ok_or(anyhow::anyhow!("visual_hash not found"))?,
             ); // TODO: no anyhow
-            worker.execute(Retrieve::new(query_visual_hash, n, SimilarityAspect::Shape)).await
+            worker
+                .execute(Retrieve::new(query_visual_hash, n, SimilarityAspect::Shape))
+                .await
         }
     }
 }
@@ -113,9 +129,7 @@ pub async fn analyze_n_stickers(
     paths: Arc<Paths>,
     worker: AnalysisWorker,
 ) -> Result<(), BotError> {
-    let analysis = database
-        .get_n_stickers_with_missing_analysis(n)
-        .await?;
+    let analysis = database.get_n_stickers_with_missing_analysis(n).await?;
     let mut changed = false;
     for analysis in analysis {
         let Some(thumbnail_file_id) = analysis.thumbnail_file_id else {
@@ -123,9 +137,12 @@ pub async fn analyze_n_stickers(
             continue;
         };
 
-        let buf =
-            fetch_possibly_cached_sticker_file(thumbnail_file_id, bot.clone(), paths.image_cache())
-                .await?;
+        let buf = fetch_possibly_cached_sticker_file(
+            thumbnail_file_id.clone(),
+            bot.clone(),
+            paths.image_cache(),
+        )
+        .await?;
         // this should always be an image
 
         if analysis.visual_hash.is_none() {

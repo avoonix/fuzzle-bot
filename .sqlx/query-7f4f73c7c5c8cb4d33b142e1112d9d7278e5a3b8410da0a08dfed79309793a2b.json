@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "select distinct tag from file_hash_tag;",
+  "describe": {
+    "columns": [
+      {
+        "name": "tag",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7f4f73c7c5c8cb4d33b142e1112d9d7278e5a3b8410da0a08dfed79309793a2b"
+}

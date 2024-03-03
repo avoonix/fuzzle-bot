@@ -65,6 +65,10 @@ impl TagManager {
         tags.insert("stumblinbear".to_string(), Category::Artist);
         tags.insert("spookyfoxinc".to_string(), Category::Artist);
         tags.insert("niuka_folfsky".to_string(), Category::Artist);
+        tags.insert("rainyote".to_string(), Category::Artist);
+        tags.insert("dlw".to_string(), Category::Artist);
+        tags.insert("kwik".to_string(), Category::Artist);
+        tags.insert("rustledfluff".to_string(), Category::Artist);
 
         tags.insert("yes".to_string(), Category::General);
         tags.insert("no".to_string(), Category::General);
@@ -188,6 +192,8 @@ impl TagManager {
 
         aliases.insert("alextheyellowthing".to_string(), "firelex".to_string());
         aliases.insert("alex".to_string(), "firelex".to_string());
+        aliases.insert("mountaindewdrawer".to_string(), "rainyote".to_string());
+        aliases.insert("russ".to_string(), "rustledfluff".to_string());
 
         self.aliases = aliases;
         self

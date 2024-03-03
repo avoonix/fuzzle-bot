@@ -1,7 +1,11 @@
+mod types;
+
+pub use types::*;
+
 use itertools::Itertools;
 use leptos::*;
 use serde::{Deserialize, Serialize};
-use std::{vec};
+use std::vec;
 
 use crate::{callback::TagOperation, sticker::Measures};
 
@@ -10,14 +14,15 @@ pub mod ssr {
     pub use crate::inline::query_stickers;
     pub use crate::inline::InlineQueryData;
     pub use crate::sticker::compute_similar;
+    pub use crate::sticker::get_merge_infos;
     pub use crate::tags::suggest_tags;
     pub use crate::web::server::AppState;
     pub use crate::web::server::AuthenticatedUser;
     pub use actix_web::error::ErrorInternalServerError;
     pub use actix_web::error::ErrorNotFound;
-    
-    pub use actix_web::web::{Data};
-    
+
+    pub use actix_web::web::Data;
+
     pub use leptos::ServerFnError;
     pub use leptos_actix::extract;
 }
@@ -28,7 +33,9 @@ pub async fn fetch_results(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<StickerDto>, ServerFnError> {
-    use self::ssr::{AppState, AuthenticatedUser, Data, InlineQueryData, ServerFnError, extract, query_stickers};
+    use self::ssr::{
+        extract, query_stickers, AppState, AuthenticatedUser, Data, InlineQueryData, ServerFnError,
+    };
     let (user, data): (AuthenticatedUser, Data<AppState>) = extract().await?;
 
     let query =
@@ -36,7 +43,7 @@ pub async fn fetch_results(
 
     let result = match query.mode.clone() {
         crate::inline::InlineQueryDataMode::StickerSearch { emoji } => {
-             // TODO: limit, offset, proper error handling
+            // TODO: limit, offset, proper error handling
             query_stickers(
                 query,
                 data.database.clone(),
@@ -154,7 +161,11 @@ pub async fn fetch_sticker_info(id: String) -> Result<StickerInfoDto, ServerFnEr
     //         ErrorInternalServerError("could not compute similar")
     //     })?;
 
-    let similar = Measures { histogram_cosine, visual_hash_cosine, embedding_cosine };
+    let similar = Measures {
+        histogram_cosine,
+        visual_hash_cosine,
+        embedding_cosine,
+    };
 
     Ok(StickerInfoDto {
         id,
@@ -164,6 +175,18 @@ pub async fn fetch_sticker_info(id: String) -> Result<StickerInfoDto, ServerFnEr
         other_sets,
         similar,
     })
+}
+
+#[server]
+pub async fn merge_infos(sticker_id_a: String, sticker_id_b: String) -> Result<StickerMergeInfos, ServerFnError> {
+    use self::ssr::*;
+    let (user, data): (AuthenticatedUser, Data<AppState>) = extract().await?;
+
+    let info = get_merge_infos(sticker_id_a, sticker_id_b, data.database.clone())
+        .await
+        .unwrap(); // TODO
+
+    Ok(info)
 }
 
 /// no operation = get tags, otherwise perform the selected operation and then get the new tags

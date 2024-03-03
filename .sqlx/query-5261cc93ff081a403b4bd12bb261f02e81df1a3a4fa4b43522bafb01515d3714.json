@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "select count(distinct file_hash) from file_hash_tag",
+  "describe": {
+    "columns": [
+      {
+        "name": "count(distinct file_hash)",
+        "ordinal": 0,
+        "type_info": "Int"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5261cc93ff081a403b4bd12bb261f02e81df1a3a4fa4b43522bafb01515d3714"
+}

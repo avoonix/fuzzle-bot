@@ -10,6 +10,12 @@ mod analysis;
 #[cfg(feature = "ssr")]
 pub use analysis::*; // TODO: don't expose everything
 
+#[cfg(feature = "ssr")]
+mod merge;
+
+#[cfg(feature = "ssr")]
+pub use merge::*;
+
 pub use analysis::{Match, Measures, TopMatches}; // TODO: don't expose everything
 
 #[cfg(feature = "ssr")]

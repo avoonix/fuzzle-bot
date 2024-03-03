@@ -41,9 +41,7 @@ fn ResultsList(#[prop(into)] results: Vec<StickerDto>) -> impl IntoView {
                 .map(|r| {
                     view! {
                         <div>
-                            <A href=format!("/sticker/{}", r.id)>
                                 <Sticker id=r.id/>
-                            </A>
                         </div>
                     }
                 })

@@ -20,9 +20,7 @@ use leptos::LeptosOptions;
 
 
 
-use crate::{
-    sticker::{create_historgram_image, fetch_possibly_cached_sticker_file},
-};
+use crate::sticker::{create_historgram_image, fetch_possibly_cached_sticker_file, generate_merge_image};
 use web::Data;
 
 use crate::web::server::auth::AUTH_COOKIE_NAME;
@@ -74,6 +72,17 @@ async fn histogram_files(
     let histogram = analysis.histogram.ok_or(ErrorNotFound("histogram not calculated"))?;
     let buf = create_historgram_image(histogram.into())
             .map_err(|err| ErrorInternalServerError("histogram encode error"))?;
+    Ok(HttpResponse::Ok().body(buf))
+}
+
+#[actix_web::get("/files/merge/{sticker_id_a}/{sticker_id_b}")]
+async fn merge_files(
+    Path((sticker_id_a, sticker_id_b)): Path<(String, String)>,
+    data: Data<AppState>,
+    user: AuthenticatedUser,
+) -> actix_web::Result<impl Responder> {
+    let buf = generate_merge_image(sticker_id_a, sticker_id_b, data.database.clone(), data.bot.clone()).await
+            .map_err(|err| {dbg!(err); ErrorInternalServerError("merge image error") })?;
     Ok(HttpResponse::Ok().body(buf))
 }
 

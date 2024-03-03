@@ -64,6 +64,7 @@ pub fn setup(
                 .service(service::logout)
                 .service(service::sticker_files)
                 .service(service::histogram_files)
+                .service(service::merge_files)
                 .leptos_routes(
                     leptos_options.to_owned(),
                     routes.clone(),
