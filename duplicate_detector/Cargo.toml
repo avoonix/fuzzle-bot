@@ -1,0 +1,9 @@
+[package]
+name = "duplicate_detector"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+image = { version = "0.25.1", features = ["webp", "png", "jpeg", "rayon"], default-features = false }
+itertools = "0"
+rayon = "1.10.0"

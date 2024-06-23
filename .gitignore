@@ -3,6 +3,7 @@ pkg
 *.db
 *sqlite*
 *.sqb*
+config.json
 config.toml
 container-data
 /tags
@@ -11,3 +12,7 @@ container-data
 .secret*
 /cache
 docker-compose.yml
+qdrant_data
+flake.nix
+flake.lock
+*.env
