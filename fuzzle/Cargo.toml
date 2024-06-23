@@ -1,0 +1,141 @@
+[package]
+name = "fuzzle-bot"
+version = "0.1.0"
+edition = "2021"
+
+[lints.rust]
+unused = "allow"
+unused_results = "allow"
+unused_crate_dependencies = "allow"
+unreachable_code = "allow"
+unused_variables = "allow"
+unreachable_pub = "allow"
+
+dead_code = "allow" # use cfg to exclude from compilation; TODO: deny
+unused_must_use = "allow"
+missing_copy_implementations = "allow"
+missing_debug_implementations = "allow"
+unsafe_code = "allow"
+unused_mut = "allow"
+unsafe_op_in_unsafe_fn = "allow"
+deprecated_in_future = "allow"
+elided_lifetimes_in_paths = "allow"
+ffi_unwind_calls = "allow"
+keyword_idents = "allow"
+macro_use_extern_crate = "allow"
+meta_variable_misuse = "allow"
+trivial_casts = "allow"
+trivial_numeric_casts = "allow"
+unused_qualifications = "allow"
+unused_macro_rules = "allow"
+
+[lints.clippy]
+pedantic = "allow"
+unwrap_used = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+print_stdout = "allow"
+dbg_macro = "allow"
+arithmetic_side_effects = "allow"
+as_conversions = "allow"
+default_numeric_fallback = "allow"
+else_if_without_else = "allow"
+impl_trait_in_params = "allow"
+indexing_slicing = "allow"
+panic_in_result_fn = "allow"
+use_debug = "allow"
+integer_division = "allow"
+complexity = "allow"
+too_many_arguments = "allow"
+too_many_lines = "allow"
+cognitive_complexity = "allow"
+
+todo = "deny"
+disallowed_methods = "deny"
+redundant_type_annotations = "deny"
+partial_pub_fields = "deny"
+style = "deny"
+unwrap_in_result = "deny"
+get_unwrap = "deny"
+missing_const_for_fn = "deny"
+same_name_method = "deny"
+nursery = "deny"
+map_err_ignore = "deny"
+enum_glob_use = "deny"
+assertions_on_result_states = "deny"
+string_to_string = "deny"
+perf = "deny"
+create_dir = "deny"
+format_push_string = "deny"
+error_impl_error = "deny"
+suspicious = "deny"
+empty_drop = "deny"
+exit = "deny"
+expect_used = "deny"
+if_then_some_else_none = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+maybe_infinite_iter = "deny"
+empty_structs_with_brackets = "deny"
+let_underscore_untyped = "deny"
+missing_asserts_for_indexing = "deny"
+panic = "deny"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-files = { version = "0.6" }
+actix-web = { version = "4", features = ["macros"] }
+anyhow = { version = "1.0.75" }
+chrono = { version = "0.4.31", features = ["serde"] }
+csv = { version = "1.3.0" }
+flate2 = { version = "1.0.28" }
+reqwest = { version = "0.11.27", default-features = false, features = ["rustls", "blocking", "hyper-rustls", "__rustls", "__tls", "rustls-tls"] }
+serde = { version = "1.0.192", features = ["derive"] }
+tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread", "tracing"] }
+teloxide = { version = "0.12", features = ["macros", "ctrlc_handler", "rustls", "throttle"], default-features = false, git = "https://github.com/avoonix/teloxide.git", branch = "default-parse-mode-request-public" }
+futures = { version = "0.3.29" }
+serde_json = "1.0.108"
+itertools = "0.13.0"
+nom = { version = "7.1.3" }
+image = { version = "0.25.0", features = ["webp", "png", "jpeg", "rayon"], default-features = false }
+palette = { version = "0.7.3" }
+blake2 = { version = "0.10.6" }
+url = { version = "2.5.0" }
+base64 = { version = "0.22.0" }
+unicode-segmentation = { version = "1.10.1" }
+rand = { version = "0.8.5" }
+regex = { version = "1.10.2" }
+strsim = { version = "0.11.0" }
+diesel = { version = "2.1.0", default-features = false, features = ["sqlite", "r2d2", "chrono", "returning_clauses_for_sqlite_3_35"] }
+emojis = { version = "0.6.1" }
+thiserror = { version = "1.0.59" }
+cached = { version = "0.51.3" }
+hex = { version = "0.4.3" }
+ring = { version = "0.17.7" }
+actix-web-lab = { version = "0.20.2" }
+once_cell = { version = "1.19.0" }
+serde_repr = "0.1.18"
+tracing = { version = "0.1.40" }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
+opentelemetry = { version = "0.21", features = ["trace"] }
+tracing-opentelemetry = { version = "0.22", features = ["metrics"] }
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.14", features = ["grpc-tonic", "reqwest-client", "reqwest-rustls", "http-proto", "tls", "metrics"] }
+tracing-core = { version = "0.1.32" }
+tonic = { version = "0.10", features = ["tls", "tls-roots"]}
+tracing-actix-web = { version = "0.7" }
+qdrant-client = { version = "1.9.0" }
+uuid = { version = "1.8.0", features = ["v5"] }
+duplicate_detector = { path = "../duplicate_detector" }
+prost = "0.12.6"
+r2d2 = "0.8.10"
+config = { version = "0.14.0", default-features = false, features = ["json"] }
+enum-primitive-derive = "0.3.0"
+num-traits = "0.2.19"
+diesel_migrations = "2.2.0"
+
+[build-dependencies]
+tonic-build = "0.11.0"
+
+# the docker build script will add the bin-target-triple option below this line
