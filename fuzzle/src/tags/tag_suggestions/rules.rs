@@ -79,7 +79,6 @@ impl TagSuggestionRules {
                 }
             }
         }
-        dbg!(&emoji_rules, &string_rules);
         Ok(Self {
             emoji_rules,
             string_rules,

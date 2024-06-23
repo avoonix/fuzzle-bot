@@ -19,8 +19,8 @@ pub async fn suggest_similar_tags(
         return Ok(vec![]);
     }
     let result = vector_db.recommend_tags_from_existing_tags(tags).await?;
-    Ok(convert_vectordb_recommended_tags_to_suggestions(
-        result,
-        tag_manager,
+    Ok(result.map_or_else(
+        || vec![],
+        |result| convert_vectordb_recommended_tags_to_suggestions(result, tag_manager),
     ))
 }

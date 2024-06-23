@@ -113,7 +113,6 @@ impl Database {
     fn run_migrations(&self) -> Result<(), DatabaseError>  {
         let conn = &mut self.pool.get()?;
         conn.run_pending_migrations(MIGRATIONS).map_err(|err| {
-            dbg!(&err);
             anyhow::anyhow!(err.to_string())
         })?;
 

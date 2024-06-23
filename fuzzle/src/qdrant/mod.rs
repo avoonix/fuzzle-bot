@@ -233,7 +233,7 @@ impl VectorDatabase {
         // TODO: use a different embedding model that was optimized just for text
         &self,
         tags: &[String],
-    ) -> Result<Vec<String>, VectorDatabaseError> {
+    ) -> Result<Option<Vec<String>>, VectorDatabaseError> {
         let tags = tags
             .into_iter()
             .map(|tag| tag_to_uuid(&tag).into())
@@ -250,8 +250,9 @@ impl VectorDatabase {
                 // with_payload: Some(vec!["file_hash"].into()),
                 ..Default::default()
             })
-            .await?;
-        Ok(convert_tag_recommend_response(search_result.result))
+            .await
+            .convert_to_sensible_error()?;
+        Ok(search_result.map(|search_result| convert_tag_recommend_response(search_result.result)))
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
