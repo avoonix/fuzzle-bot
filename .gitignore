@@ -16,3 +16,5 @@ qdrant_data
 flake.nix
 flake.lock
 *.env
+__pycache__/**
+*.pyc
