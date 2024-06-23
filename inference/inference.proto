@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package inference;
+
+enum TextModel {
+    CLIP_TEXT = 0;
+}
+
+enum ImageModel {
+    CLIP_IMAGE = 0;
+}
+
+service Generate {
+    rpc TextEmbedding (TextEmbeddingRequest) returns (EmbeddingResponse);
+    rpc ImageEmbedding (ImageEmbeddingRequest) returns (EmbeddingResponse);
+}
+
+message TextEmbeddingRequest {
+    TextModel model = 1;
+    string text = 2;
+}
+
+message ImageEmbeddingRequest {
+    ImageModel model = 1;
+    bytes image = 2;
+}
+
+message EmbeddingResponse {
+    repeated float embedding = 1 [packed = true];
+}
