@@ -555,7 +555,7 @@ InlineKeyboardButton::switch_inline_query_current_chat(
                 CallbackData::NoAction,
             )],
             [InlineKeyboardButton::switch_inline_query_current_chat(
-                format!("🪞 Duplicates from other sets"),
+                format!("🪞 Set overlaps"),
                 InlineQueryData::overlapping_sets(sticker_id.to_string()),
             )],
             [InlineKeyboardButton::switch_inline_query_current_chat(

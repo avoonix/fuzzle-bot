@@ -313,6 +313,7 @@ impl Database {
         Ok(result)
     }
 
+    /// including itself (so there's always at least one entry in the list)
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_overlapping_sets(
         &self,
@@ -321,7 +322,7 @@ impl Database {
         let (sticker1, sticker2) = diesel::alias!(sticker as sticker1, sticker as sticker2);
         Ok(sticker1
             .group_by(sticker1.field(sticker::sticker_set_id))
-            .filter(sticker1.field(sticker::sticker_set_id).ne(&set_id))
+            // .filter(sticker1.field(sticker::sticker_set_id).ne(&set_id))
             .filter(
                 sticker1.field(sticker::sticker_file_id).eq_any(
                     sticker2
@@ -481,7 +482,7 @@ impl Database {
     ) -> Result<(), DatabaseError> {
         Ok(self.pool.get()?.transaction(|conn| {
             let stickers_affected_merge = sql_query("INSERT INTO merged_sticker (canonical_sticker_file_id, removed_sticker_file_id, removed_sticker_id, removed_set_id, created_by_user_id)
-               SELECT ?1, sticker_file_id, id, set_id, ?2 FROM sticker WHERE sticker_file_id = ?3")
+               SELECT ?1, sticker_file_id, id, sticker_set_id, ?2 FROM sticker WHERE sticker_file_id = ?3")
                                 .bind::<Text, _>(canonical_file_id)
                                 .bind::<Nullable<BigInt>, _>(user_id)
                                 .bind::<Text, _>(duplicate_file_id)

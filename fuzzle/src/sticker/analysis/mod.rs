@@ -6,7 +6,7 @@ pub use histogram::{calculate_color_histogram, create_historgram_image};
 pub use measures::{Match, Measures};
 
 use crate::{
-    bot::{Bot, BotError, InternalError},
+    bot::{Bot, BotError, InternalError, RequestContext},
     database::Database,
     inference::{image_to_clip_embedding, text_to_clip_embedding},
     util::Required,
@@ -21,6 +21,8 @@ pub use util::{cosine_similarity, vec_u8_to_f32};
 
 use crate::qdrant::StickerMatch;
 use crate::qdrant::VectorDatabase;
+
+use super::{import_all_stickers_from_set, import_individual_sticker_and_queue_set};
 
 pub async fn find_with_text_embedding(
     database: Database,
@@ -70,25 +72,34 @@ pub async fn with_sticker_id(
     Ok(result)
 }
 
-#[tracing::instrument(skip(database, vector_db))]
+#[tracing::instrument(skip(request_context))]
 pub async fn compute_similar(
-    database: Database,
+    request_context: RequestContext,
     sticker_id: String,
     aspect: SimilarityAspect,
     limit: u64,
     offset: u64,
-    vector_db: VectorDatabase,
 ) -> Result<Vec<Match>, BotError> {
-    let sticker = database.get_sticker_by_id(&sticker_id).await?.required()?;
+    let sticker = request_context.database.get_sticker_by_id(&sticker_id).await?.required()?;
+    let score_threshold = 0.0;
 
     // let result = vector_db.find_similar_stickers(query_embedding.clone().into()).await?;
-    let file_hashes = vector_db
-        .find_similar_stickers(&[sticker.sticker_file_id], &[], aspect, 0.0, limit, offset)
+    let file_hashes = request_context.vector_db
+        .find_similar_stickers(&[sticker.sticker_file_id.clone()], &[], aspect, score_threshold, limit, offset)
+        .await?;
+    let file_hashes = match file_hashes {
+    Some(hashes) => hashes,
+    None => {
+        import_all_stickers_from_set(&sticker.sticker_set_id, false, request_context.bot, request_context.database.clone(), request_context.config.clone(), request_context.vector_db.clone()).await?;
+    request_context.vector_db
+        .find_similar_stickers(&[sticker.sticker_file_id], &[], aspect, score_threshold, limit, offset)
         .await?
-        .required()?;
+        .required()?
+    }};
+        // .required()?;
     // TODO: if the vector is not in the database, embed and insert it
 
-    with_sticker_id(database.clone(), file_hashes).await
+    with_sticker_id(request_context.database.clone(), file_hashes).await
     // worker
     //     .execute(Retrieve::new(
     //         query_embedding.into(),

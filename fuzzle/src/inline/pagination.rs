@@ -48,4 +48,8 @@ impl QueryPage {
     pub fn seed(&self) -> i32 {
         self.seed
     }
+
+    pub fn is_first_page(&self) -> bool {
+        self.current_offset == 0
+    }
 }

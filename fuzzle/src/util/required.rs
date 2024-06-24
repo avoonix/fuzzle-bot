@@ -1,4 +1,4 @@
-use crate::bot::InternalError;
+use crate::bot::{InternalError, UserError};
 
 pub trait Required<T> {
     fn required(self) -> Result<T, InternalError>;

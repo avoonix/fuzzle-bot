@@ -16,6 +16,7 @@ pub struct Config {
     pub inference_url: String,
 
     pub domain_name: String,
+    pub http_listen_address: String,
 
     pub admin_telegram_user_id: u64,
     pub telegram_bot_token: String,

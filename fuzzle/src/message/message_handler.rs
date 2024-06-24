@@ -171,9 +171,14 @@ pub async fn show_error(
     request_context: RequestContext,
     error: BotError,
 ) -> Result<(), BotError> {
+    let error = error.end_user_error();
+    let icon = match error.1 {
+        crate::bot::UserErrorSeverity::Error => "⚠️",
+        crate::bot::UserErrorSeverity::Info => "ℹ️",
+    };
     request_context
         .bot
-        .send_markdown(msg.chat.id, Markdown::escaped(error.end_user_error()))
+        .send_markdown(msg.chat.id, Markdown::escaped(format!("{icon} {}", error.0)))
         .reply_to_message_id(msg.id)
         .allow_sending_without_reply(true)
         .disable_notification(false)

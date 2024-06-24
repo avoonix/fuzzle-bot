@@ -101,7 +101,7 @@ impl Database {
             // TODO: translate to proper diesel query?
             tags_affected += sql_query("INSERT INTO sticker_file_tag (sticker_file_id, tag, added_by_user_id)
                                            SELECT DISTINCT sticker_file_id, ?1, ?2 FROM sticker
-                                                WHERE set_id = ?3 AND NOT EXISTS (SELECT * FROM sticker_file WHERE sticker.sticker_file_id = sticker_file.id AND sticker_file.tags_locked_by_user_id IS NOT NULL)
+                                                WHERE sticker.sticker_set_id = ?3 AND NOT EXISTS (SELECT * FROM sticker_file WHERE sticker.sticker_file_id = sticker_file.id AND sticker_file.tags_locked_by_user_id IS NOT NULL)
                                            ON CONFLICT (sticker_file_id, tag) DO NOTHING")
                                 .bind::<Text, _>(tag)
                                 .bind::<BigInt, _>(user)

@@ -42,6 +42,12 @@ pub enum InternalError {
     Other(#[from] anyhow::Error),
 }
 
+#[derive(PartialEq)]
+pub enum UserErrorSeverity {
+    Error,
+    Info,
+}
+
 impl InternalError {
     pub fn is_timeout_error(&self) -> bool {
         match self {
@@ -77,33 +83,37 @@ pub enum UserError {
     ParseError(usize, String),
 
     #[error("tags did not closely match existing tags")]
-    TagsNotFound(Vec<String>)
+    TagsNotFound(Vec<String>),
+
+    #[error("no results found")]
+    ListHasZeroResults(String),
 }
 
 impl InternalError {
-    pub fn end_user_error(&self) -> String {
-        "Aw, something's wrong. ".to_string()
+    pub fn end_user_error(&self) -> (String, UserErrorSeverity) {
+        ("Aw, something's wrong. ".to_string(), UserErrorSeverity::Error)
     }
 }
 
 impl UserError {
-    pub fn end_user_error(&self) -> String {
+    pub fn end_user_error(&self) -> (String, UserErrorSeverity) {
         match self {
-            UserError::NoPermissionForAction(action) => format!("Oh no, I can't let you do this ({action}) yet."),
-            UserError::InvalidMode => "Can't do that here!".to_string(),
-            UserError::UnsupportedStickerType => "Those don't look like regular stickers.".to_string(),
-            UserError::StickerNotPartOfSet => "Stickers must be part of a set!".to_string(),
-            UserError::UnhandledMessageType => "I have no idea what to do with this. Send me text messages containing commands, stickers, or t.me/addsticker links!".to_string(),
-            UserError::CommandError(ParseError::UnknownCommand(input)) => format!("What the heck is a \"{input}\"?"),
-            UserError::CommandError(error) => "Invalid arguments!".to_string(),
-            UserError::ParseError(position, rest) => format!("Invalid input at position {position}: {}", rest.chars().take(10).collect::<String>()),
-            UserError::TagsNotFound(tags) => format!("Could not find tags: {}", tags.join(", ")),
+            UserError::NoPermissionForAction(action) => (format!("Oh no, I can't let you do this ({action}) yet."), UserErrorSeverity::Error),
+            UserError::InvalidMode => ("Can't do that here!".to_string(), UserErrorSeverity::Info),
+            UserError::UnsupportedStickerType => ("Those don't look like regular stickers.".to_string(), UserErrorSeverity::Error),
+            UserError::StickerNotPartOfSet =>( "Stickers must be part of a set!".to_string(), UserErrorSeverity::Error),
+            UserError::UnhandledMessageType =>( "I have no idea what to do with this. Send me text messages containing commands, stickers, or t.me/addsticker links!".to_string(),UserErrorSeverity::Error),
+            UserError::CommandError(ParseError::UnknownCommand(input)) => (format!("What the heck is a \"{input}\"?"),UserErrorSeverity::Error),
+            UserError::CommandError(error) => ("Invalid arguments!".to_string(),UserErrorSeverity::Error),
+            UserError::ParseError(position, rest) => (format!("Invalid input at position {position}: {}", rest.chars().take(10).collect::<String>()),UserErrorSeverity::Error),
+            UserError::TagsNotFound(tags) => (format!("Could not find tags: {}", tags.join(", ")),UserErrorSeverity::Error),
+            UserError::ListHasZeroResults(name) => (format!("No {name} here :("),UserErrorSeverity::Info),
         }
     }
 }
 
 impl BotError {
-    pub fn end_user_error(&self) -> String {
+    pub fn end_user_error(&self) -> (String, UserErrorSeverity) {
         match self {
             BotError::InternalError(err) => err.end_user_error(),
             BotError::UserError(err) => err.end_user_error(),

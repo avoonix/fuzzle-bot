@@ -23,41 +23,41 @@ use crate::web::server::{AppState, AuthData, AuthenticatedUser};
 
 // TODO: serve static files like robots.txt and favicon.ico
 
-#[actix_web::get("/files/stickers/{sticker_id}")]
-#[tracing::instrument(skip(data, user))]
-async fn sticker_files(
-    Path(sticker_id): Path<String>,
-    data: Data<AppState>,
-    user: AuthenticatedUser,
-) -> actix_web::Result<impl Responder> {
-    let file = data
-        .database
-        .get_sticker_file_by_sticker_id(&sticker_id)
-        .await?
-        .required()?;
-    let file_id = file
-        .thumbnail_file_id
-        .required()?;
-    let (buf, _) = fetch_sticker_file(file_id, data.bot.clone()) .await?;
-    Ok(HttpResponse::Ok().body(buf))
-}
+// #[actix_web::get("/files/stickers/{sticker_id}")]
+// #[tracing::instrument(skip(data, user))]
+// async fn sticker_files(
+//     Path(sticker_id): Path<String>,
+//     data: Data<AppState>,
+//     user: AuthenticatedUser,
+// ) -> actix_web::Result<impl Responder> {
+//     let file = data
+//         .database
+//         .get_sticker_file_by_sticker_id(&sticker_id)
+//         .await?
+//         .required()?;
+//     let file_id = file
+//         .thumbnail_file_id
+//         .required()?;
+//     let (buf, _) = fetch_sticker_file(file_id, data.bot.clone()) .await?;
+//     Ok(HttpResponse::Ok().body(buf))
+// }
 
-#[actix_web::get("/files/merge/{sticker_id_a}/{sticker_id_b}")]
-#[tracing::instrument(skip(data, user))]
-async fn merge_files(
-    Path((sticker_id_a, sticker_id_b)): Path<(String, String)>,
-    data: Data<AppState>,
-    user: AuthenticatedUser,
-) -> actix_web::Result<impl Responder> {
-    let buf = generate_merge_image(
-        &sticker_id_a,
-        &sticker_id_b,
-        data.database.clone(),
-        data.bot.clone(),
-    )
-    .await?;
-    Ok(HttpResponse::Ok().body(buf))
-}
+// #[actix_web::get("/files/merge/{sticker_id_a}/{sticker_id_b}")]
+// #[tracing::instrument(skip(data, user))]
+// async fn merge_files(
+//     Path((sticker_id_a, sticker_id_b)): Path<(String, String)>,
+//     data: Data<AppState>,
+//     user: AuthenticatedUser,
+// ) -> actix_web::Result<impl Responder> {
+//     let buf = generate_merge_image(
+//         &sticker_id_a,
+//         &sticker_id_b,
+//         data.database.clone(),
+//         data.bot.clone(),
+//     )
+//     .await?;
+//     Ok(HttpResponse::Ok().body(buf))
+// }
 
 #[actix_web::get("/thumbnails/sticker-set/{setId}")]
 #[tracing::instrument(skip(data))]

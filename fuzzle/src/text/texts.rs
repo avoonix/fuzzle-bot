@@ -163,7 +163,7 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
     pub fn get_sticker_text(emoji: Option<Emoji>) -> Markdown {
         Markdown::new(format!(
             "UwU you sent a{}sticker :3",
-            escape(&emoji.map_or_else(|| " ".to_string(), |emoji| emoji.to_string()))
+            escape(&emoji.map_or_else(|| " ".to_string(), |emoji| format!(" {emoji} ")))
         ))
     }
 

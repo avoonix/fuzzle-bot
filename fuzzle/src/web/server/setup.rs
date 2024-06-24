@@ -30,12 +30,9 @@ pub fn setup(
     vector_db: VectorDatabase,
 ) {
     tokio::spawn(async move {
-        // let conf = get_configuration(None).await.expect("config to exist");
-        let addr = "localhost:3000";
-        println!("listening on http://{}", addr);
+        let addr = config.http_listen_address.clone();
+        tracing::info!("listening on http://{}", addr);
         HttpServer::new(move || {
-            // let leptos_options = &conf.leptos_options;
-            // let site_root = &leptos_options.site_root;
             App::new()
                 .wrap(tracing_actix_web::TracingLogger::default())
                 .app_data(web::Data::new(AppState {
@@ -52,8 +49,8 @@ pub fn setup(
                 // .service(service::favicon)
                 .service(service::login)
                 .service(service::logout)
-                .service(service::sticker_files)
-                .service(service::merge_files)
+                // .service(service::sticker_files)
+                // .service(service::merge_files)
                 .service(service::sticker_set_thumbnail)
                 .service(service::sticker_comparison_thumbnail)
                 .wrap(middleware::Compress::default())

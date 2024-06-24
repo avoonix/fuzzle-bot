@@ -13,7 +13,7 @@ use teloxide::types::{
     InlineKeyboardMarkup, InputFile, MediaKind, MessageCommon, MessageKind, ReplyMarkup,
 };
 
-use crate::bot::{report_bot_error, report_internal_error, report_internal_error_result, BotError, BotExt, RequestContext, UserError};
+use crate::bot::{report_bot_error, report_internal_error, report_internal_error_result, BotError, BotExt, RequestContext, UserError, UserErrorSeverity};
 use crate::callback::TagOperation;
 
 use crate::database::{MergeStatus};
@@ -199,9 +199,10 @@ pub async fn show_error(
     request_context: RequestContext,
     error: BotError,
 ) -> Result<(), BotError> {
+    let error = error.end_user_error();
     request_context.bot.answer_callback_query(&q.id)
-        .text(error.end_user_error())
-        .show_alert(true)
+        .text(error.0)
+        .show_alert(error.1 == UserErrorSeverity::Error)
         .into_future()
         .instrument(tracing::info_span!("telegram_bot_answer_callback_query"))
         .await?;

@@ -183,6 +183,7 @@ async fn search_tags_for_sticker_set(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    require_some_results("tags", current_offset, results.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, results.clone())
@@ -190,6 +191,14 @@ async fn search_tags_for_sticker_set(
         .cache_time(60)
         .await?;
     Ok(())
+}
+
+fn require_some_results(name: &str, offset: QueryPage, current_result_count: usize) -> Result<(), UserError> {
+    if offset.is_first_page() && current_result_count == 0 {
+        Err(UserError::ListHasZeroResults(name.to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 async fn search_tags_for_sticker(
@@ -229,6 +238,7 @@ async fn search_tags_for_sticker(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    require_some_results("tags", current_offset, results.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, results.clone())
@@ -345,12 +355,11 @@ async fn handle_similar_sticker_query(
     // TODO: cache?
     // TODO: blacklist?
     let result = compute_similar(
-        request_context.database.clone(),
+        request_context.clone(),
         sticker_unique_id,
         aspect,
         current_offset.page_size() as u64,
         current_offset.skip() as u64,
-        request_context.vector_db.clone(),
     )
     .await?;
     let sticker_ids = result.into_iter().map(|m| m.sticker_id).collect_vec();
@@ -371,6 +380,7 @@ async fn handle_similar_sticker_query(
         })
         .collect_vec();
 
+    require_some_results("stickers", current_offset, sticker_result.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, sticker_result.clone())
@@ -416,6 +426,7 @@ async fn search_stickers(
         })
         .collect_vec();
 
+    require_some_results("stickers", current_offset, sticker_result.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, sticker_result.clone())
@@ -457,6 +468,7 @@ async fn search_tags_for_blacklist(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    require_some_results("tags", current_offset, results.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, results.clone())
@@ -503,6 +515,7 @@ async fn handle_continuous_tag_query(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    require_some_results("tags", current_offset, results.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, results.clone())
@@ -534,17 +547,21 @@ pub async fn show_error(
     request_context: RequestContext,
     error: BotError,
 ) -> Result<(), BotError> {
-    let thumbnail_url =
-        format!("https://placehold.co/{THUMBNAIL_SIZE}/ff0000/white.png?text=Error");
+    let error = error.end_user_error();
+    let (text, color) = match error.1 {
+        crate::bot::UserErrorSeverity::Error => ("Error", "red"),
+        crate::bot::UserErrorSeverity::Info => ("¯\\_(ツ)_/¯", "lightblue")
+    };
+    let thumbnail_url = format!("https://placehold.co/{THUMBNAIL_SIZE}/{color}/black.png?text={text}");
     let thumbnail_url = Url::parse(&thumbnail_url)?;
 
     let content = InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
-        error.end_user_error(),
+        &error.0,
     )));
 
     let error_message = InlineQueryResultArticle::new(
         InlineQueryResultId::Other("error".to_string()).to_string(),
-        error.end_user_error(),
+        &error.0,
         content,
     )
     .thumb_url(thumbnail_url)
@@ -662,6 +679,7 @@ async fn handle_sticker_contained_query(
         .map(|set| create_query_set(set, None, None))
         .collect::<Result<Vec<_>, _>>()?;
 
+    require_some_results("sets", current_offset, results.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, results.clone())
@@ -702,6 +720,7 @@ async fn handle_all_set_tags(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    require_some_results("tags", current_offset, r.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, r.clone())
@@ -723,6 +742,7 @@ async fn handle_overlapping_sets(
         .get_sticker_set_by_sticker_id(&sticker_id)
         .await?
         .required()?;
+    let set_sticker_count = request_context.database.get_all_stickers_in_set(&set.id).await?.len().max(1); // TODO: separate query would probably be more efficient
     let sets = request_context
         .database
         .get_overlapping_sets(set.id)
@@ -745,12 +765,16 @@ async fn handle_overlapping_sets(
             Some(if count == 1 {
                 "1 overlapping sticker".to_string()
             } else {
-                format!("{} overlapping stickers", count)
+                format!("{count}/{set_sticker_count} overlapping stickers")
             }),
-            Some(count.to_string()),
+            Some({
+                let percentage = (((count as f32 / set_sticker_count as f32) * 100.0).round() as i64);
+                format!("{percentage}%")
+            }),
         )?);
     }
 
+    require_some_results("sets", current_offset, r.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, r.clone())
@@ -826,6 +850,7 @@ async fn handle_embedding_query(
         })
         .collect_vec();
 
+    require_some_results("stickers", current_offset, sticker_result.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, sticker_result.clone())
@@ -878,6 +903,7 @@ async fn handle_most_used_emojis(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    require_some_results("emojis", current_offset, articles.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, articles.clone())
@@ -914,6 +940,7 @@ async fn handle_most_duplicated_stickers(
         })
         .collect_vec();
 
+    require_some_results("stickers", current_offset, sticker_result.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, sticker_result.clone())
@@ -983,6 +1010,7 @@ async fn handle_recommendations(
         })
         .collect_vec();
 
+    require_some_results("stickers", current_offset, sticker_result.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, sticker_result.clone())
