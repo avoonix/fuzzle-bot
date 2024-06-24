@@ -31,8 +31,10 @@ impl<T> SensibleQdrantErrorExt<T> for anyhow::Result<T> {
                     .build()
                     .expect("static regex to compile");
                 if not_found_re.is_match(&error_message) {
+                    tracing::info!("treating not found error as optional");
                     Ok(None)
                 } else {
+                    tracing::info!("treating error as actual error");
                     Err(VectorDatabaseError::Other(err))
                 }
             }

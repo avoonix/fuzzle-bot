@@ -59,7 +59,7 @@ use crate::web::server::{AppState, AuthData, AuthenticatedUser};
 //     Ok(HttpResponse::Ok().body(buf))
 // }
 
-#[actix_web::get("/thumbnails/sticker-set/{setId}")]
+#[actix_web::get("/thumbnails/sticker-set/{setId}/image.png")]
 #[tracing::instrument(skip(data))]
 async fn sticker_set_thumbnail(
     Path(set_id): Path<String>,
@@ -80,10 +80,11 @@ async fn sticker_set_thumbnail(
         .await?;
     Ok(HttpResponse::Ok()
         .insert_header(thumbnail_cache_control_header())
+        .insert_header(header::ContentType::png())
         .body(buf))
 }
 
-#[actix_web::get("/thumbnails/compare-sticker-sets/{setId1}/{setId2}")]
+#[actix_web::get("/thumbnails/compare-sticker-sets/{setId1}/{setId2}/image.png")]
 #[tracing::instrument(skip(data))]
 async fn sticker_comparison_thumbnail(
     Path((set_id_a, set_id_b)): Path<(String, String)>,
@@ -102,6 +103,7 @@ async fn sticker_comparison_thumbnail(
         .await?;
     Ok(HttpResponse::Ok()
         .insert_header(thumbnail_cache_control_header())
+        .insert_header(header::ContentType::png())
         .body(buf))
 }
 
