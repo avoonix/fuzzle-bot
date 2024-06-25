@@ -281,9 +281,9 @@ pub async fn callback_handler(
             change_sticker_locked_status(lock, &sticker_id, q, request_context).await
         }
         CallbackData::Sticker {
-            unique_id,
+            sticker_id,
             operation,
-        } => handle_sticker_tag_action(operation, unique_id, q, request_context).await,
+        } => handle_sticker_tag_action(operation, sticker_id, q, request_context).await,
         CallbackData::RemoveBlacklistedTag(tag) => {
             remove_blacklist_tag(q, tag, request_context).await
         }

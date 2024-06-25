@@ -3,7 +3,7 @@ use crate::bot::{
     report_bot_error, report_internal_error, report_internal_error_result, BotError, UserError,
 };
 use crate::bot::{BotExt, RequestContext};
-use crate::database::{self, DialogState, User};
+use crate::database::{self, min_max, DialogState, User};
 use crate::database::{Database, Sticker, StickerSet};
 use crate::inline::{InlineQueryData, SetOperation};
 use crate::message::{Keyboard, StartParameter};
@@ -39,12 +39,12 @@ const THUMBNAIL_SIZE: u32 = 200;
 
 #[tracing::instrument(skip(set))]
 fn create_query_set(
-    set: database::StickerSet,
+    set: &database::StickerSet,
     info: Option<String>,
-    thumb: Option<String>,
+    thumb_url: String,
 ) -> Result<InlineQueryResult, BotError> {
     // // TODO: do not rely on this service for images (base64 does not work)
-    let set_title = set.title.unwrap_or(set.id.clone());
+    let set_title = set.title.clone().unwrap_or(set.id.clone());
 
     let content = InputMessageContent::Text(InputMessageContentText::new(
         Text::get_set_article_link(&set.id, &set_title),
@@ -56,16 +56,14 @@ fn create_query_set(
         content,
     )
     .description(info.map_or(set.id.clone(), |info| format!("{} • {}", set.id, info)));
-    if let Some(thumb) = thumb {
-        let thumbnail_url =
-            format!("https://placehold.co/{THUMBNAIL_SIZE}/007f0e/black.png?text={thumb}");
-        let thumbnail_url = Url::parse(&thumbnail_url)?;
+        // let thumbnail_url =
+            // format!("https://placehold.co/{THUMBNAIL_SIZE}/007f0e/black.png?text={thumb}");
+        let thumbnail_url = Url::parse(&thumb_url)?;
         article = article
             .thumb_url(thumbnail_url)
             .thumb_width(THUMBNAIL_SIZE)
             .thumb_height(THUMBNAIL_SIZE)
             .hide_url(true);
-    }
 
     Ok(article.into())
 }
@@ -145,6 +143,7 @@ fn get_last_input_match_list_and_other_input_closest_matches(
     Ok((other_input, suggested_tags))
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn search_tags_for_sticker_set(
     current_offset: QueryPage,
     tags: Vec<Vec<String>>,
@@ -193,7 +192,11 @@ async fn search_tags_for_sticker_set(
     Ok(())
 }
 
-fn require_some_results(name: &str, offset: QueryPage, current_result_count: usize) -> Result<(), UserError> {
+fn require_some_results(
+    name: &str,
+    offset: QueryPage,
+    current_result_count: usize,
+) -> Result<(), UserError> {
     if offset.is_first_page() && current_result_count == 0 {
         Err(UserError::ListHasZeroResults(name.to_string()))
     } else {
@@ -201,6 +204,7 @@ fn require_some_results(name: &str, offset: QueryPage, current_result_count: usi
     }
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn search_tags_for_sticker(
     current_offset: QueryPage,
     tags: Vec<Vec<String>>,
@@ -344,6 +348,7 @@ pub async fn query_stickers(
     Ok(stickers)
 }
 
+#[tracing::instrument(skip(query, q, request_context))]
 async fn handle_similar_sticker_query(
     current_offset: QueryPage,
     query: InlineQueryData,
@@ -443,6 +448,7 @@ async fn search_stickers(
     Ok(())
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn search_tags_for_blacklist(
     current_offset: QueryPage,
     tags: Vec<String>,
@@ -479,6 +485,7 @@ async fn search_tags_for_blacklist(
     Ok(())
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn handle_continuous_tag_query(
     current_offset: QueryPage,
     tags: Vec<Vec<String>>,
@@ -550,14 +557,14 @@ pub async fn show_error(
     let error = error.end_user_error();
     let (text, color) = match error.1 {
         crate::bot::UserErrorSeverity::Error => ("Error", "red"),
-        crate::bot::UserErrorSeverity::Info => ("¯\\_(ツ)_/¯", "lightblue")
+        crate::bot::UserErrorSeverity::Info => ("¯\\_(ツ)_/¯", "lightblue"),
     };
-    let thumbnail_url = format!("https://placehold.co/{THUMBNAIL_SIZE}/{color}/black.png?text={text}");
+    let thumbnail_url =
+        format!("https://placehold.co/{THUMBNAIL_SIZE}/{color}/black.png?text={text}");
     let thumbnail_url = Url::parse(&thumbnail_url)?;
 
-    let content = InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
-        &error.0,
-    )));
+    let content =
+        InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(&error.0)));
 
     let error_message = InlineQueryResultArticle::new(
         InlineQueryResultId::Other("error".to_string()).to_string(),
@@ -656,6 +663,7 @@ pub async fn inline_query_handler(
     }
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn handle_sticker_contained_query(
     current_offset: QueryPage,
     sticker_id: String,
@@ -676,7 +684,16 @@ async fn handle_sticker_contained_query(
         .into_iter()
         .skip(current_offset.skip())
         .take(current_offset.page_size())
-        .map(|set| create_query_set(set, None, None))
+        .map(|set| {
+            create_query_set(
+                &set,
+                None,
+                format!(
+                    "https://fuzzle-bot.avoonix.com/thumbnails/sticker-set/{}/image.png",
+                    &set.id
+                ),
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     require_some_results("sets", current_offset, results.len())?;
@@ -690,6 +707,7 @@ async fn handle_sticker_contained_query(
     Ok(())
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn handle_all_set_tags(
     current_offset: QueryPage,
     sticker_id: String,
@@ -731,21 +749,27 @@ async fn handle_all_set_tags(
     Ok(())
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn handle_overlapping_sets(
     current_offset: QueryPage,
     sticker_id: String,
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
-    let set = request_context
+    let main_set = request_context
         .database
         .get_sticker_set_by_sticker_id(&sticker_id)
         .await?
         .required()?;
-    let set_sticker_count = request_context.database.get_all_stickers_in_set(&set.id).await?.len().max(1); // TODO: separate query would probably be more efficient
+    let set_sticker_count = request_context
+        .database
+        .get_all_stickers_in_set(&main_set.id)
+        .await?
+        .len()
+        .max(1); // TODO: separate query would probably be more efficient
     let sets = request_context
         .database
-        .get_overlapping_sets(set.id)
+        .get_overlapping_sets(&main_set.id)
         .await?;
 
     let results = sets
@@ -761,16 +785,23 @@ async fn handle_overlapping_sets(
             .await?
             .required()?;
         r.push(create_query_set(
-            s,
-            Some(if count == 1 {
-                "1 overlapping sticker".to_string()
-            } else {
-                format!("{count}/{set_sticker_count} overlapping stickers")
-            }),
-            Some({
-                let percentage = (((count as f32 / set_sticker_count as f32) * 100.0).round() as i64);
-                format!("{percentage}%")
-            }),
+            &s,
+            {
+                let p = {
+                    let percentage =
+                        (((count as f32 / set_sticker_count as f32) * 100.0).round() as i64);
+                    format!("{percentage}%")
+                };
+                Some(if count == 1 {
+                    format!("1 overlapping sticker ({p})")
+                } else {
+                    format!("{count}/{set_sticker_count} overlapping stickers ({p})")
+                })
+            },
+            {
+            let (smaller, bigger) = min_max(&set_id, &main_set.id);
+            format!( "https://fuzzle-bot.avoonix.com/thumbnails/compare-sticker-sets/{smaller}/{bigger}/image.png")
+            }
         )?);
     }
 
@@ -785,6 +816,7 @@ async fn handle_overlapping_sets(
     Ok(())
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn handle_embedding_query(
     current_offset: QueryPage,
     query: String,
@@ -863,6 +895,7 @@ async fn handle_embedding_query(
     Ok(())
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn handle_most_used_emojis(
     current_offset: QueryPage,
     q: InlineQuery,
@@ -916,6 +949,7 @@ async fn handle_most_used_emojis(
     Ok(())
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn handle_most_duplicated_stickers(
     current_offset: QueryPage,
     q: InlineQuery,
@@ -953,6 +987,7 @@ async fn handle_most_duplicated_stickers(
     Ok(())
 }
 
+#[tracing::instrument(skip(q, request_context))]
 async fn handle_recommendations(
     current_offset: QueryPage,
     q: InlineQuery,

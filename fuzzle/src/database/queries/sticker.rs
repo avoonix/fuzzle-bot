@@ -317,7 +317,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_overlapping_sets(
         &self,
-        set_id: String,
+        set_id: &str,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
         let (sticker1, sticker2) = diesel::alias!(sticker as sticker1, sticker as sticker2);
         Ok(sticker1

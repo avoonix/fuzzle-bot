@@ -50,10 +50,6 @@ pub enum FavoriteAction {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CallbackData {
     NoAction,
-    Sticker {
-        unique_id: String,
-        operation: Option<TagOperation>,
-    },
     Help,
     Start,
     Settings,
@@ -64,10 +60,15 @@ pub enum CallbackData {
     GeneralStats,
     PersonalStats,
     LatestSets,
-    FavoriteSticker {
-        sticker_id: String,
-        operation: FavoriteAction,
-    },
+    Info,
+
+
+    RemoveBlacklistedTag(String),
+    RemoveContinuousTag(String),
+    UserInfo(u64),
+    SetOrder(StickerOrder),
+
+
     StickerSetPage {
         sticker_id: String,
     },
@@ -77,40 +78,49 @@ pub enum CallbackData {
     StickerExplorePage {
         sticker_id: String,
     },
-    RemoveBlacklistedTag(String),
-    RemoveContinuousTag(String),
-    Info,
-    ChangeSetStatus {
-        set_name: String,
-        banned: bool,
-    },
-    UserInfo(u64),
-    SetOrder(StickerOrder),
-    SetLock {
-        lock: bool,
+
+    
+    Sticker {
         sticker_id: String,
+        operation: Option<TagOperation>,
     },
-    Merge {
-        sticker_id_a: String,
-        sticker_id_b: String,
-        merge: bool,
+    FavoriteSticker {
+        sticker_id: String,
+        operation: FavoriteAction,
+    },
+    SetLock {
+        sticker_id: String,
+        lock: bool,
     },
     ToggleRecommendSticker {
         sticker_id: String,
         positive: bool,
     },
+
+
+    ChangeSetStatus {
+        set_name: String,
+        banned: bool,
+    },
+
+
+    Merge {
+        sticker_id_a: String,
+        sticker_id_b: String,
+        merge: bool,
+    },
 }
 
 impl CallbackData {
-    pub fn tag_sticker(unique_id: impl Into<String>, tag: impl Into<String>) -> Self {
+    pub fn tag_sticker(sticker_id: impl Into<String>, tag: impl Into<String>) -> Self {
         Self::Sticker {
-            unique_id: unique_id.into(),
+            sticker_id: sticker_id.into(),
             operation: Some(TagOperation::Tag(tag.into())),
         }
     }
-    pub fn untag_sticker(unique_id: impl Into<String>, tag: impl Into<String>) -> Self {
+    pub fn untag_sticker(sticker_id: impl Into<String>, tag: impl Into<String>) -> Self {
         Self::Sticker {
-            unique_id: unique_id.into(),
+            sticker_id: sticker_id.into(),
             operation: Some(TagOperation::Untag(tag.into())),
         }
     }
@@ -321,13 +331,13 @@ fn parse_remove_continuous_tag(input: &str) -> IResult<&str, CallbackData> {
 fn parse_sticker_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("s")(input)?;
     let (input, _) = tag(";")(input)?;
-    let (input, unique_id) = sticker_id_literal(input)?;
+    let (input, sticker_id) = sticker_id_literal(input)?;
     let (input, _) = tag(";")(input)?;
     let (input, operation) = opt(parse_tag_operation)(input)?;
     Ok((
         input,
         CallbackData::Sticker {
-            unique_id: unique_id.to_string(),
+            sticker_id: sticker_id.to_string(),
             operation,
         },
     ))
@@ -347,14 +357,14 @@ impl Display for CallbackData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Sticker {
-                unique_id,
+                sticker_id,
                 operation,
             } => {
                 let operation = match operation {
                     Some(op) => op.to_string(),
                     None => String::new(),
                 };
-                write!(f, "s;{unique_id};{operation}")
+                write!(f, "s;{sticker_id};{operation}")
             }
             Self::Help => write!(f, "help"),
             Self::FeatureOverview => write!(f, "features"),
@@ -434,7 +444,7 @@ mod tests {
         let data = CallbackData::try_from("s;5uh33fj84;t;male".to_string())?;
         assert_eq!(
             CallbackData::Sticker {
-                unique_id: "5uh33fj84".to_string(),
+                sticker_id: "5uh33fj84".to_string(),
                 operation: Some(TagOperation::Tag("male".to_string())),
             },
             data
@@ -447,7 +457,7 @@ mod tests {
         let data = CallbackData::try_from("s;5uh33fj84;u;male".to_string())?;
         assert_eq!(
             CallbackData::Sticker {
-                unique_id: "5uh33fj84".to_string(),
+                sticker_id: "5uh33fj84".to_string(),
                 operation: Some(TagOperation::Untag("male".to_string())),
             },
             data

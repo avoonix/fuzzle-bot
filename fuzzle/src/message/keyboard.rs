@@ -542,7 +542,7 @@ InlineKeyboardButton::switch_inline_query_current_chat(
             [InlineKeyboardButton::callback(
                 "🔙 Set",
                 CallbackData::Sticker {
-                    unique_id: sticker_id.to_string(),
+                    sticker_id: sticker_id.to_string(),
                     operation: None,
                 },
             )],
@@ -591,7 +591,7 @@ InlineKeyboardButton::switch_inline_query_current_chat(
             [InlineKeyboardButton::callback(
                 "🔙 Sticker",
                 CallbackData::Sticker {
-                    unique_id: sticker_id.to_string(),
+                    sticker_id: sticker_id.to_string(),
                     operation: None,
                 },
             )],
