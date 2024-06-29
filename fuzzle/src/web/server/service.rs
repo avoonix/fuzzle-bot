@@ -13,9 +13,12 @@ use actix_web_lab::{
 };
 use itertools::Itertools;
 
-use crate::{sticker::{
-    create_historgram_image, create_sticker_thumbnail, fetch_sticker_file, generate_merge_image
-}, util::Required};
+use crate::{
+    sticker::{
+        create_historgram_image, create_sticker_thumbnail, fetch_sticker_file, generate_merge_image,
+    },
+    util::Required,
+};
 use web::Data;
 
 use crate::web::server::auth::AUTH_COOKIE_NAME;
@@ -76,8 +79,7 @@ async fn sticker_set_thumbnail(
                 .as_ref(),
         )
         .await?;
-    let buf = create_sticker_thumbnail(files, 400, data.bot.clone(), data.config.clone())
-        .await?;
+    let buf = create_sticker_thumbnail(files, 400, data.bot.clone(), data.config.clone()).await?;
     Ok(HttpResponse::Ok()
         .insert_header(thumbnail_cache_control_header())
         .insert_header(header::ContentType::png())
@@ -99,8 +101,7 @@ async fn sticker_comparison_thumbnail(
         .filter(|s| file_hashes.contains(s))
         .collect_vec();
     let files = data.database.get_sticker_files_by_ids(&common).await?;
-    let buf = create_sticker_thumbnail(files, 400, data.bot.clone(), data.config.clone())
-        .await?;
+    let buf = create_sticker_thumbnail(files, 400, data.bot.clone(), data.config.clone()).await?;
     Ok(HttpResponse::Ok()
         .insert_header(thumbnail_cache_control_header())
         .insert_header(header::ContentType::png())
@@ -150,4 +151,32 @@ async fn login(
         .insert_header((header::LOCATION, "/"))
         .status(actix_web::http::StatusCode::TEMPORARY_REDIRECT)
         .finish())
+}
+
+use actix_web::{App, HttpServer};
+use mime_guess::from_path;
+use rust_embed::Embed;
+
+#[derive(Embed)]
+#[folder = "public-assets/"]
+struct Asset;
+
+fn handle_embedded_file(path: &str) -> HttpResponse {
+    match Asset::get(path) {
+        Some(content) => HttpResponse::Ok()
+            .content_type(from_path(path).first_or_octet_stream().as_ref())
+            .insert_header(thumbnail_cache_control_header())
+            .body(content.data.into_owned()),
+        None => HttpResponse::NotFound().body("404 Not Found"),
+    }
+}
+
+#[actix_web::get("/favicon.ico")]
+pub async fn favicon() -> impl Responder {
+    handle_embedded_file("favicon.ico")
+}
+
+#[actix_web::get("/assets/{_:.*}")]
+pub async fn asset_folder(path: web::Path<String>) -> impl Responder {
+    handle_embedded_file(path.as_str())
 }

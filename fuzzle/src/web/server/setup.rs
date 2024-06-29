@@ -4,8 +4,7 @@ use actix_files::Files;
 use actix_web::{middleware, web, App, HttpServer};
 
 use crate::{
-    background_tasks::TaggingWorker, bot::Bot, database::Database, qdrant::VectorDatabase,
-    tags::TagManager, Config,
+    background_tasks::TaggingWorker, bot::Bot, database::Database, qdrant::VectorDatabase, tags::TagManager, Config
 };
 
 use super::service;
@@ -49,6 +48,8 @@ pub fn setup(
                 // .service(service::favicon)
                 .service(service::login)
                 .service(service::logout)
+                .service(service::favicon)
+                .service(service::asset_folder)
                 // .service(service::sticker_files)
                 // .service(service::merge_files)
                 .service(service::sticker_set_thumbnail)
