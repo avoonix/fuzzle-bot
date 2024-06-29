@@ -282,13 +282,19 @@ async fn fetch_sticker_set_and_save_to_db(
     }
 
     for sticker in set.stickers.iter().filter(|s| s.is_raster()) {
-        automerge(
+        let result = automerge(
             &sticker.file.unique_id,
             database.clone(),
             vector_db.clone(),
             bot.clone(),
         )
-        .await?; // TODO: this might happen too frequently
+        .await; // TODO: this might happen too frequently
+        match result {
+            Err(InternalError::UnexpectedNone { type_name }) => {
+                tracing::warn!("a {type_name} is unexpectedly none");
+            }
+            other => other?,
+        }
     }
 
     database.update_last_fetched(set.name.clone()).await?;
