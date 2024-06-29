@@ -501,7 +501,7 @@ impl Database {
                                 .execute(conn)?;
                             
             sql_query("INSERT INTO sticker_file_tag (sticker_file_id, tag, added_by_user_id) SELECT ?1, tag, added_by_user_id FROM sticker_file_tag WHERE sticker_file_id = ?2
-                     ON CONFLICT(sticker_file_id, tag) DO NOTHING ")
+                     ON CONFLICT(sticker_file_id, tag) DO NOTHING")
                                 .bind::<Text, _>(canonical_file_id)
                                 .bind::<Text, _>(duplicate_file_id)
                                 .execute(conn)?;
@@ -510,6 +510,10 @@ impl Database {
                 .filter(sticker::sticker_file_id.eq(duplicate_file_id))
                 .set(sticker::sticker_file_id.eq(canonical_file_id))
                                 .execute(conn)?;
+
+            delete(
+                sticker_file_tag::table.filter(sticker_file_tag::sticker_file_id.eq(duplicate_file_id))
+            ).execute(conn)?;
             
             delete(
                 sticker_file::table.filter(sticker_file::id.eq(duplicate_file_id))
