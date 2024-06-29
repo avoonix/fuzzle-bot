@@ -1,11 +1,16 @@
-use std::future::IntoFuture;
+use std::{future::IntoFuture, time::Duration};
 
 use itertools::Itertools;
 use tracing::{info, Instrument};
 
 use teloxide::{
-    payloads::SendMessageSetters,
-    types::{Message, MessageEntityKind, MessageEntityRef, ReplyMarkup, Sticker},
+    dispatching::dialogue::GetChatId,
+    payloads::{SendMessageSetters, SendPhotoSetters},
+    requests::Requester,
+    types::{
+        ChatShared, InputFile, LinkPreviewOptions, Message, MessageEntityKind, MessageEntityRef,
+        ReplyMarkup, Sticker, UsersShared,
+    },
     utils::command::{BotCommands, ParseError},
 };
 use url::Url;
@@ -96,7 +101,7 @@ async fn handle_sticker_sets(
     }
     for set_name in &potential_sticker_set_names {
         request_context
-            .process_sticker_set(set_name.to_string())
+            .process_sticker_set(set_name.to_string(), false)
             .await;
     }
     request_context
@@ -178,7 +183,10 @@ pub async fn show_error(
     };
     request_context
         .bot
-        .send_markdown(msg.chat.id, Markdown::escaped(format!("{icon} {}", error.0)))
+        .send_markdown(
+            msg.chat.id,
+            Markdown::escaped(format!("{icon} {}", error.0)),
+        )
         .reply_to_message_id(msg.id)
         .allow_sending_without_reply(true)
         .disable_notification(false)
@@ -193,16 +201,108 @@ pub async fn message_handler(
 ) -> Result<(), BotError> {
     let potential_sticker_set_names = find_sticker_set_urls(&msg);
     if !potential_sticker_set_names.is_empty() {
-        return handle_sticker_sets(&msg, potential_sticker_set_names, request_context).await;
-    }
-
-    if let Some(text) = msg.text() {
+        handle_sticker_sets(&msg, potential_sticker_set_names, request_context).await
+    } else if let Some(text) = msg.text() {
         handle_text_message(text, request_context, msg.clone()).await
     } else if let Some(sticker) = msg.sticker() {
         handle_sticker_message(sticker, request_context, msg.clone()).await
+    } else if let Some(shared_chat) = msg.shared_chat() {
+        handle_shared_chat(&request_context, &msg, shared_chat).await
+    } else if let Some(shared_users) = msg.shared_users() {
+        handle_shared_users(&request_context, &msg, shared_users).await
     } else {
         Err(UserError::UnhandledMessageType.into())
     }
+}
+
+#[tracing::instrument(skip(request_context, msg))]
+async fn handle_shared_chat(
+    request_context: &RequestContext,
+    msg: &Message,
+    shared_chat: &ChatShared,
+) -> Result<(), BotError> {
+    let mut state = match request_context.dialog_state() {
+        DialogState::TagCreator(state) => state,
+        DialogState::ContinuousTag { .. }
+        | DialogState::Normal
+        | DialogState::StickerRecommender { .. } => {
+            return Err(UserError::InvalidMode.into());
+        }
+    };
+
+    let Some(channel) = shared_chat
+        .username
+        .as_ref()
+        .map(|username| (shared_chat.chat_id, username.clone()))
+    else {
+        return Err(UserError::ChannelWithoutUsername.into());
+    };
+    state.linked_channel = Some(channel.clone());
+    let state = state;
+    request_context
+        .database
+        .update_dialog_state(
+            request_context.user.id,
+            &DialogState::TagCreator(state.clone()),
+        )
+        .await?;
+
+    request_context
+        .bot
+        .send_markdown(
+            msg.chat.id,
+            // TODO: better message
+            Markdown::escaped(format!("https://t.me/{}", channel.1)),
+        )
+        .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+        .reply_markup(Keyboard::tag_creator(&state))
+        .await?;
+    Ok(())
+}
+
+#[tracing::instrument(skip(request_context, msg))]
+async fn handle_shared_users(
+    request_context: &RequestContext,
+    msg: &Message,
+    shared_chat: &UsersShared,
+) -> Result<(), BotError> {
+    let mut state = match request_context.dialog_state() {
+        DialogState::TagCreator(state) => state,
+        DialogState::ContinuousTag { .. }
+        | DialogState::Normal
+        | DialogState::StickerRecommender { .. } => {
+            return Err(UserError::InvalidMode.into());
+        }
+    };
+
+    let Some(user) = shared_chat.users.first().and_then(|user| {
+        user.username
+            .as_ref()
+            .map(|username| (user.user_id, username.clone()))
+    }) else {
+        return Err(UserError::UserWithoutUsername.into());
+    };
+    state.linked_user = Some(user.clone());
+    let state = state;
+    request_context
+        .database
+        .update_dialog_state(
+            request_context.user.id,
+            &DialogState::TagCreator(state.clone()),
+        )
+        .await?;
+
+    request_context
+        .bot
+        .send_markdown(
+            msg.chat.id,
+            // TODO: better message
+            Markdown::escaped(format!("https://t.me/{}", user.1)),
+        )
+        .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+        .reply_markup(Keyboard::tag_creator(&state))
+        .await?;
+    Ok(())
 }
 
 #[tracing::instrument(skip(request_context, sticker, msg), fields(sticker_id = sticker.file.unique_id, set_id = sticker.set_name))]
@@ -286,6 +386,41 @@ async fn handle_sticker_message(
                 .instrument(tracing::info_span!("telegram_bot_send_markdown"))
                 .await?;
         }
+        DialogState::TagCreator (mut tag_creator) => {
+            let sticker = request_context
+                .database
+                .get_sticker_by_id(&sticker.file.unique_id)
+                .await?
+                .required()?;
+            // let sticker_user = request_context
+            //     .database
+            //     .get_sticker_user(&sticker.id, request_context.user.id)
+            //     .await?;
+            // let is_favorited = sticker_user.map_or(false, |su| su.is_favorite); // TODO: duplicated code
+
+
+            if !tag_creator.example_sticker_id.contains(&sticker.id) {
+                tag_creator.example_sticker_id.push(sticker.id.clone());
+            }
+
+            request_context
+                .database
+                .update_dialog_state(
+                    request_context.user.id,
+                    &DialogState::TagCreator(tag_creator.clone()),
+                )
+                .await?;
+
+            request_context
+                .bot
+                .send_markdown(msg.chat.id, Markdown::escaped("UwU")) // TODO: change message
+                .reply_markup(Keyboard::tag_creator_sticker(&tag_creator, &sticker))
+                .allow_sending_without_reply(true)
+                .reply_to_message_id(msg.id)
+                .into_future()
+                .instrument(tracing::info_span!("telegram_bot_send_markdown"))
+                .await?;
+        }
     }
 
     Ok(())
@@ -313,7 +448,10 @@ async fn handle_sticker_1(
         // request_context.tag_worker.clone(),
     )
     .await?;
-    let emojis = sticker.emoji.clone().map(|e| Emoji::new_from_string_single(e));
+    let emojis = sticker
+        .emoji
+        .clone()
+        .map(|e| Emoji::new_from_string_single(e));
     let is_locked = request_context
         .database
         .get_sticker_file_by_sticker_id(&sticker.file.unique_id)

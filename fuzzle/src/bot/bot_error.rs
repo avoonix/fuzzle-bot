@@ -87,6 +87,24 @@ pub enum UserError {
 
     #[error("no results found")]
     ListHasZeroResults(String),
+
+    #[error("channel has no username")]
+    ChannelWithoutUsername,
+
+    #[error("user has no username or does not allow sharing it")]
+    UserWithoutUsername,
+
+    #[error("invalid start parameter")]
+    InvalidStartParameter,
+
+    #[error("general validation error")]
+    ValidationError(String),
+
+    #[error("vector not found")]
+    VectorNotFound,
+
+    #[error("unique constraint violation")]
+    AlreadyExists(String),
 }
 
 impl InternalError {
@@ -108,6 +126,12 @@ impl UserError {
             UserError::ParseError(position, rest) => (format!("Invalid input at position {position}: {}", rest.chars().take(10).collect::<String>()),UserErrorSeverity::Error),
             UserError::TagsNotFound(tags) => (format!("Could not find tags: {}", tags.join(", ")),UserErrorSeverity::Error),
             UserError::ListHasZeroResults(name) => (format!("No {name} here :("),UserErrorSeverity::Info),
+            UserError::ChannelWithoutUsername => ("The channel needs to have a public name.".to_string(), UserErrorSeverity::Error),
+            UserError::UserWithoutUsername => ("This user doesn't have a username or their privacy settings don't allow me to see it.".to_string(), UserErrorSeverity::Error),
+            UserError::InvalidStartParameter => ("No idea where to start.".to_string(), UserErrorSeverity::Error),
+            UserError::ValidationError(description) => (format!("Invalid data: {description}"), UserErrorSeverity::Error),
+            UserError::VectorNotFound => (format!("Come back later, looks like I'm not done processing this one"), UserErrorSeverity::Error),
+            UserError::AlreadyExists(name) => (format!("This {name} already exists"),UserErrorSeverity::Error),
         }
     }
 }

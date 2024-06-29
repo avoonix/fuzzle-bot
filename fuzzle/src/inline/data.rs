@@ -1,7 +1,8 @@
+use enum_primitive_derive::Primitive;
 use itertools::Itertools;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
-use nom::bytes::complete::take_while1;
+use nom::bytes::complete::take_while;
 use nom::character::complete::multispace0;
 use nom::character::complete::multispace1;
 use nom::combinator::eof;
@@ -15,7 +16,11 @@ use nom::sequence::{preceded, terminated};
 use nom::Finish;
 use nom::IResult;
 use nom::Parser;
+use num_traits::FromPrimitive;
+use serde_repr::Deserialize_repr;
+use serde_repr::Serialize_repr;
 use std::fmt::Display;
+use std::str::FromStr;
 
 use crate::bot::UserError;
 use crate::util::{parse_emoji, set_name_literal, sticker_id_literal, tag_literal, Emoji};
@@ -51,6 +56,10 @@ pub enum InlineQueryData {
     ListAllTagsFromSet {
         sticker_id: String,
     },
+    AddToUserSet {
+        sticker_id: String,
+        set_title: Option<String>,
+    },
     ListAllSetsThatContainSticker {
         sticker_id: String,
     },
@@ -67,6 +76,28 @@ pub enum InlineQueryData {
     SearchByEmbedding {
         query: String,
     },
+    TagCreatorTagId {
+        tag_id: String,
+        kind: TagKind,
+    },
+}
+
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Primitive)]
+pub enum TagKind {
+    #[default]
+    Main = 0,
+    Alias = 1,
+}
+
+impl FromStr for TagKind {
+    type Err = UserError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s: u8 = s
+            .parse()
+            .map_err(|_| UserError::ParseError(0, s.to_string()))?;
+        Ok(TagKind::from_u8(s).unwrap_or_default())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Copy)]
@@ -130,6 +161,11 @@ impl InlineQueryData {
     }
 
     #[must_use]
+    pub fn tag_creator(tag_id: String, kind: TagKind) -> Self {
+        Self::TagCreatorTagId { tag_id, kind }
+    }
+
+    #[must_use]
     pub fn search_emoji(tags: Vec<String>, emoji: Vec<Emoji>) -> Self {
         Self::SearchStickers { emoji, tags }
     }
@@ -170,6 +206,14 @@ impl InlineQueryData {
     #[must_use]
     pub fn recommendations() -> Self {
         Self::ListRecommendationModeRecommendations
+    }
+
+    #[must_use]
+    pub fn add_to_user_set(sticker_id: String) -> Self {
+        Self::AddToUserSet {
+            sticker_id,
+            set_title: None,
+        }
     }
 }
 
@@ -290,11 +334,44 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                     sticker_id: sticker_id.to_string(),
                 },
             ),
+            map(
+                tuple((
+                    tag("(add:"),
+                    sticker_id_literal,
+                    tag(")"),
+                    take_while(|c| true),
+                )),
+                |(_, sticker_id, _,  set_title)| InlineQueryData::AddToUserSet {
+                    sticker_id: sticker_id.to_string(),
+                    set_title: {
+                        let title = set_title.trim();
+                        if title.is_empty() {
+                            None
+                        } else {
+                            Some(title.to_string())
+                        }
+                    },
+                },
+            ),
             map(preceded(tag("(blacklist)"), parse_tags), |tags| {
                 InlineQueryData::SearchTagsForBlacklist { tags }
             }),
             map(
-                preceded(tag("(embed)"), take_while1(|c| true)),
+                preceded(tag("(tag)"), take_while(|c| true)),
+                |tag_id: &str| InlineQueryData::TagCreatorTagId {
+                    tag_id: tag_id.to_string(),
+                    kind: TagKind::Main,
+                },
+            ),
+            map(
+                preceded(tag("(alias)"), take_while(|c| true)),
+                |tag_id: &str| InlineQueryData::TagCreatorTagId {
+                    tag_id: tag_id.to_string(),
+                    kind: TagKind::Alias,
+                },
+            ),
+            map(
+                preceded(tag("(embed)"), take_while(|c| true)),
                 |query: &str| InlineQueryData::SearchByEmbedding {
                     query: query.to_string(),
                 },
@@ -352,8 +429,9 @@ impl TryFrom<String> for InlineQueryData {
     type Error = UserError;
 
     fn try_from(input: String) -> Result<Self, Self::Error> {
-        let (input, data) = Finish::finish(parse_inline_query_data(&input))
-            .map_err(|err| UserError::ParseError(input.len() - err.input.len(), err.input.to_string()))?;
+        let (input, data) = Finish::finish(parse_inline_query_data(&input)).map_err(|err| {
+            UserError::ParseError(input.len() - err.input.len(), err.input.to_string())
+        })?;
         Ok(data)
     }
 }
@@ -373,6 +451,16 @@ impl Display for InlineQueryData {
             }
             InlineQueryData::ListAllTagsFromSet { sticker_id } => {
                 write!(f, "(settags:{sticker_id}) ")
+            }
+            InlineQueryData::AddToUserSet {
+                sticker_id,
+                set_title,
+            } => {
+                write!(
+                    f,
+                    "(add:{sticker_id}) {}",
+                    set_title.as_deref().unwrap_or_default()
+                )
             }
             InlineQueryData::SearchStickers { emoji, tags } => {
                 let tags = tags.join(" ");
@@ -403,6 +491,14 @@ impl Display for InlineQueryData {
                 let tags = tags.into_iter().map(|t| t.join(" ")).join(", ");
                 write!(f, "(su:{set_name}) {tags}")
             }
+            InlineQueryData::TagCreatorTagId {
+                tag_id,
+                kind: TagKind::Main,
+            } => write!(f, "(tag) {tag_id}"),
+            InlineQueryData::TagCreatorTagId {
+                tag_id,
+                kind: TagKind::Alias,
+            } => write!(f, "(alias) {tag_id}"),
             InlineQueryData::SearchTagsForContinuousTagMode {
                 operation: SetOperation::Tag,
                 tags,
@@ -456,15 +552,22 @@ mod tests {
 
     #[test]
     fn stringify_tag_query() {
-        let query =
-            InlineQueryData::sticker_query("asdf", vec![vec!["male".to_string(), "female".to_string()]]);
+        let query = InlineQueryData::sticker_query(
+            "asdf",
+            vec![vec!["male".to_string(), "female".to_string()]],
+        );
         assert_eq!(query.to_string(), "(s:asdf) male female");
     }
 
     #[test]
     fn stringify_tag_query_multiple() {
-        let query =
-            InlineQueryData::sticker_query("asdf", vec![vec!["male".to_string(), "female".to_string()], vec!["asdf".to_string()]]);
+        let query = InlineQueryData::sticker_query(
+            "asdf",
+            vec![
+                vec!["male".to_string(), "female".to_string()],
+                vec!["asdf".to_string()],
+            ],
+        );
         assert_eq!(query.to_string(), "(s:asdf) male female, asdf");
     }
 

@@ -1,8 +1,9 @@
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while1};
-use nom::character::complete::alphanumeric1;
-use nom::combinator::{fail, recognize, success};
-use nom::multi::many1_count;
+use nom::character::complete::{alpha1, alphanumeric1};
+use nom::combinator::{fail, recognize, success, opt};
+use nom::multi::{many1, many1_count, separated_list1};
+use nom::sequence::{preceded, tuple};
 use nom::IResult;
 
 use super::{parse_first_emoji, Emoji};
@@ -14,12 +15,20 @@ pub fn sticker_id_literal(input: &str) -> IResult<&str, &str> {
 pub fn tag_literal(input: &str) -> IResult<&str, &str> {
     recognize(many1_count(alt((
         alphanumeric1,
-        take_while1(|char: char| matches!(char, '_' | '-' | '(' | ')' | '/' | '<' | '>' | '!' | '?' | '\'' | ':' | '.' | '^')), // may not contain `,` due to TagList + syntax for defining multiple tags
+        take_while1(|char: char| {
+            matches!(
+                char,
+                '_' | '-' | '(' | ')' | '/' | '<' | '>' | '!' | '?' | '\'' | ':' | '.' | '^'
+            )
+        }), // may not contain `,` due to TagList + syntax for defining multiple tags
     ))))(input)
 }
 
 pub fn set_name_literal(input: &str) -> IResult<&str, &str> {
-    recognize(many1_count(alt((alphanumeric1, tag("_")))))(input)
+    recognize(preceded(
+        tuple((alpha1, opt(tag("_")))),
+        separated_list1(tag("_"), alphanumeric1),
+    ))(input)
 }
 
 pub fn parse_emoji(input: &str) -> IResult<&str, Emoji> {
@@ -41,12 +50,6 @@ mod tests {
         for tag in tag_manager.get_tags() {
             assert_eq!(Ok(("", tag.as_str())), tag_literal(&tag));
         }
-        // go through all tags and verify that they parse
-
-
-        // rules.emoji_rules.values().flatten().for_each(|tag| {
-        // });
-
         Ok(())
     }
 }

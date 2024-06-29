@@ -20,7 +20,7 @@ use super::{
     hash::calculate_sticker_file_hash,
 };
 
-#[tracing::instrument(skip(database, bot, config))]
+#[tracing::instrument(skip(database, bot, config), err(Debug))]
 pub async fn import_all_stickers_from_set(
     set_id: &str,
     ignore_last_fetched: bool,
@@ -101,7 +101,7 @@ pub async fn import_individual_sticker_and_queue_set(
         .is_some();
     if sticker_in_database {
         info!("sticker in database, queuing set");
-        request_context.process_sticker_set(set_id).await;
+        request_context.process_sticker_set(set_id, false).await;
         return Ok(());
     }
 
@@ -120,7 +120,7 @@ pub async fn import_individual_sticker_and_queue_set(
     )
     .await?;
 
-    request_context.process_sticker_set(set_id).await; // TODO: ignore last fetched? (in case multiple new stickers were added within the last 24 hours?)
+    request_context.process_sticker_set(set_id, true).await;
 
     request_context
         .analyze_sticker(sticker.file.unique_id.clone())

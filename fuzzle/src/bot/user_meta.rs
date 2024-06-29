@@ -5,11 +5,13 @@ use crate::bot::config::Config;
 use crate::database::{Database, User};
 use crate::qdrant::VectorDatabase;
 use crate::tags::TagManager;
+use itertools::Itertools;
 use teloxide::prelude::*;
+use teloxide::types::ChatKind;
 
 use super::{Bot, BotError, RequestContext};
 
-#[tracing::instrument(skip(update, config, database, tag_manager, bot, tagging_worker))]
+#[tracing::instrument(skip(update, config, database, tag_manager, bot, tagging_worker, vector_db))]
 pub async fn inject_context(
     update: Update,
     config: Arc<Config>,
@@ -50,12 +52,15 @@ async fn get_user(
     database: Database,
     bot: Bot,
 ) -> Result<User, BotError> {
-    // TODO: possibly cache users? TODO: measure how long this function takes
-    let Some(user) = update.from() else {
+    let Some(user_id) = (match (update.from(), update.chat()) {
+        (Some(user), _) => Some(user.id),
+        (None, Some(chat)) => chat.id.as_user(),
+        (None, None) => None,
+    }) else {
         return Err(anyhow::anyhow!("user missing from telegram update").into());
     };
 
-    get_or_create_user(user.id, config, database, bot).await
+    get_or_create_user(user_id, config, database, bot).await
 }
 
 pub async fn get_or_create_user(

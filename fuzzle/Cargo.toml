@@ -84,6 +84,9 @@ panic = "deny"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+
+teloxide = { version = "0.12", features = ["macros", "ctrlc_handler", "rustls", "throttle"], default-features = false, git = "https://github.com/avoonix/teloxide.git", branch = "future-bot-api" }
+
 actix-files = { version = "0.6" }
 actix-web = { version = "4", features = ["macros"] }
 anyhow = { version = "1.0.75" }
@@ -93,7 +96,6 @@ flate2 = { version = "1.0.28" }
 reqwest = { version = "0.11.27", default-features = false, features = ["rustls", "blocking", "hyper-rustls", "__rustls", "__tls", "rustls-tls"] }
 serde = { version = "1.0.192", features = ["derive"] }
 tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread", "tracing"] }
-teloxide = { version = "0.12", features = ["macros", "ctrlc_handler", "rustls", "throttle"], default-features = false, git = "https://github.com/avoonix/teloxide.git", branch = "default-parse-mode-request-public" }
 futures = { version = "0.3.29" }
 serde_json = "1.0.108"
 itertools = "0.13.0"

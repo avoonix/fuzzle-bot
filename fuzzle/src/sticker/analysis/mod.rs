@@ -6,11 +6,7 @@ pub use histogram::{calculate_color_histogram, create_historgram_image};
 pub use measures::{Match, Measures};
 
 use crate::{
-    bot::{Bot, BotError, InternalError, RequestContext},
-    database::Database,
-    inference::{image_to_clip_embedding, text_to_clip_embedding},
-    util::Required,
-    Config,
+    background_tasks::BackgroundTaskExt, bot::{report_bot_error, report_internal_error_result, report_periodic_task_error, Bot, BotError, InternalError, RequestContext, UserError}, database::Database, inference::{image_to_clip_embedding, text_to_clip_embedding}, util::Required, Config
 };
 
 use crate::inline::SimilarityAspect;
@@ -90,11 +86,8 @@ pub async fn compute_similar(
     let file_hashes = match file_hashes {
     Some(hashes) => hashes,
     None => {
-        import_all_stickers_from_set(&sticker.sticker_set_id, false, request_context.bot, request_context.database.clone(), request_context.config.clone(), request_context.vector_db.clone()).await?;
-    request_context.vector_db
-        .find_similar_stickers(&[sticker.sticker_file_id], &[], aspect, score_threshold, limit, offset)
-        .await?
-        .required()?
+        request_context.process_sticker_set(sticker.sticker_set_id, false).await;
+        return Err(UserError::VectorNotFound.into());
     }};
         // .required()?;
     // TODO: if the vector is not in the database, embed and insert it

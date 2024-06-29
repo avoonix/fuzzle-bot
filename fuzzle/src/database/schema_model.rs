@@ -1,7 +1,3 @@
-use std::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
 use diesel::{
     backend::Backend,
     expression::AsExpression,
@@ -10,10 +6,16 @@ use diesel::{
     sqlite::Sqlite,
 };
 use enum_primitive_derive::Primitive;
-use num_traits::{ToPrimitive, FromPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
-use super::{schema, Blacklist, DatabaseError, DialogState, UserSettings};
+use crate::tags::Category;
+
+use super::{schema, Blacklist, DatabaseError, DialogState, TagData, UserSettings};
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = schema::sticker_file)]
@@ -35,6 +37,7 @@ pub struct StickerSet {
     pub last_fetched: Option<chrono::NaiveDateTime>,
     pub created_at: chrono::NaiveDateTime,
     pub added_by_user_id: Option<i64>,
+    pub created_by_user_id: Option<i64>,
 }
 
 #[derive(Queryable, Selectable, Debug, Clone)]
@@ -82,4 +85,16 @@ pub struct StickerUser {
     pub user_id: i64,
     pub is_favorite: bool,
     pub last_used: chrono::NaiveDateTime,
+}
+
+#[derive(Queryable, Selectable, Debug, Clone, QueryableByName)]
+#[diesel(table_name = schema::tag)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct Tag {
+    pub id: String,
+    pub category: Category,
+    pub is_pending: bool,
+    pub dynamic_data: Option<TagData>,
+    pub created_by_user_id: Option<i64>,
+    pub created_at: chrono::NaiveDateTime,
 }

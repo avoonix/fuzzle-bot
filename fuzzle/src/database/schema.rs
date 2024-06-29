@@ -74,6 +74,7 @@ diesel::table! {
         last_fetched -> Nullable<Timestamp>,
         created_at -> Timestamp,
         added_by_user_id -> Nullable<BigInt>,
+        created_by_user_id -> Nullable<BigInt>,
     }
 }
 
@@ -98,12 +99,24 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    tag (id) {
+        id -> Text,
+        category -> BigInt,
+        is_pending -> Bool,
+        dynamic_data -> Nullable<Text>,
+        created_by_user_id -> Nullable<BigInt>,
+        created_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(sticker_file -> user (tags_locked_by_user_id));
 diesel::joinable!(sticker_file_tag -> sticker_file (sticker_file_id));
 diesel::joinable!(sticker_file_tag -> user (added_by_user_id));
 diesel::joinable!(sticker_file_tag -> sticker (sticker_file_id));
 diesel::joinable!(sticker_file_tag_history -> sticker_file (sticker_file_id));
 diesel::joinable!(merged_sticker -> user (created_by_user_id));
+diesel::joinable!(tag -> user (created_by_user_id));
 diesel::joinable!(removed_set -> user (added_by_user_id));
 diesel::joinable!(sticker -> sticker_file (sticker_file_id));
 diesel::joinable!(sticker -> sticker_set (sticker_set_id));
@@ -122,4 +135,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     sticker_set,
     sticker_user,
     user,
+    tag,
 );

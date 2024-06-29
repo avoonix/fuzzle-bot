@@ -1,17 +1,32 @@
-// TODO: use thiserror
-#[derive(Debug)]
+use thiserror::Error;
+
+#[derive(Debug, Error)]
 pub enum DatabaseError {
+    #[error("no rows affected")]
     NoRowsAffected,
+    #[error("unique constraint violated")]
+    UniqueConstraintViolated(String),
+    #[error("trying to insert removed set")]
     TryingToInsertRemovedSet,
+    #[error("other")]
     Anyhow(anyhow::Error),
+    #[error("serde")]
     Serde(serde_json::Error),
+    #[error("diesel")]
     Diesel(diesel::result::Error),
+    #[error("r2d2")]
     R2d2(r2d2::Error),
 }
 
 impl From<diesel::result::Error> for DatabaseError {
     fn from(error: diesel::result::Error) -> Self {
-        Self::Diesel(error)
+        match error {
+            diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                error,
+            ) => Self::UniqueConstraintViolated(error.message().to_string()),
+            _ => Self::Diesel(error),
+        }
     }
 }
 
@@ -30,20 +45,5 @@ impl From<anyhow::Error> for DatabaseError {
 impl From<serde_json::Error> for DatabaseError {
     fn from(value: serde_json::Error) -> Self {
         Self::Serde(value)
-    }
-}
-
-impl std::error::Error for DatabaseError {}
-
-impl std::fmt::Display for DatabaseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Diesel(error) => write!(f, "diesel error: {error:?}"),
-            Self::NoRowsAffected => write!(f, "no rows affected"),
-            Self::TryingToInsertRemovedSet => write!(f, "trying to insert removed set"),
-            Self::Anyhow(error) => write!(f, "anyhow error: {error}"),
-            Self::Serde(error) => write!(f, "serde error: {error}"),
-            Self::R2d2(error) => write!(f, "database pool error: {error}"),
-        }
     }
 }

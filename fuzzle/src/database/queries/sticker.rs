@@ -183,6 +183,18 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_some_sticker_by_file_id(
+        &self,
+        sticker_file_id: &str,
+    ) -> Result<Option<Sticker>, DatabaseError> {
+        Ok(sticker::table
+            .filter(sticker::sticker_file_id.eq(sticker_file_id))
+            .select(Sticker::as_select())
+            .first(&mut self.pool.get()?)
+            .optional()?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_tags(&self, sticker_id: &str) -> Result<Vec<String>, DatabaseError> {
         // TODO: pass file_id instead
         Ok(sticker_file_tag::table
@@ -481,7 +493,7 @@ impl Database {
         user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
         Ok(self.pool.get()?.transaction(|conn| {
-            let stickers_affected_merge = sql_query("INSERT INTO merged_sticker (canonical_sticker_file_id, removed_sticker_file_id, removed_sticker_id, removed_set_id, created_by_user_id)
+            let stickers_affected_merge = sql_query("INSERT INTO merged_sticker (canonical_sticker_file_id, removed_sticker_file_id, removed_sticker_id, removed_sticker_set_id, created_by_user_id)
                SELECT ?1, sticker_file_id, id, sticker_set_id, ?2 FROM sticker WHERE sticker_file_id = ?3")
                                 .bind::<Text, _>(canonical_file_id)
                                 .bind::<Nullable<BigInt>, _>(user_id)

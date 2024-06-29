@@ -1,6 +1,7 @@
 use crate::background_tasks::BackgroundTaskExt;
 use crate::bot::{
-    report_bot_error, report_internal_error, report_internal_error_result, BotError, UserError,
+    report_bot_error, report_internal_error, report_internal_error_result, BotError, InternalError,
+    UserError,
 };
 use crate::bot::{BotExt, RequestContext};
 use crate::database::{self, min_max, DialogState, User};
@@ -10,9 +11,9 @@ use crate::message::{Keyboard, StartParameter};
 use crate::sticker::{compute_similar, find_with_text_embedding, with_sticker_id};
 use crate::tags::TagManager;
 use crate::text::{Markdown, Text};
-use crate::util::{Emoji, Required};
-use actix_web::error::InternalError;
+use crate::util::{create_sticker_set_id, create_tag_id, Emoji, Required};
 use itertools::Itertools;
+use num_traits::ToPrimitive;
 use std::convert::TryFrom;
 use std::future::IntoFuture;
 use std::sync::Arc;
@@ -30,7 +31,7 @@ use url::Url;
 
 use super::pagination::QueryPage;
 use super::result_id::InlineQueryResultId;
-use super::SimilarityAspect;
+use super::{SimilarityAspect, TagKind};
 
 // TODO: seems like switch_pm_text can not be updated dynamically (eg to abuse it and show the number of results, resolved tags, etc) -> find other way to show that info
 
@@ -56,14 +57,14 @@ fn create_query_set(
         content,
     )
     .description(info.map_or(set.id.clone(), |info| format!("{} • {}", set.id, info)));
-        // let thumbnail_url =
-            // format!("https://placehold.co/{THUMBNAIL_SIZE}/007f0e/black.png?text={thumb}");
-        let thumbnail_url = Url::parse(&thumb_url)?;
-        article = article
-            .thumb_url(thumbnail_url)
-            .thumb_width(THUMBNAIL_SIZE)
-            .thumb_height(THUMBNAIL_SIZE)
-            .hide_url(true);
+    // let thumbnail_url =
+    // format!("https://placehold.co/{THUMBNAIL_SIZE}/007f0e/black.png?text={thumb}");
+    let thumbnail_url = Url::parse(&thumb_url)?;
+    article = article
+        .thumb_url(thumbnail_url)
+        .thumb_width(THUMBNAIL_SIZE)
+        .thumb_height(THUMBNAIL_SIZE)
+        .hide_url(true);
 
     Ok(article.into())
 }
@@ -555,13 +556,14 @@ pub async fn show_error(
     error: BotError,
 ) -> Result<(), BotError> {
     let error = error.end_user_error();
-    let (text, color) = match error.1 {
-        crate::bot::UserErrorSeverity::Error => ("Error", "red"),
-        crate::bot::UserErrorSeverity::Info => ("¯\\_(ツ)_/¯", "lightblue"),
+    let thumbnail_url = match error.1 {
+        crate::bot::UserErrorSeverity::Error => Url::parse(&format!(
+            "https://fuzzle-bot.avoonix.com/assets/fuzzle_error.png"
+        ))?,
+        crate::bot::UserErrorSeverity::Info => Url::parse(&format!(
+            "https://fuzzle-bot.avoonix.com/assets/fuzzle_info.png"
+        ))?,
     };
-    let thumbnail_url =
-        format!("https://placehold.co/{THUMBNAIL_SIZE}/{color}/black.png?text={text}");
-    let thumbnail_url = Url::parse(&thumbnail_url)?;
 
     let content =
         InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(&error.0)));
@@ -628,6 +630,9 @@ pub async fn inline_query_handler(
         InlineQueryData::SearchTagsForContinuousTagMode { operation, tags } => {
             handle_continuous_tag_query(current_offset, tags, operation, q, request_context).await
         }
+        InlineQueryData::TagCreatorTagId { tag_id, kind } => {
+            handle_tag_creator(q, request_context, tag_id, kind).await
+        }
         InlineQueryData::ListSimilarStickers { unique_id, aspect } => {
             handle_similar_sticker_query(
                 current_offset,
@@ -660,6 +665,10 @@ pub async fn inline_query_handler(
         InlineQueryData::ListAllTagsFromSet { sticker_id } => {
             handle_all_set_tags(current_offset, sticker_id, q, request_context).await
         }
+        InlineQueryData::AddToUserSet {
+            sticker_id,
+            set_title,
+        } => handle_user_sets(current_offset, sticker_id, set_title, q, request_context).await,
     }
 }
 
@@ -1001,6 +1010,7 @@ async fn handle_recommendations(
             negative_sticker_id,
             positive_sticker_id,
         } => (positive_sticker_id, negative_sticker_id),
+        DialogState::TagCreator(tag_creator) => (vec![], vec![]), // TODO: use the example_sticker_id as positive, and don't have any negatives
     };
     let positive_file_ids = request_context
         .database
@@ -1055,5 +1065,199 @@ async fn handle_recommendations(
         .switch_pm_parameter(StartParameter::Greeting.to_string())
         .is_personal(true)
         .await?;
+    Ok(())
+}
+
+#[tracing::instrument(skip(request_context, q), err(Debug))]
+pub async fn handle_tag_creator(
+    q: InlineQuery,
+    request_context: RequestContext,
+    tag_id: String,
+    kind: TagKind,
+) -> Result<(), BotError> {
+    let thumbnail_url = format!("https://fuzzle-bot.avoonix.com/assets/fuzzle_happy.png");
+    let thumbnail_url = Url::parse(&thumbnail_url)?;
+
+    let tag_id = create_tag_id(&tag_id);
+
+    let content = InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
+        format!("/settag {} {tag_id}", kind.to_u8().unwrap_or_default()),
+    )));
+
+    let most_similar_tag = request_context.tag_manager.closest_matching_tag(&tag_id);
+    let existing_tag = request_context.database.get_tag_by_id(&tag_id).await?;
+    if let Some(tag) = existing_tag {
+        return Err(UserError::AlreadyExists(if tag.is_pending {
+            "pending tag".to_string()
+        } else {
+            "tag".to_string()
+        })
+        .into());
+    }
+
+    let tag_creator_message = InlineQueryResultArticle::new(
+        InlineQueryResultId::Other("tagcreator".to_string()).to_string(),
+        match kind {
+            TagKind::Main => "Set the main tag name",
+            TagKind::Alias => "Add alias",
+        },
+        content.clone(),
+    )
+    .description(tag_id)
+    .thumb_url(thumbnail_url)
+    .thumb_width(THUMBNAIL_SIZE)
+    .thumb_height(THUMBNAIL_SIZE)
+    .hide_url(true)
+    .into();
+
+    let mut articles = vec![tag_creator_message];
+
+    if let Some(most_similar_tag) = most_similar_tag {
+        let url = Url::parse(&format!(
+            "https://fuzzle-bot.avoonix.com/assets/fuzzle_info.png"
+        ))?;
+
+        let info_message = InlineQueryResultArticle::new(
+            InlineQueryResultId::Other("tagcreatorinfo".to_string()).to_string(),
+            format!("Similar tag already exists"),
+            content,
+        )
+        .description(most_similar_tag)
+        .thumb_url(url)
+        .thumb_width(THUMBNAIL_SIZE)
+        .thumb_height(THUMBNAIL_SIZE)
+        .hide_url(true)
+        .into();
+        articles.push(info_message)
+    }
+
+    request_context
+        .bot
+        .answer_inline_query(q.id, articles)
+        .next_offset("")
+        .cache_time(0)
+        .switch_pm_text(Text::switch_pm_text())
+        .switch_pm_parameter(StartParameter::Greeting.to_string())
+        .is_personal(true)
+        .await?;
+    Ok(())
+}
+
+#[tracing::instrument(skip(q, request_context))]
+async fn handle_user_sets(
+    current_offset: QueryPage,
+    sticker_id: String,
+    set_title: Option<String>,
+    q: InlineQuery,
+    request_context: RequestContext,
+) -> Result<(), BotError> {
+    let sets = request_context
+        .database
+        .get_owned_sticker_sets(
+            &request_context.config.telegram_bot_username,
+            request_context.user.id,
+        )
+        .await?;
+    let sticker_file = request_context
+        .database
+        .get_sticker_file_by_sticker_id(&sticker_id)
+        .await?
+        .required()?;
+
+    let filter_term = &set_title.clone().unwrap_or_default().to_lowercase();
+
+    let sets = sets
+        .into_iter()
+        .filter(|set| {
+            set.id.to_lowercase().contains(filter_term)
+                || set
+                    .title
+                    .as_ref()
+                    .map_or(false, |title| title.to_lowercase().contains(filter_term))
+        })
+        .take(49);
+
+    let mut articles = vec![];
+    for set in sets {
+        request_context.process_sticker_set(set.id.clone(), false).await;
+        // TODO: use futuresunordered
+        let url = format!(
+            "https://fuzzle-bot.avoonix.com/thumbnails/sticker-set/{}/image.png",
+            &set.id
+        );
+        let set_title = set.title.clone().unwrap_or(set.id.clone());
+
+        let sticker_in_set = request_context
+            .database
+            .sticker_set_contains_file(&set.id, &sticker_file.id)
+            .await?;
+
+        let content = InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
+            if let Some(ref sticker_id) = sticker_in_set {
+                format!("/removesticker {} {}", &set.id, &sticker_id)
+            } else {
+                format!("/addsticker {} {}", &set.id, &sticker_id)
+            },
+        )));
+
+        let mut article = InlineQueryResultArticle::new(
+            InlineQueryResultId::Set(set.id.clone()).to_string(),
+            set_title,
+            content,
+        )
+        .description(
+            if sticker_in_set.is_some() {
+            "❌ Remove from this set"
+        } else {
+            "✅ Add to this set"
+        });
+        let thumbnail_url = Url::parse(&url)?;
+        article = article
+            .thumb_url(thumbnail_url)
+            .thumb_width(THUMBNAIL_SIZE)
+            .thumb_height(THUMBNAIL_SIZE)
+            .hide_url(true);
+
+        articles.push(article.into());
+    }
+
+    let set_title_with_fallback = set_title.clone().unwrap_or_else(|| "Stickers".to_string());
+    let set_id = create_sticker_set_id(
+        &set_title_with_fallback,
+        &request_context.config.telegram_bot_username,
+    );
+
+    let url = Url::parse(&format!(
+        "https://fuzzle-bot.avoonix.com/assets/fuzzle_happy.png"
+    ))?;
+    let content = InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
+        format!("/createset {sticker_id} {set_title_with_fallback}"),
+    )));
+
+    let info_message = InlineQueryResultArticle::new(
+        InlineQueryResultId::Other("createset".to_string()).to_string(),
+        format!("Create: {set_title_with_fallback}"),
+        content,
+    )
+    .description(if set_title.is_none() {
+        "Create a new set (add text to change the title)"
+    } else {
+        "Create a new set"
+    })
+    .thumb_url(url)
+    .thumb_width(THUMBNAIL_SIZE)
+    .thumb_height(THUMBNAIL_SIZE)
+    .hide_url(true)
+    .into();
+
+    articles.push(info_message);
+
+    request_context
+        .bot
+        .answer_inline_query(q.id, articles)
+        .next_offset("")
+        .cache_time(0) // in seconds // TODO: constant?
+        .await?;
+
     Ok(())
 }

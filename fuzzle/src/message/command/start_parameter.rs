@@ -1,5 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
+use crate::bot::UserError;
+
 #[derive(Debug, Clone, Copy)]
 pub enum StartParameter {
     Blacklist,
@@ -9,7 +11,7 @@ pub enum StartParameter {
 }
 
 impl FromStr for StartParameter {
-    type Err = String;
+    type Err = UserError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -17,7 +19,7 @@ impl FromStr for StartParameter {
             "blacklist" => Ok(Self::Blacklist),
             "help" => Ok(Self::Help),
             "beep" => Ok(Self::Greeting),
-            _ => Err("invalid start parameter".to_string()),
+            _ => Err(UserError::InvalidStartParameter),
         }
     }
 }

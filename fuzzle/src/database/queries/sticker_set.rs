@@ -1,13 +1,15 @@
 use base64::{engine::general_purpose, Engine};
 use diesel::{
     delete,
-    dsl::{count_star, now},
+    dsl::{count_star, now, sql},
     insert_into,
     prelude::*,
+    sql_types::BigInt,
     update,
     upsert::excluded,
 };
 use itertools::Itertools;
+use r2d2::PooledConnection;
 use tracing::warn;
 
 use crate::{
@@ -33,20 +35,34 @@ define_sql_function! {
 
 impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn create_sticker_set_with_creator(
+        &self,
+        id: &str,
+        title: &str,
+        created_by_user_id: i64,
+    ) -> Result<(), DatabaseError> {
+        self.pool.get()?.transaction(|conn| {
+            self.check_removed(id, conn)?;
+            insert_into(sticker_set::table)
+                .values((
+                    sticker_set::id.eq(id),
+                    sticker_set::title.eq(title),
+                    sticker_set::created_by_user_id.eq(created_by_user_id),
+                    sticker_set::added_by_user_id.eq(created_by_user_id),
+                ))
+                .execute(conn)?;
+            Ok(())
+        })
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn upsert_sticker_set_with_title(
         &self,
         id: &str,
         title: &str,
     ) -> Result<(), DatabaseError> {
         self.pool.get()?.transaction(|conn| {
-            let removed: Option<String> = removed_set::table
-                .filter(removed_set::id.eq(id))
-                .select((removed_set::id))
-                .first(conn)
-                .optional()?;
-            if removed.is_some() {
-                return Err(DatabaseError::TryingToInsertRemovedSet);
-            }
+            self.check_removed(id, conn)?;
             insert_into(sticker_set::table)
                 .values((sticker_set::id.eq(id), sticker_set::title.eq(title)))
                 .on_conflict(sticker_set::id)
@@ -66,14 +82,7 @@ impl Database {
         added_by_user_id: i64,
     ) -> Result<(), DatabaseError> {
         self.pool.get()?.transaction(|conn| {
-            let removed: Option<String> = removed_set::table
-                .filter(removed_set::id.eq(id))
-                .select((removed_set::id))
-                .first(conn)
-                .optional()?;
-            if removed.is_some() {
-                return Err(DatabaseError::TryingToInsertRemovedSet);
-            }
+            self.check_removed(id, conn)?;
             insert_into(sticker_set::table)
                 .values((
                     sticker_set::id.eq(id),
@@ -84,6 +93,23 @@ impl Database {
                 .execute(conn)?;
             Ok(())
         })
+    }
+
+    fn check_removed(
+        &self,
+        set_id: &str,
+        conn: &mut PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+    ) -> Result<(), DatabaseError> {
+        let removed: Option<String> = removed_set::table
+            .filter(removed_set::id.eq(set_id))
+            .select((removed_set::id))
+            .first(conn)
+            .optional()?;
+        if removed.is_some() {
+            Err(DatabaseError::TryingToInsertRemovedSet)
+        } else {
+            Ok(())
+        }
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -141,7 +167,7 @@ impl Database {
     ) -> Result<Vec<String>, DatabaseError> {
         Ok(sticker_set::table
             .select(sticker_set::id)
-            .order_by(sticker_set::last_fetched)
+            .order_by(sql::<BigInt>("random()")) // TODO: change back to least recently
             .limit(n)
             .load(&mut self.pool.get()?)?)
     }
@@ -153,5 +179,33 @@ impl Database {
             .order_by(sticker_set::created_at.desc())
             .limit(n)
             .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_owned_sticker_sets(
+        &self,
+        bot_username: &str,
+        user_id: i64,
+    ) -> Result<Vec<StickerSet>, DatabaseError> {
+        Ok(sticker_set::table
+            .filter(sticker_set::created_by_user_id.eq(user_id))
+            .filter(sticker_set::id.like(format!("%_by_{bot_username}")))
+            .select(StickerSet::as_select())
+            .load(&mut self.pool.get()?)?)
+    }
+
+    /// returns id of sticker in the set
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn sticker_set_contains_file(
+        &self,
+        set_id: &str,
+        file_id: &str,
+    ) -> Result<Option<String>, DatabaseError> {
+        Ok(sticker::table
+            .filter(sticker::sticker_set_id.eq(set_id))
+            .filter(sticker::sticker_file_id.eq(file_id))
+            .select((sticker::id))
+            .first(&mut self.pool.get()?)
+            .optional()?)
     }
 }

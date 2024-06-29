@@ -1,5 +1,6 @@
 use nom::bytes::complete::tag;
 
+use nom::character::complete::u8;
 use nom::combinator::{eof, fail, map};
 
 use nom::sequence::{preceded, terminated, tuple};
@@ -7,11 +8,13 @@ use nom::sequence::{preceded, terminated, tuple};
 use nom::IResult;
 
 use nom::{branch::alt, character::complete::u64, combinator::opt};
+use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 use crate::database::StickerOrder;
 
+use crate::tags::Category;
 use crate::util::{sticker_id_literal, tag_literal};
 
 fn parse_tag_operation(input: &str) -> IResult<&str, TagOperation> {
@@ -50,6 +53,10 @@ pub enum FavoriteAction {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CallbackData {
     NoAction,
+    RemoveLinkedChannel,
+    RemoveLinkedUser,
+    LinkSelf,
+    CreateTag,
     Help,
     Start,
     Settings,
@@ -62,12 +69,12 @@ pub enum CallbackData {
     LatestSets,
     Info,
 
-
     RemoveBlacklistedTag(String),
     RemoveContinuousTag(String),
+    RemoveAlias(String),
     UserInfo(u64),
     SetOrder(StickerOrder),
-
+    SetCategory(Option<Category>),
 
     StickerSetPage {
         sticker_id: String,
@@ -78,8 +85,10 @@ pub enum CallbackData {
     StickerExplorePage {
         sticker_id: String,
     },
+    ToggleExampleSticker {
+        sticker_id: String,
+    },
 
-    
     Sticker {
         sticker_id: String,
         operation: Option<TagOperation>,
@@ -97,12 +106,10 @@ pub enum CallbackData {
         positive: bool,
     },
 
-
     ChangeSetStatus {
         set_name: String,
         banned: bool,
     },
-
 
     Merge {
         sticker_id_a: String,
@@ -149,22 +156,28 @@ impl CallbackData {
 }
 
 fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
-    terminated(alt((
-        parse_simple,
-        parse_remove_blacklist_data,
-        parse_remove_continuous_tag,
-        parse_sticker_data,
-        parse_remove_set_data,
-        parse_user_info_data,
-        parse_order_data,
-        parse_lock_data,
-        parse_recommend_sticker,
-        parse_sticker_set_page,
-        parse_download_sticker,
-        parse_sticker_explore_page,
-        parse_favorite_sticker_data,
-        parse_merge_data,
-    )), eof)(input)
+    terminated(
+        alt((
+            parse_simple,
+            parse_remove_blacklist_data,
+            parse_remove_continuous_tag,
+            parse_sticker_data,
+            parse_remove_set_data,
+            parse_user_info_data,
+            parse_order_data,
+            parse_set_category,
+            parse_remove_alias,
+            parse_lock_data,
+            parse_recommend_sticker,
+            parse_sticker_set_page,
+            parse_download_sticker,
+            parse_sticker_explore_page,
+            parse_toggle_example_sticker,
+            parse_favorite_sticker_data,
+            parse_merge_data,
+        )),
+        eof,
+    )(input)
 }
 
 fn parse_simple(input: &str) -> IResult<&str, CallbackData> {
@@ -181,6 +194,10 @@ fn parse_simple(input: &str) -> IResult<&str, CallbackData> {
         map(tag("blacklist"), |_| CallbackData::Blacklist),
         map(tag("info"), |_| CallbackData::Info),
         map(tag("noaction"), |_| CallbackData::NoAction),
+        map(tag("removeuser"), |_| CallbackData::RemoveLinkedUser),
+        map(tag("linkself"), |_| CallbackData::LinkSelf),
+        map(tag("createtag"), |_| CallbackData::CreateTag),
+        map(tag("removechannel"), |_| CallbackData::RemoveLinkedChannel),
     ))(input)
 }
 
@@ -253,6 +270,17 @@ fn parse_sticker_explore_page(input: &str) -> IResult<&str, CallbackData> {
     ))
 }
 
+fn parse_toggle_example_sticker(input: &str) -> IResult<&str, CallbackData> {
+    let (input, _) = tag("tex;")(input)?;
+    let (input, sticker_id) = sticker_id_literal(input)?;
+    Ok((
+        input,
+        CallbackData::ToggleExampleSticker {
+            sticker_id: sticker_id.to_string(),
+        },
+    ))
+}
+
 fn parse_recommend_sticker(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("rec;")(input)?;
     let (input, sticker_id) = sticker_id_literal(input)?;
@@ -286,13 +314,27 @@ fn parse_lock_data(input: &str) -> IResult<&str, CallbackData> {
 }
 
 fn parse_order_data(input: &str) -> IResult<&str, CallbackData> {
-    let (input, _) = tag("order")(input)?;
-    let (input, _) = tag(";")(input)?;
+    let (input, _) = tag("order;")(input)?;
     let order = serde_json::from_str(input);
     match order {
         Err(err) => fail(input),
         Ok(order) => Ok(("", CallbackData::SetOrder(order))),
     }
+}
+
+fn parse_set_category(input: &str) -> IResult<&str, CallbackData> {
+    alt((
+        map(preceded(tag("cat;"), u8), |cat| {
+            CallbackData::SetCategory(Category::from_u8(cat))
+        }),
+        map(tag("cat;none"), |_| CallbackData::SetCategory(None)),
+    ))(input)
+}
+
+fn parse_remove_alias(input: &str) -> IResult<&str, CallbackData> {
+    map(preceded(tag("ras;"), tag_literal), |tag| {
+        CallbackData::RemoveAlias(tag.to_string())
+    })(input)
 }
 
 fn parse_user_info_data(input: &str) -> IResult<&str, CallbackData> {
@@ -387,11 +429,17 @@ impl Display for CallbackData {
             Self::Start => write!(f, "start"),
             Self::Blacklist => write!(f, "blacklist"),
             Self::NoAction => write!(f, "noaction"),
+            Self::RemoveLinkedUser => write!(f, "removeuser"),
+            Self::LinkSelf => write!(f, "linkself"),
+            Self::CreateTag => write!(f, "createtag"),
+            Self::RemoveLinkedChannel => write!(f, "removechannel"),
             Self::StickerSetPage { sticker_id } => write!(f, "ssp;{sticker_id}"),
             Self::DownloadSticker { sticker_id } => write!(f, "dls;{sticker_id}"),
             Self::StickerExplorePage { sticker_id } => write!(f, "sep;{sticker_id}"),
+            Self::ToggleExampleSticker { sticker_id } => write!(f, "tex;{sticker_id}"),
             Self::RemoveBlacklistedTag(tag) => write!(f, "removebl;{tag}"),
             Self::RemoveContinuousTag(tag) => write!(f, "removec;{tag}"),
+            Self::RemoveAlias(tag) => write!(f, "ras;{tag}"),
             Self::ChangeSetStatus { set_name, banned } => {
                 let action = if *banned { "ban" } else { "unban" };
                 write!(f, "chset;{set_name};{action}")
@@ -402,11 +450,21 @@ impl Display for CallbackData {
                 let order = serde_json::to_string(order).unwrap_or_default();
                 write!(f, "order;{order}")
             }
+            Self::SetCategory(category) => {
+                let category = match category {
+                    Some(category) => category.to_u8().unwrap_or_default().to_string(),
+                    None => "none".to_string(),
+                };
+                write!(f, "cat;{category}")
+            }
             Self::SetLock { lock, sticker_id } => {
                 let lock = if *lock { "lock" } else { "unlock" };
                 write!(f, "lock;{sticker_id};{lock}")
             }
-            Self::ToggleRecommendSticker { positive, sticker_id } => {
+            Self::ToggleRecommendSticker {
+                positive,
+                sticker_id,
+            } => {
                 let positive = if *positive { "positive" } else { "negative" };
                 write!(f, "rec;{sticker_id};{positive}")
             }

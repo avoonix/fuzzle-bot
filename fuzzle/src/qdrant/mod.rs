@@ -309,6 +309,11 @@ impl VectorDatabase {
             SimilarityAspect::Color => "histogram".to_string(),
             SimilarityAspect::Embedding => "clip".to_string(),
         };
+        let strategy = if positive_file_ids.len() != 1 || negative_file_ids.len() != 0 {
+            Some(RecommendStrategy::BestScore.into())
+        } else {
+            None
+        };
         // TODO: create sticker result struct
         let search_result = self
             .client
@@ -322,7 +327,7 @@ impl VectorDatabase {
                 offset: Some(offset),
                 with_payload: Some(true.into()), // TODO: only set payload to include sticker_id
                 score_threshold: Some(score_threshold),
-                strategy: Some(RecommendStrategy::BestScore.into()),
+                strategy,
                 // with_payload: Some(vec!["file_hash"].into()),
                 ..Default::default()
             })

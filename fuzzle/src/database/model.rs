@@ -1,24 +1,26 @@
-use std::collections::HashMap;
 use chrono::Duration;
 use diesel::sql_types::BigInt;
+use diesel::{
+    backend::Backend,
+    deserialize::{self, FromSqlRow},
+    expression::AsExpression,
+    prelude::*,
+    serialize::{self, IsNull},
+    sqlite::Sqlite,
+};
+use enum_primitive_derive::Primitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::HashMap;
 use std::{
     fmt::Debug,
     ops::{Deref, DerefMut},
 };
-use diesel::{
-    backend::Backend,
-    expression::AsExpression,
-    prelude::*,
-    serialize::{self, IsNull},
-deserialize::{self, FromSqlRow},
-    sqlite::Sqlite,
-};
-use enum_primitive_derive::Primitive;
-use num_traits::{ToPrimitive, FromPrimitive};
+use teloxide::types::{ChatId, UserId};
+use teloxide::{requests::Requester, types::InputSticker};
 
-use crate::util::Emoji;
+use crate::{bot::Bot, tags::Category, util::Emoji};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PopularTag {
@@ -69,6 +71,16 @@ pub struct AddedRemoved {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct UserSettings {
     pub order: Option<StickerOrder>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct TagData {
+    pub example_sticker_ids: Vec<String>,
+    pub aliases: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linked_channel: Option<(ChatId, String)>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linked_user: Option<(UserId, String)>,
 }
 
 impl UserSettings {
@@ -159,9 +171,9 @@ macro_rules! impl_json {
 }
 
 impl_json!(UserSettings);
+impl_json!(TagData);
 impl_json!(Blacklist);
 impl_json!(DialogState);
-
 
 #[derive(PartialEq, Debug, Copy, Clone, Primitive, AsExpression)]
 #[diesel(sql_type = diesel::sql_types::BigInt)]
@@ -194,13 +206,15 @@ macro_rules! impl_enum {
             fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
                 let i64_value =
                     <i64 as deserialize::FromSql<diesel::sql_types::BigInt, B>>::from_sql(bytes)?;
-                Ok(Self::from_i64(i64_value).ok_or_else(|| anyhow::anyhow!("could not convert enum"))?)
+                Ok(Self::from_i64(i64_value)
+                    .ok_or_else(|| anyhow::anyhow!("could not convert enum"))?)
             }
         }
     };
 }
 
 impl_enum!(MergeStatus);
+impl_enum!(Category);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub enum DialogState {
@@ -217,7 +231,31 @@ pub enum DialogState {
         positive_sticker_id: Vec<String>,
         #[serde(default)]
         negative_sticker_id: Vec<String>,
-    }
+    },
+    TagCreator(TagCreator),
+    // TODO: use 
+    //     bot.set_sticker_set_thumb(name, user_id); // as soon as the sticker pack has 4 stickers -> thumnail: first 3 stickers + fuzzle bot icon
+    //     // not existing yet: setStickerEmojiList, setStickerKeywords
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct TagCreator {
+    pub tag_id: String,
+
+    #[serde(default)]
+    pub linked_channel: Option<(ChatId, String)>,
+    #[serde(default)]
+    pub linked_user: Option<(UserId, String)>,
+
+    #[serde(default)]
+    pub category: Option<Category>,
+    #[serde(default)]
+    pub example_sticker_id: Vec<String>,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+
+    // TODO: when transitioning from/to other modes, keep some of the data
+    // eg example_sticker_id could become positive_sticker_id
 }
 
 // TODO: test that defaults work

@@ -10,20 +10,24 @@ use itertools::Itertools;
 use teloxide::payloads::AnswerCallbackQuerySetters;
 use teloxide::prelude::*;
 use teloxide::types::{
-    InlineKeyboardMarkup, InputFile, MediaKind, MessageCommon, MessageKind, ReplyMarkup,
+    InlineKeyboardMarkup, InputFile, LinkPreviewOptions, MediaKind, MessageCommon, MessageKind,
+    ReplyMarkup,
 };
 
-use crate::bot::{report_bot_error, report_internal_error, report_internal_error_result, BotError, BotExt, RequestContext, UserError, UserErrorSeverity};
+use crate::bot::{
+    report_bot_error, report_internal_error, report_internal_error_result, BotError, BotExt,
+    InternalError, RequestContext, UserError, UserErrorSeverity,
+};
 use crate::callback::TagOperation;
 
-use crate::database::{MergeStatus};
-use crate::database::DialogState;
+use crate::database::{Database, MergeStatus};
+use crate::database::{DialogState, TagCreator};
 use crate::message::{send_merge_queue, Keyboard};
 use crate::sticker::{
     determine_canonical_sticker_and_merge, fetch_sticker_file, import_all_stickers_from_set,
     FileKind,
 };
-use crate::tags::{suggest_tags, TagManager};
+use crate::tags::{suggest_tags, Category, TagManager};
 use crate::text::{Markdown, Text};
 use crate::util::{teloxide_error_can_safely_be_ignored, Required};
 
@@ -184,11 +188,11 @@ pub async fn callback_handler_wrapper(
     request_context: RequestContext,
 ) -> Result<(), ()> {
     match callback_handler(q.clone(), request_context.clone()).await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(error) => {
-            report_bot_error(&error); 
+            report_bot_error(&error);
             report_internal_error_result(show_error(q, request_context, error).await);
-        },
+        }
     }
     Ok(())
 }
@@ -200,7 +204,9 @@ pub async fn show_error(
     error: BotError,
 ) -> Result<(), BotError> {
     let error = error.end_user_error();
-    request_context.bot.answer_callback_query(&q.id)
+    request_context
+        .bot
+        .answer_callback_query(&q.id)
         .text(error.0)
         .show_alert(error.1 == UserErrorSeverity::Error)
         .into_future()
@@ -216,13 +222,114 @@ pub async fn callback_handler(
 ) -> Result<(), BotError> {
     let data: CallbackData = q.data.clone().unwrap_or_default().try_into()?;
     match data {
+        CallbackData::CreateTag => {
+            let mut state = match request_context.dialog_state() {
+                DialogState::TagCreator(state) => state,
+                DialogState::ContinuousTag { .. }
+                | DialogState::Normal
+                | DialogState::StickerRecommender { .. } => {
+                    return Err(UserError::InvalidMode.into());
+                }
+            };
+
+            create_tag(&state, &request_context).await?;
+
+            // TODO: notify admin (async here)
+
+            request_context
+                .bot
+                .answer_callback_query(&q.id)
+                .into_future()
+                .instrument(tracing::info_span!("telegram_bot_answer_callback_query"))
+                .await?;
+
+            request_context
+                .bot
+                .send_markdown(
+                    request_context.user_id(),
+                    Markdown::escaped("Success! An admin should review your tag soon(ish) :3"),
+                )
+                .await?;
+
+            let request_context = exit_mode(request_context.clone(), false).await?;
+
+            Ok(())
+        }
+        CallbackData::RemoveAlias(alias) => {
+            let mut state = match request_context.dialog_state() {
+                DialogState::TagCreator(state) => state,
+                DialogState::ContinuousTag { .. }
+                | DialogState::Normal
+                | DialogState::StickerRecommender { .. } => {
+                    return Err(UserError::InvalidMode.into());
+                }
+            };
+            state.aliases.retain(|s| *s != alias);
+
+            request_context
+                .database
+                .update_dialog_state(
+                    request_context.user.id,
+                    &DialogState::TagCreator(state.clone()),
+                )
+                .await?;
+
+            answer_callback_query(
+                request_context.clone(),
+                q,
+                None,
+                Some(Keyboard::tag_creator(&state)),
+                None,
+            )
+            .await
+        }
+        CallbackData::ToggleExampleSticker { sticker_id } => {
+            let mut state = match request_context.dialog_state() {
+                DialogState::TagCreator(state) => state,
+                DialogState::ContinuousTag { .. }
+                | DialogState::Normal
+                | DialogState::StickerRecommender { .. } => {
+                    return Err(UserError::InvalidMode.into());
+                }
+            };
+            if state.example_sticker_id.contains(&sticker_id) {
+                state.example_sticker_id.retain(|s| *s != sticker_id);
+            } else {
+                state.example_sticker_id.push(sticker_id.clone());
+            }
+
+            let sticker = request_context
+                .database
+                .get_sticker_by_id(&sticker_id)
+                .await?
+                .required()?;
+
+            request_context
+                .database
+                .update_dialog_state(
+                    request_context.user.id,
+                    &DialogState::TagCreator(state.clone()),
+                )
+                .await?;
+
+            answer_callback_query(
+                request_context.clone(),
+                q,
+                None,
+                Some(Keyboard::tag_creator_sticker(&state, &sticker)),
+                None,
+            )
+            .await
+        }
         CallbackData::ToggleRecommendSticker {
             positive,
             sticker_id,
         } => {
             let (mut positive_sticker_id, mut negative_sticker_id) =
                 match request_context.dialog_state() {
-                    DialogState::Normal | DialogState::ContinuousTag { .. } => {
+                    DialogState::Normal
+                    | DialogState::ContinuousTag { .. }
+                    | DialogState::TagCreator { .. } => {
                         return Err(UserError::InvalidMode.into());
                     }
                     DialogState::StickerRecommender {
@@ -414,8 +521,11 @@ pub async fn callback_handler(
                 .get_sticker_by_id(&sticker_id)
                 .await?
                 .required()?;
-            let (buf, file) =
-                fetch_sticker_file(sticker.telegram_file_identifier, request_context.bot.clone()).await?;
+            let (buf, file) = fetch_sticker_file(
+                sticker.telegram_file_identifier,
+                request_context.bot.clone(),
+            )
+            .await?;
 
             #[cfg(debug_assertions)]
             {
@@ -577,6 +687,112 @@ pub async fn callback_handler(
             sticker_id_b,
             merge,
         } => handle_sticker_merge(sticker_id_a, sticker_id_b, merge, q, request_context).await,
+        CallbackData::RemoveLinkedUser => {
+            let mut state = match request_context.dialog_state() {
+                DialogState::TagCreator(state) => state,
+                DialogState::ContinuousTag { .. }
+                | DialogState::Normal
+                | DialogState::StickerRecommender { .. } => {
+                    return Err(UserError::InvalidMode.into());
+                }
+            };
+            state.linked_user = None;
+            request_context
+                .database
+                .update_dialog_state(
+                    request_context.user.id,
+                    &DialogState::TagCreator(state.clone()),
+                )
+                .await?;
+            answer_callback_query(
+                request_context,
+                q,
+                None,
+                Some(Keyboard::tag_creator(&state)),
+                None,
+            )
+            .await
+        }
+        CallbackData::LinkSelf => {
+            let mut state = match request_context.dialog_state() {
+                DialogState::TagCreator(state) => state,
+                DialogState::ContinuousTag { .. }
+                | DialogState::Normal
+                | DialogState::StickerRecommender { .. } => {
+                    return Err(UserError::InvalidMode.into());
+                }
+            };
+            let username = q.from.username.clone().ok_or_else(|| UserError::UserWithoutUsername)?;
+            state.linked_user = Some((request_context.user_id(), username));
+            request_context
+                .database
+                .update_dialog_state(
+                    request_context.user.id,
+                    &DialogState::TagCreator(state.clone()),
+                )
+                .await?;
+            answer_callback_query(
+                request_context,
+                q,
+                None,
+                Some(Keyboard::tag_creator(&state)),
+                None,
+            )
+            .await
+        }
+        CallbackData::RemoveLinkedChannel => {
+            // TODO: method tag_creator_state() that returns Result<TagCreator, UserError>?
+            let mut state = match request_context.dialog_state() {
+                DialogState::TagCreator(state) => state,
+                DialogState::ContinuousTag { .. }
+                | DialogState::Normal
+                | DialogState::StickerRecommender { .. } => {
+                    return Err(UserError::InvalidMode.into());
+                }
+            };
+            state.linked_channel = None; // TODO: this is the same as above, just one line changed
+            request_context
+                .database
+                .update_dialog_state(
+                    request_context.user.id,
+                    &DialogState::TagCreator(state.clone()),
+                )
+                .await?;
+            answer_callback_query(
+                request_context,
+                q,
+                None,
+                Some(Keyboard::tag_creator(&state)),
+                None,
+            )
+            .await
+        }
+        CallbackData::SetCategory(category) => {
+            let mut state = match request_context.dialog_state() {
+                DialogState::TagCreator(state) => state,
+                DialogState::ContinuousTag { .. }
+                | DialogState::Normal
+                | DialogState::StickerRecommender { .. } => {
+                    return Err(UserError::InvalidMode.into());
+                }
+            };
+            state.category = category; // TODO: this is the same as above, just one line changed
+            request_context
+                .database
+                .update_dialog_state(
+                    request_context.user.id,
+                    &DialogState::TagCreator(state.clone()),
+                )
+                .await?;
+            answer_callback_query(
+                request_context,
+                q,
+                None,
+                Some(Keyboard::tag_creator(&state)),
+                None,
+            )
+            .await
+        }
     }
 }
 
@@ -654,6 +870,7 @@ pub async fn exit_mode(
                     request_context.user_id(),
                     Markdown::escaped("I wasn't doing anything"),
                 )
+                .reply_markup(ReplyMarkup::kb_remove())
                 .await?;
         }
         Ok(request_context)
@@ -679,12 +896,28 @@ pub async fn exit_mode(
     }
 }
 
+
 #[tracing::instrument(skip(request_context, q), err(Debug))]
 async fn sticker_explore_page(
     sticker_id: String,
     request_context: RequestContext,
     q: CallbackQuery,
 ) -> Result<(), BotError> {
+    answer_callback_query(
+        request_context.clone(),
+        q,
+        None,
+        Some(sticker_explore_keyboard(sticker_id, request_context).await?),
+        None,
+    )
+    .await
+}
+
+#[tracing::instrument(skip(request_context), err(Debug))]
+pub async fn sticker_explore_keyboard(
+    sticker_id: String,
+    request_context: RequestContext,
+) -> Result<InlineKeyboardMarkup, InternalError> {
     let file = request_context
         .database
         .get_sticker_file_by_sticker_id(&sticker_id)
@@ -700,19 +933,12 @@ async fn sticker_explore_page(
         .get_sticker_user(&sticker_id, request_context.user.id)
         .await?;
     let is_favorited = sticker_user.map_or(false, |su| su.is_favorite);
-    answer_callback_query(
-        request_context.clone(),
-        q,
-        None,
-        Some(Keyboard::sticker_explore_page(
+Ok(Keyboard::sticker_explore_page(
             &sticker_id,
             set_count,
             file.created_at,
             is_favorited,
-        )),
-        None,
-    )
-    .await
+        ))
 }
 
 fn create_sticker_name(path: String) -> String {
@@ -921,6 +1147,7 @@ async fn answer_callback_query(
                 } else {
                     bot.edit_message_markdown(chat.id, id, text)
                         .reply_markup(keyboard)
+                        .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
                         .into_future()
                         .instrument(tracing::info_span!("telegram_bot_edit_message"))
                         .await?;
@@ -959,4 +1186,76 @@ async fn answer_callback_query(
         Err(err) if teloxide_error_can_safely_be_ignored(&err) => Ok(()),
         Err(err) => Err(err.into()),
     }
+}
+
+const EXAMPLES_REQUIRED: usize = 5;
+
+async fn create_tag(state: &TagCreator, request_context: &RequestContext) -> Result<(), BotError> {
+    // TODO: check if valid
+    if state.example_sticker_id.len() < EXAMPLES_REQUIRED {
+        return Err(UserError::ValidationError(format!(
+            "You have to provide at least {EXAMPLES_REQUIRED} example stickers, just send them here"
+        ))
+        .into());
+    }
+    if state.aliases.contains(&state.tag_id) {
+        return Err(UserError::ValidationError(
+            "Aliases have to be distinct from the main tag".to_string(),
+        )
+        .into());
+    }
+    let category = match state.category {
+        Some(Category::Artist) => {
+            if state.linked_channel.is_none() {
+                return Err(UserError::ValidationError(
+                    "Artist tags require a linked channel (user is optional)".to_string(),
+                )
+                .into());
+            }
+            Category::Artist
+        }
+        Some(Category::Character) => {
+            if state.linked_user.is_none() {
+                return Err(UserError::ValidationError(
+                    "Character tags require a linked user (channel is optional)".to_string(),
+                )
+                .into());
+            }
+            Category::Character
+        }
+        Some(category) => {
+            return Err(InternalError::Other(anyhow::anyhow!(
+                "invalid category {}",
+                category.to_human_name()
+            ))
+            .into())
+        }
+        _ => {
+            return Err(UserError::ValidationError(
+                "Pick one of the categories: artist, character".to_string(),
+            )
+            .into())
+        }
+    };
+
+    match request_context
+        .database
+        .create_pending_tag(
+            &state.tag_id,
+            category,
+            &state.linked_channel,
+            &state.linked_user,
+            &state.example_sticker_id,
+            &state.aliases,
+            request_context.user.id,
+        )
+        .await
+    {
+        Err(crate::database::DatabaseError::UniqueConstraintViolated(message)) => {
+            return Err(UserError::AlreadyExists("tag".to_string()).into())
+        }
+        other => other?,
+    }
+
+    Ok(())
 }

@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use crate::{
-    bot::{InternalError},
+    bot::InternalError,
     callback::CallbackData,
-    database::{UserSettings, UserStats},
-    inline::{InlineQueryData, SetOperation},
-    tags::{self, all_count_tags, all_rating_tags, character_count, rating, Characters}, util::Emoji,
+    database::{Sticker, TagCreator, UserSettings, UserStats},
+    inline::{InlineQueryData, SetOperation, TagKind},
+    tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters},
+    util::Emoji,
 };
 use chrono::NaiveDateTime;
 use itertools::Itertools;
@@ -153,10 +154,10 @@ impl Keyboard {
         }
 
         if is_continuous_tag {
-keyboard.push(vec![InlineKeyboardButton::callback(
-            "❌ Exit Continuous Tag Mode",
-            CallbackData::ExitDialog,
-        )]);
+            keyboard.push(vec![InlineKeyboardButton::callback(
+                "❌ Exit Continuous Tag Mode",
+                CallbackData::ExitDialog,
+            )]);
         }
 
         InlineKeyboardMarkup::new(keyboard)
@@ -195,40 +196,153 @@ keyboard.push(vec![InlineKeyboardButton::callback(
     }
 
     #[must_use]
-    pub fn recommender(sticker_id: &str, similar: &[String], dissimilar: &[String], is_favorite: bool) -> InlineKeyboardMarkup {
+    pub fn tag_creator_initial() -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(vec![vec![
+            InlineKeyboardButton::switch_inline_query_current_chat(
+                format!("Name input"),
+                InlineQueryData::tag_creator("".to_string(), TagKind::Main),
+            ),
+        ]])
+    }
+
+    #[must_use]
+    pub fn tag_creator(state: &TagCreator) -> InlineKeyboardMarkup {
+        let mut markup = InlineKeyboardMarkup::new(vec![vec![
+            InlineKeyboardButton::switch_inline_query_current_chat(
+                format!("Change tag name"),
+                InlineQueryData::tag_creator(state.tag_id.to_string(), TagKind::Main),
+            ),
+            InlineKeyboardButton::switch_inline_query_current_chat(
+                format!("Add alias"),
+                InlineQueryData::tag_creator("".to_string(), TagKind::Alias),
+            ),
+        ]]);
+        if let Some(ref channel) = state.linked_channel {
+            markup = markup.append_row(vec![InlineKeyboardButton::callback(
+                format!("Remove linked channel {}", channel.1),
+                CallbackData::RemoveLinkedChannel,
+            )]);
+        }
+        if let Some(ref user) = state.linked_user {
+            markup = markup.append_row(vec![InlineKeyboardButton::callback(
+                format!("Remove linked user {}", user.1),
+                CallbackData::RemoveLinkedUser,
+            )]);
+        } else {
+            markup = markup.append_row(vec![InlineKeyboardButton::callback(
+                "Link yourself",
+                CallbackData::LinkSelf,
+            )]);
+        }
+        for alias in state.aliases.iter() {
+            markup = markup.append_row(vec![InlineKeyboardButton::callback(
+                format!("Remove alias {}", &alias),
+                CallbackData::RemoveAlias(alias.to_string()),
+            )]);
+        }
+        markup = markup.append_row([Category::Artist, Category::Character].into_iter().map(
+            |category| {
+                if state.category == Some(category) {
+                    InlineKeyboardButton::callback(
+                        format!("✅ {}", category.to_human_name()),
+                        CallbackData::SetCategory(None),
+                    )
+                } else {
+                    InlineKeyboardButton::callback(
+                        format!("{}", category.to_human_name()),
+                        CallbackData::SetCategory(Some(category)),
+                    )
+                }
+            },
+        ));
+        markup = markup.append_row(vec![InlineKeyboardButton::callback(
+            format!("Create tag {}", &state.tag_id),
+            CallbackData::CreateTag,
+        )]);
+
+        markup
+    }
+
+    #[must_use]
+    pub fn tag_creator_sticker(state: &TagCreator, sticker: &Sticker) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(vec![vec![
+            if state.example_sticker_id.contains(&sticker.id) {
+                InlineKeyboardButton::callback(
+                    "✅ Use as example",
+                    CallbackData::ToggleExampleSticker {
+                        sticker_id: sticker.id.clone(),
+                    },
+                )
+            } else {
+                InlineKeyboardButton::callback(
+                    "Use as example",
+                    CallbackData::ToggleExampleSticker {
+                        sticker_id: sticker.id.clone(),
+                    },
+                )
+            },
+        ]])
+    }
+
+    #[must_use]
+    pub fn recommender(
+        sticker_id: &str,
+        similar: &[String],
+        dissimilar: &[String],
+        is_favorite: bool,
+    ) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![
-            vec![InlineKeyboardButton::callback(
-            if similar.iter().any(|s| s == sticker_id) {
-                "✅ More like this"
-            } else {
-                "More like this"
-            },
-            CallbackData::ToggleRecommendSticker{sticker_id: sticker_id.to_string(), positive: true},
-        ), InlineKeyboardButton::callback(
-            if dissimilar.iter().any(|d| d == sticker_id) {
-                "✅ Less like this"
-            } else {
-                "Less like this"
-            },
-            CallbackData::ToggleRecommendSticker{sticker_id: sticker_id.to_string(), positive: false},
-        )],
-        vec![favorite_button(is_favorite, sticker_id)],
-            vec![InlineKeyboardButton::switch_inline_query_current_chat(
-                "🎨 Color",
-                InlineQueryData::similar(sticker_id, crate::inline::SimilarityAspect::Color),
-            ), InlineKeyboardButton::switch_inline_query_current_chat(
-                "🦄 Similar",
-                InlineQueryData::similar(sticker_id, crate::inline::SimilarityAspect::Embedding),
-            ), InlineKeyboardButton::switch_inline_query_current_chat(
-                format!("🪞 Sets"),
-                InlineQueryData::overlapping_sets(sticker_id.to_string()),
-            )],
             vec![
-InlineKeyboardButton::switch_inline_query_current_chat(
+                InlineKeyboardButton::callback(
+                    if similar.iter().any(|s| s == sticker_id) {
+                        "✅ More like this"
+                    } else {
+                        "More like this"
+                    },
+                    CallbackData::ToggleRecommendSticker {
+                        sticker_id: sticker_id.to_string(),
+                        positive: true,
+                    },
+                ),
+                InlineKeyboardButton::callback(
+                    if dissimilar.iter().any(|d| d == sticker_id) {
+                        "✅ Less like this"
+                    } else {
+                        "Less like this"
+                    },
+                    CallbackData::ToggleRecommendSticker {
+                        sticker_id: sticker_id.to_string(),
+                        positive: false,
+                    },
+                ),
+            ],
+            vec![favorite_button(is_favorite, sticker_id),
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    "🔧 Add to your set",
+                    InlineQueryData::add_to_user_set(sticker_id.to_string()),
+                ),
+            ],
+            vec![
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    "🎨 Color",
+                    InlineQueryData::similar(sticker_id, crate::inline::SimilarityAspect::Color),
+                ),
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    "🦄 Similar",
+                    InlineQueryData::similar(
+                        sticker_id,
+                        crate::inline::SimilarityAspect::Embedding,
+                    ),
+                ),
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("🪞 Sets"),
+                    InlineQueryData::overlapping_sets(sticker_id.to_string()),
+                ),
+            ],
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("🪄 Recommend"),
                 InlineQueryData::recommendations(),
-            )
-            ]
+            )],
         ])
     }
 
@@ -245,8 +359,11 @@ InlineKeyboardButton::switch_inline_query_current_chat(
     }
 
     #[must_use]
-    pub fn make_continuous_tag_keyboard(show_cancel: bool, add_tags: &[String], remove_tags: &[String]) -> InlineKeyboardMarkup {
-
+    pub fn make_continuous_tag_keyboard(
+        show_cancel: bool,
+        add_tags: &[String],
+        remove_tags: &[String],
+    ) -> InlineKeyboardMarkup {
         let mut keyboard: Vec<Vec<InlineKeyboardButton>> = vec![
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 "Select tag",
@@ -266,10 +383,10 @@ InlineKeyboardButton::switch_inline_query_current_chat(
         }
 
         if show_cancel {
-        keyboard.push(vec![InlineKeyboardButton::callback(
-            "❌ Exit Continuous Tag Mode",
-            CallbackData::ExitDialog,
-        )]);
+            keyboard.push(vec![InlineKeyboardButton::callback(
+                "❌ Exit Continuous Tag Mode",
+                CallbackData::ExitDialog,
+            )]);
         }
 
         InlineKeyboardMarkup::new(keyboard)
@@ -324,12 +441,12 @@ InlineKeyboardButton::switch_inline_query_current_chat(
 
     #[must_use]
     pub fn emoji_article(emoji: Emoji) -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new(vec![
-            vec![InlineKeyboardButton::switch_inline_query_current_chat(
+        InlineKeyboardMarkup::new(vec![vec![
+            InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("List stickers (ignores blacklist)"),
                 InlineQueryData::search_emoji(vec![], vec![emoji]),
-            )],
-        ])
+            ),
+        ]])
     }
 
     #[must_use]
@@ -507,7 +624,10 @@ InlineKeyboardButton::switch_inline_query_current_chat(
     }
 
     #[must_use]
-    pub fn merge_done(set_id_a: &str, set_id_b: &str) -> Result<InlineKeyboardMarkup, InternalError> {
+    pub fn merge_done(
+        set_id_a: &str,
+        set_id_b: &str,
+    ) -> Result<InlineKeyboardMarkup, InternalError> {
         Ok(InlineKeyboardMarkup::new(vec![if set_id_a == set_id_b {
             vec![set_button(set_id_a)?]
         } else {
@@ -588,15 +708,14 @@ InlineKeyboardButton::switch_inline_query_current_chat(
         };
 
         InlineKeyboardMarkup::new([
-            [InlineKeyboardButton::callback(
+            vec![InlineKeyboardButton::callback(
                 "🔙 Sticker",
                 CallbackData::Sticker {
                     sticker_id: sticker_id.to_string(),
                     operation: None,
                 },
             )],
-            [favorite_button(is_favorite, sticker_id)],
-            [InlineKeyboardButton::callback(
+            vec![InlineKeyboardButton::callback(
                 format!(
                     "🗓️ Sticker known since {} ({} days)",
                     created_at.format("%Y-%m-%d"),
@@ -604,13 +723,16 @@ InlineKeyboardButton::switch_inline_query_current_chat(
                 ),
                 CallbackData::NoAction,
             )],
-            [InlineKeyboardButton::callback(
-                format!("📥 Download file"),
-                CallbackData::DownloadSticker {
-                    sticker_id: sticker_id.to_string(),
-                },
-            )],
-            [InlineKeyboardButton::switch_inline_query_current_chat(
+            vec![
+                favorite_button(is_favorite, sticker_id),
+                InlineKeyboardButton::callback(
+                    format!("📥 Download file"),
+                    CallbackData::DownloadSticker {
+                        sticker_id: sticker_id.to_string(),
+                    },
+                ),
+            ],
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 "🎨 Similarly colored stickers (⚠️ ignores blacklist)",
                 InlineQueryData::similar(sticker_id, crate::inline::SimilarityAspect::Color),
             )],
@@ -618,14 +740,20 @@ InlineKeyboardButton::switch_inline_query_current_chat(
             //     "Similar shape (Warning: ignores blacklist)",
             //     InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Shape),
             // )],
-            [InlineKeyboardButton::switch_inline_query_current_chat(
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 "🦄 Similar stickers (⚠️ ignores blacklist)",
                 InlineQueryData::similar(sticker_id, crate::inline::SimilarityAspect::Embedding),
             )],
-            [InlineKeyboardButton::switch_inline_query_current_chat(
-                format!("🗂️ {set_count} {set_text} this sticker"),
-                InlineQueryData::sets(sticker_id.to_string()),
-            )],
+            vec![
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("🗂️ {set_count} {set_text} this sticker"),
+                    InlineQueryData::sets(sticker_id.to_string()),
+                ),
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    "🔧 Add to your set",
+                    InlineQueryData::add_to_user_set(sticker_id.to_string()),
+                ),
+            ],
             // [InlineKeyboardButton::callback(
             //     "Other Info",
             //     CallbackData::Info,
@@ -707,21 +835,21 @@ fn tag_to_button(
 }
 
 fn favorite_button(is_favorite: bool, sticker_id: &str) -> InlineKeyboardButton {
-if is_favorite {
-                InlineKeyboardButton::callback(
-                    "⭐ Favorite",
-                    CallbackData::FavoriteSticker {
-                        sticker_id: sticker_id.to_string(),
-                        operation: crate::callback::FavoriteAction::Unfavorite,
-                    },
-                )
-            } else {
-                InlineKeyboardButton::callback(
-                    "⚫ Mark as favorite",
-                    CallbackData::FavoriteSticker {
-                        sticker_id: sticker_id.to_string(),
-                        operation: crate::callback::FavoriteAction::Favorite,
-                    },
-                )
-            }
+    if is_favorite {
+        InlineKeyboardButton::callback(
+            "⭐ Favorite",
+            CallbackData::FavoriteSticker {
+                sticker_id: sticker_id.to_string(),
+                operation: crate::callback::FavoriteAction::Unfavorite,
+            },
+        )
+    } else {
+        InlineKeyboardButton::callback(
+            "⚫ Mark as favorite",
+            CallbackData::FavoriteSticker {
+                sticker_id: sticker_id.to_string(),
+                operation: crate::callback::FavoriteAction::Favorite,
+            },
+        )
+    }
 }

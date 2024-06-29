@@ -7,6 +7,8 @@ pub use bot::*;
 use chrono::{Duration, NaiveDateTime, TimeDelta};
 pub use emoji::*;
 pub use parsers::*;
+use rand::Rng;
+use regex::Regex;
 pub use required::*;
 
 pub fn format_relative_time(time: NaiveDateTime) -> String {
@@ -23,7 +25,7 @@ pub fn format_relative_time(time: NaiveDateTime) -> String {
     } else if duration < Duration::days(1) {
         format!("{} hours ago", duration.num_hours())
     } else if duration < Duration::days(2) {
-        "today".to_string()
+        "yesterday".to_string()
     } else if duration < Duration::weeks(1) {
         format!("{} days ago", duration.num_days())
     } else if duration < Duration::weeks(2) {
@@ -33,4 +35,29 @@ pub fn format_relative_time(time: NaiveDateTime) -> String {
     } else {
         format!("{} months ago", duration.num_days() / 30)
     }
+}
+
+pub fn create_tag_id(input: &str) -> String {
+    let input = input.trim();
+
+    let invalid_characters = Regex::new(r"[^-A-Za-z0-9_)(]").expect("hardcoded regex to compile");
+    let input = invalid_characters.replace_all(&input, "_").into_owned();
+
+    let consecutive_underscores = Regex::new(r"(__+)").expect("hardcoded regex to compile");
+    consecutive_underscores.replace_all(&input, "_").into_owned()
+}
+
+pub fn create_sticker_set_id(set_title: &str, bot_username: &str) -> String {
+    let invalid_characters = Regex::new(r"[^A-Za-z0-9_]").expect("hardcoded regex to compile");
+    let set_title = invalid_characters.replace_all(&set_title, "_").into_owned();
+
+    let set_title: String = set_title.chars().take(24).collect(); // max set id length: 64 characters in total; but we need to make sure the callback handlers can deal with this name
+    let set_title = format!("_{set_title}_");
+
+    let consecutive_underscores = Regex::new(r"(__+)").expect("hardcoded regex to compile");
+    let set_title = consecutive_underscores.replace_all(&set_title, "_");
+
+    let mut rng = rand::thread_rng();
+    let number: u32 = rng.gen_range(100_000..=999_999);
+    format!("pack{set_title}{number}_by_{bot_username}")
 }

@@ -14,6 +14,7 @@ use crate::database::Database;
 use crate::inference::text_to_clip_embedding;
 use crate::message::send_database_export_to_chat;
 use crate::qdrant::VectorDatabase;
+use crate::simple_bot_api;
 use crate::sticker::import_all_stickers_from_set;
 use crate::tags::TagManager;
 use crate::Config;
@@ -41,14 +42,14 @@ pub fn start_periodic_tasks(
     let vector_db = vector_db_clone.clone();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::minutes(4).to_std().expect("no overflow")).await;
+            sleep(Duration::minutes(5).to_std().expect("no overflow")).await;
             let span = tracing::info_span!("periodic_refetch_stickers");
             let bot = bot.clone();
             let database = database.clone();
             let paths = paths.clone();
             let vector_db = vector_db.clone();
             async move {
-                // fetching 69 sets every 10 minutes is about 10000 sets per day
+                // TODO: make this configurable
                 let result = refetch_stickers(
                     69,
                     database.clone(),
@@ -217,5 +218,7 @@ async fn refetch_stickers(
         )
         .await?;
     }
+    let stats = database.get_stats().await?;
+    simple_bot_api::set_my_short_description(&config.telegram_bot_token, &format!("I organize {} furry sticker sets 💚 {} stickers 💚 {} taggings 💚 uwu", stats.sets, stats.stickers, stats.taggings)).await?;
     Ok(())
 }

@@ -1,12 +1,14 @@
 use crate::bot::{BotError, BotExt, RequestContext};
 
 use crate::callback::exit_mode;
-use crate::database::{DialogState, Sticker};
+use crate::database::{DialogState, Sticker, TagCreator};
 use crate::message::Keyboard;
 use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
 
-use teloxide::types::{BotCommand, InputFile, KeyboardButton, KeyboardMarkup, MessageId, ReplyMarkup};
+use teloxide::types::{
+    BotCommand, InputFile, KeyboardButton, KeyboardMarkup, LinkPreviewOptions, MessageId, ReplyMarkup
+};
 use tracing::warn;
 
 use teloxide::{prelude::*, utils::command::BotCommands};
@@ -27,6 +29,9 @@ pub enum RegularCommand {
 
     #[command(description = "get sticker recommendations")]
     StickerRecommenderMode,
+
+    #[command(description = "add your own character or artist tags")]
+    TagCreator,
 
     #[command(description = "general statistics")]
     Stats,
@@ -57,10 +62,7 @@ impl RegularCommand {
             Self::Help => {
                 request_context
                     .bot
-                    .send_markdown(
-                        msg.chat.id,
-                        Text::get_help_text(request_context.is_admin()),
-                    )
+                    .send_markdown(msg.chat.id, Text::get_help_text(request_context.is_admin()))
                     .reply_markup(Keyboard::make_help_keyboard())
                     .await?;
             }
@@ -85,7 +87,10 @@ impl RegularCommand {
                             if let Some(sticker) = sticker {
                                 request_context
                                     .bot
-                                    .send_sticker(msg.chat.id, InputFile::file_id(sticker.telegram_file_identifier))
+                                    .send_sticker(
+                                        msg.chat.id,
+                                        InputFile::file_id(sticker.telegram_file_identifier),
+                                    )
                                     .disable_notification(true)
                                     .await?;
                             } else {
@@ -125,19 +130,11 @@ impl RegularCommand {
                     .send_markdown(
                         msg.chat.id,
                         Text::get_settings_text(
-                            &request_context
-                                .user
-                                .settings
-                                .clone()
-                                .unwrap_or_default(),
+                            &request_context.user.settings.clone().unwrap_or_default(),
                         ),
                     )
                     .reply_markup(Keyboard::make_settings_keyboard(
-                        &request_context
-                            .user
-                            .settings
-                            .clone()
-                            .unwrap_or_default(),
+                        &request_context.user.settings.clone().unwrap_or_default(),
                     ))
                     .await?;
             }
@@ -146,6 +143,9 @@ impl RegularCommand {
                 request_context
                     .bot
                     .send_markdown(msg.chat.id, Text::general_stats(stats))
+                    .link_preview_options(LinkPreviewOptions::new()
+                    .is_disabled(true)
+                )
                     .reply_markup(Keyboard::general_stats())
                     .await?;
             }
@@ -168,7 +168,9 @@ impl RegularCommand {
                 }
             }
             Self::ContinuousTagMode => match request_context.dialog_state() {
-                DialogState::Normal | DialogState::StickerRecommender { .. } => {
+                DialogState::Normal
+                | DialogState::StickerRecommender { .. }
+                | DialogState::TagCreator { .. } => {
                     request_context
                         .bot
                         .send_markdown(
@@ -199,40 +201,71 @@ impl RegularCommand {
                         .await?;
                 }
             },
+            Self::TagCreator => match request_context.dialog_state() {
+                DialogState::Normal
+                | DialogState::StickerRecommender { .. }
+                | DialogState::ContinuousTag { .. } => {
+                    request_context
+                        .bot
+                        .send_markdown(msg.chat.id, Markdown::escaped("Give your new tag a name"))
+                        .reply_markup(Keyboard::tag_creator_initial())
+                        .await?;
+                }
+                DialogState::TagCreator(tag_creator) => {
+                    request_context
+                        .bot
+                        .send_markdown(
+                            msg.chat.id,
+                            Markdown::escaped(format!("Creating tag: {}\nExamples: {}", &tag_creator.tag_id, &tag_creator.example_sticker_id.len())),
+                        )
+                        .reply_markup(Keyboard::tag_creator(&tag_creator))
+                        .await?;
+                }
+            },
             Self::StickerRecommenderMode => {
-                let (positive_sticker_id, negative_sticker_id) = match request_context.dialog_state() {
-                    DialogState::Normal | DialogState::ContinuousTag { .. } =>{
-                        request_context.database.update_dialog_state(request_context.user.id,&DialogState::StickerRecommender { positive_sticker_id: vec![], negative_sticker_id: vec![] }).await?;
-(vec![], vec![])
-                    } ,
-                    DialogState::StickerRecommender {
-                        negative_sticker_id,
-                        positive_sticker_id,
-                    } => (positive_sticker_id, negative_sticker_id),
-                };
+                let (positive_sticker_id, negative_sticker_id) =
+                    match request_context.dialog_state() {
+                        DialogState::Normal
+                        | DialogState::ContinuousTag { .. }
+                        | DialogState::TagCreator { .. } => {
+                            request_context
+                                .database
+                                .update_dialog_state(
+                                    request_context.user.id,
+                                    &DialogState::StickerRecommender {
+                                        positive_sticker_id: vec![],
+                                        negative_sticker_id: vec![],
+                                    },
+                                )
+                                .await?;
+                            (vec![], vec![])
+                        }
+                        DialogState::StickerRecommender {
+                            negative_sticker_id,
+                            positive_sticker_id,
+                        } => (positive_sticker_id, negative_sticker_id),
+                    };
 
                 request_context
                     .bot
                     .send_markdown(
                         msg.chat.id,
-                        Text::sticker_recommender_text( positive_sticker_id.len(), negative_sticker_id.len()),
+                        Text::sticker_recommender_text(
+                            positive_sticker_id.len(),
+                            negative_sticker_id.len(),
+                        ),
                     )
-                .reply_markup(
-                    ReplyMarkup::Keyboard(KeyboardMarkup::new(vec![ // TODO: move to keyboard struct
-                        vec![
-                           KeyboardButton::new("/stickerrecommendermode"),
-                        ],
-                        vec![
-                           KeyboardButton::new("/random"),
-                        ],
-                        vec![
-                           KeyboardButton::new("/cancel"),
-                        ]
-                    ])
-                    .resize_keyboard()
-                    .persistent()
-                .input_field_placeholder("Sticker Recommender Mode"))
-            )
+                    .reply_markup(ReplyMarkup::Keyboard(
+                        KeyboardMarkup::new(vec![
+                            // TODO: move to keyboard struct
+                            vec![KeyboardButton::new("/stickerrecommendermode")],
+                            vec![KeyboardButton::new("/random")],
+                            vec![KeyboardButton::new("/cancel")],
+                        ])
+                        .resize_keyboard()
+                        .persistent()
+                        .input_field_placeholder("Sticker Recommender Mode"),
+                    ))
                     .await?;
             }
             Self::ClearRecentlyUsed => {
@@ -271,46 +304,59 @@ pub async fn send_sticker_with_tag_input(
 ) -> Result<(), BotError> {
     request_context
         .bot
-        .send_sticker(message_chat_id, InputFile::file_id(sticker.telegram_file_identifier))
+        .send_sticker(
+            message_chat_id,
+            InputFile::file_id(sticker.telegram_file_identifier),
+        )
         .reply_markup(match request_context.dialog_state() {
-
-            DialogState::Normal | DialogState::ContinuousTag { .. } =>  {
-                
-    let tags = request_context
-        .database
-        .get_sticker_tags(&sticker.id)
-        .await?;
-    let suggested_tags = suggest_tags(
-        &sticker.id,
-        request_context.bot.clone(),
-        request_context.tag_manager.clone(),
-        request_context.database.clone(),
-        request_context.tagging_worker.clone(),
-        request_context.vector_db.clone(),
-        // request_context.tag_worker.clone(),
-    )
-    .await?;
-    let is_locked = request_context
-        .database
-        .get_sticker_file_by_sticker_id(&sticker.id)
-        .await?
-        .map_or(false, |file| file.tags_locked_by_user_id.is_some());
+            DialogState::Normal | DialogState::ContinuousTag { .. } => {
+                let tags = request_context
+                    .database
+                    .get_sticker_tags(&sticker.id)
+                    .await?;
+                let suggested_tags = suggest_tags(
+                    &sticker.id,
+                    request_context.bot.clone(),
+                    request_context.tag_manager.clone(),
+                    request_context.database.clone(),
+                    request_context.tagging_worker.clone(),
+                    request_context.vector_db.clone(),
+                    // request_context.tag_worker.clone(),
+                )
+                .await?;
+                let is_locked = request_context
+                    .database
+                    .get_sticker_file_by_sticker_id(&sticker.id)
+                    .await?
+                    .map_or(false, |file| file.tags_locked_by_user_id.is_some());
                 Keyboard::tagging(
-            &tags,
-            &sticker.id,
-            &suggested_tags,
-            is_locked,
-            request_context.is_continuous_tag_state(),
-        )},
-            DialogState::StickerRecommender { positive_sticker_id, negative_sticker_id } => {
-    let sticker_user = request_context
-        .database
-        .get_sticker_user(&sticker.id, request_context.user.id)
-        .await?;
-    let is_favorited = sticker_user.map_or(false, |su| su.is_favorite);
+                    &tags,
+                    &sticker.id,
+                    &suggested_tags,
+                    is_locked,
+                    request_context.is_continuous_tag_state(),
+                )
+            }
+            DialogState::StickerRecommender {
+                positive_sticker_id,
+                negative_sticker_id,
+            } => {
+                let sticker_user = request_context
+                    .database
+                    .get_sticker_user(&sticker.id, request_context.user.id)
+                    .await?;
+                let is_favorited = sticker_user.map_or(false, |su| su.is_favorite);
 
-                Keyboard::recommender(&sticker.id, &positive_sticker_id, &negative_sticker_id, is_favorited)
-            },
+                Keyboard::recommender(
+                    &sticker.id,
+                    &positive_sticker_id,
+                    &negative_sticker_id,
+                    is_favorited,
+                )
+            }
+            DialogState::TagCreator(tag_creator) => {
+                Keyboard::tag_creator(&tag_creator)
+            }
         })
         .reply_to_message_id(message_id)
         .allow_sending_without_reply(true)

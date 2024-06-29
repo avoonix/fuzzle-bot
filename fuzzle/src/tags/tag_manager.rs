@@ -1,9 +1,14 @@
+use diesel::{deserialize::FromSqlRow, expression::AsExpression, Queryable, Selectable};
+use enum_primitive_derive::Primitive;
 use itertools::Itertools;
 
-use tracing::{info, warn};
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashMap, HashSet}, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    time::SystemTime,
+};
 use strsim::sorensen_dice;
+use tracing::{info, warn};
 
 use super::csv::{TagAliasCsv, TagCsv, TagImplicationCsv};
 
@@ -18,7 +23,6 @@ pub struct TagManager {
     banned_tags: HashSet<String>,
 }
 
-
 impl Default for TagManager {
     fn default() -> Self {
         Self::new()
@@ -27,7 +31,6 @@ impl Default for TagManager {
 
 impl TagManager {
     #[must_use]
-    
 
     pub fn new() -> Self {
         Self {
@@ -37,7 +40,11 @@ impl TagManager {
             match_distance: 0.5,
             allowed_statuses: HashSet::from(["active".to_string()]),
             inverse_implications: HashMap::new(),
-            banned_tags: HashSet::from(["sticker".to_string(), "telegram_sticker".to_string(), "sticker_pack".to_string()])
+            banned_tags: HashSet::from([
+                "sticker".to_string(),
+                "telegram_sticker".to_string(),
+                "sticker_pack".to_string(),
+            ]),
         }
     }
 
@@ -132,14 +139,13 @@ impl TagManager {
                     *counts.entry(category).or_default() += 1;
                 }
                 Err(e) => {
-                    
                     warn!("can't add tag {}: {}", tag.name, e);
                 }
             }
         }
         for (category, count) in counts {
             let category = category.to_human_name();
-            
+
             info!("inserted {count} {category} tags from csv");
         }
 
@@ -217,29 +223,28 @@ impl TagManager {
         self
     }
 
-
     fn allowed_status(&self, status: &str) -> bool {
         self.allowed_statuses
             .iter()
             .any(|allowed_status| allowed_status == status)
     }
 
-//     #[must_use]
-// 
-//     pub fn add_aliases_from_csv(mut self, csv: Vec<TagAliasCsv>) -> Self {
-//         let mut aliases = self.aliases.clone();
-//         for alias in csv {
-//             if !self.allowed_status(&alias.status) {
-//                 continue;
-//             }
-//             if self.tags.get(&alias.consequent_name).is_some() {
-//                 aliases.insert(alias.antecedent_name, alias.consequent_name);
-//             }
-//         }
+    //     #[must_use]
+    //
+    //     pub fn add_aliases_from_csv(mut self, csv: Vec<TagAliasCsv>) -> Self {
+    //         let mut aliases = self.aliases.clone();
+    //         for alias in csv {
+    //             if !self.allowed_status(&alias.status) {
+    //                 continue;
+    //             }
+    //             if self.tags.get(&alias.consequent_name).is_some() {
+    //                 aliases.insert(alias.antecedent_name, alias.consequent_name);
+    //             }
+    //         }
 
-//         self.aliases = aliases;
-//         self
-//     }
+    //         self.aliases = aliases;
+    //         self
+    //     }
 
     #[must_use]
 
@@ -369,7 +374,6 @@ impl TagManager {
     ///
     /// every string in the query must be a substring
     #[must_use]
-
     #[tracing::instrument(skip(self))]
     pub fn find_tags(&self, query: &[String]) -> Vec<String> {
         let query = query.iter().map(|q| q.to_lowercase()).collect_vec();
@@ -414,7 +418,6 @@ impl TagManager {
         tags
     }
 
-
     #[tracing::instrument(skip(self))]
     fn resolve_exact(&self, query: &str) -> Option<String> {
         if self.tags.get(query).is_some() {
@@ -446,12 +449,11 @@ impl TagManager {
             .get(tag)
             .map(std::borrow::ToOwned::to_owned)
             .or_else(|| self.tags.get(tag).map(|_| Vec::default()))
-            .map(|tags| 
-                tags
-                    .into_iter()
+            .map(|tags| {
+                tags.into_iter()
                     .chain(std::iter::once(tag.to_string()))
                     .collect_vec()
-            )
+            })
     }
 
     #[must_use]
@@ -464,7 +466,6 @@ impl TagManager {
 
     /// discards any tags where we couldnt find a match for
     #[must_use]
-
     #[tracing::instrument(skip(self))]
     pub fn closest_matching_tags(&self, query: &[String]) -> Vec<(String, Option<String>)> {
         query
@@ -476,7 +477,6 @@ impl TagManager {
     /// Returns the tag that most closely matches the query
     /// This is used for resolving each tag in a query to one that actually exists
     #[must_use]
-
     #[tracing::instrument(skip(self))]
     pub fn closest_matching_tag(&self, query: &str) -> Option<String> {
         // TODO: maybe cache result?
@@ -500,10 +500,10 @@ impl TagManager {
         None
     }
 
-pub fn get_tags(&self) -> Vec<String> {
-    self.tags.keys().cloned().collect_vec()
+    pub fn get_tags(&self) -> Vec<String> {
+        self.tags.keys().cloned().collect_vec()
     }
-    
+
     pub fn iter_all(&self) -> TagAliasIterator<'_> {
         TagAliasIterator {
             tags_iter: self.tags.keys(),
@@ -522,38 +522,25 @@ impl<'a> Iterator for TagAliasIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Combine the keys from tags and aliases
-        self.tags_iter.next().or_else(|| self.aliases_iter.next()).map(String::as_str)
+        self.tags_iter
+            .next()
+            .or_else(|| self.aliases_iter.next())
+            .map(String::as_str)
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash, Serialize, Deserialize, Primitive, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::BigInt)]
 pub enum Category {
     #[default]
-    General,
-    Artist,
-    Copyright,
-    Character,
-    Species,
-    Meta,
-    Lore,
-    Rating,
-}
-
-impl TryFrom<i8> for Category {
-    type Error = String;
-
-    fn try_from(value: i8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::General),
-            1 => Ok(Self::Artist),
-            3 => Ok(Self::Copyright),
-            4 => Ok(Self::Character),
-            5 => Ok(Self::Species),
-            7 => Ok(Self::Meta),
-            8 => Ok(Self::Lore),
-            _ => Err(format!("invalid category: {value}")),
-        }
-    }
+    General = 0,
+    Artist = 1,
+    Copyright = 3,
+    Character = 4,
+    Species = 5,
+    Meta = 7,
+    Lore = 8,
+    Rating = 99,
 }
 
 impl Category {

@@ -1,9 +1,10 @@
 mod stats;
 mod sticker;
 mod sticker_set;
-mod tag;
+mod sticker_tagging;
 mod user;
 mod export;
+mod tag;
 
 use std::{path::PathBuf, time::Duration};
 
