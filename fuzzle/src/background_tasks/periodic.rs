@@ -219,6 +219,7 @@ async fn refetch_stickers(
         .await?;
     }
     let stats = database.get_stats().await?;
-    simple_bot_api::set_my_short_description(&config.telegram_bot_token, &format!("I organize {} furry sticker sets 💚 {} stickers 💚 {} taggings 💚 uwu", stats.sets, stats.stickers, stats.taggings)).await?;
+    let percentage_tagged = stats.tagged_stickers as f32 / stats.stickers as f32 * 100.0;
+    simple_bot_api::set_my_short_description(&config.telegram_bot_token, &format!("I organize {} furry sticker sets 💚 {} taggings 💚 {} stickers ({:.1}% tagged) 💚  uwu", stats.sets, stats.taggings, stats.stickers, percentage_tagged)).await?;
     Ok(())
 }

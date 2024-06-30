@@ -1,5 +1,6 @@
-//
+// a simple alternative until teloxide supports the new api
 
+use itertools::Itertools;
 use serde_json::{json, Map, Value};
 use teloxide::types::{StickerFormat, UserId};
 
@@ -65,7 +66,7 @@ pub async fn create_new_sticker_set(
                 "sticker": sticker_file_id,
                 "format": format,
                 "emoji_list": emoji_list,
-                "keywords": keywords,
+                "keywords": limit_keywords(keywords),
             }]
         }),
     ).await
@@ -92,10 +93,18 @@ pub async fn add_sticker_to_set(
                 "sticker": sticker_file_id,
                 "format": format,
                 "emoji_list": emoji_list,
-                "keywords": keywords,
+                "keywords": limit_keywords(keywords),
             }
         }),
     ).await
+}
+
+fn limit_keywords(keywords: &[String]) -> Vec<&String> {
+    let mut len = 0;
+    keywords.iter().take_while(|keyword| {
+        len += keyword.len();
+        len < 64 // maximum combined keyword length
+    }).collect_vec()
 }
 
 // #[tracing::instrument(skip(token))]
