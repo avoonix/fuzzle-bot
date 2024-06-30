@@ -211,7 +211,7 @@ fn parse_merge_data(input: &str) -> IResult<&str, CallbackData> {
             tag(";"),
             alt((map(tag("true"), |_| true), map(tag("false"), |_| false))),
         )),
-        |(_, sticker_id_a, sticker_id_b, _, _, merge)| CallbackData::Merge {
+        |(_, sticker_id_a, _, sticker_id_b, _, merge)| CallbackData::Merge {
             sticker_id_a: sticker_id_a.to_string(),
             sticker_id_b: sticker_id_b.to_string(),
             merge,

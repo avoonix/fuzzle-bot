@@ -848,7 +848,7 @@ async fn handle_sticker_merge(
     answer_callback_query(
         request_context.clone(),
         q,
-        Some(Markdown::escaped(done_text)),
+        None,
         Some(Keyboard::merge_done(&set_a.id, &set_b.id)?),
         None,
     )

@@ -72,7 +72,9 @@ impl AdminCommand {
                 send_daily_report(request_context.database, request_context.bot, request_context.config.get_admin_user_id()).await?;
             }
             Self::MergeQueue => {
-                send_merge_queue(msg.chat.id, request_context).await?;
+                for _ in 0..10 {
+                    send_merge_queue(msg.chat.id, request_context.clone()).await?;
+                }
             }
         }
 
@@ -81,6 +83,8 @@ impl AdminCommand {
 }
 
 pub async fn send_merge_queue(chat_id: ChatId, request_context: RequestContext) -> Result<(), BotError> {
+    // TODO: not random
+    // TODO: maybe spawn without waiting since this may take a while
     let Some((file_id_a, file_id_b)) = request_context.database.get_random_potential_merge_file_ids().await? else {
         request_context.bot.send_markdown(chat_id, Markdown::escaped("No more potential merges :3")).await?;
         return Ok(());

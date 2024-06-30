@@ -9,7 +9,12 @@ use nom::IResult;
 use super::{parse_first_emoji, Emoji};
 
 pub fn sticker_id_literal(input: &str) -> IResult<&str, &str> {
-    recognize(many1_count(alt((alphanumeric1, tag("-"), tag("_")))))(input)
+    let (input, result) = recognize(many1(alt((alphanumeric1, tag("-"), tag("_")))))(input)?;
+    if result.len() >= 10 { // valid ids seem to have length 12-16; TODO: if you are sure there are no stickers with length < 12, set that as minimum
+        success(result)(input)
+    } else {
+        fail(input)
+    }
 }
 
 pub fn tag_literal(input: &str) -> IResult<&str, &str> {
