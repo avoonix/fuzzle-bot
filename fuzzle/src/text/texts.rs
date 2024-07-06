@@ -170,7 +170,7 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
     #[must_use]
     pub fn get_start_text() -> Markdown {
         Markdown::new(
-    "I'm a bot that can help you find stickers\\. It's basically e621, but with telegram stickers\\. To use me, press the \"Use me in a chat\" button below\\.
+    "I'm a bot that can help you find stickers\\. I am using many of the e621 tags, but with telegram stickers\\. To use me, press the \"Use me in a chat\" button below\\.
 
 If you send me some stickers in this chat, I will add them to the database\\. Help with tagging is appreciated :3".to_string()
     )

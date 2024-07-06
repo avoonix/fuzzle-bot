@@ -221,5 +221,11 @@ async fn refetch_stickers(
     let stats = database.get_stats().await?;
     let percentage_tagged = stats.tagged_stickers as f32 / stats.stickers as f32 * 100.0;
     simple_bot_api::set_my_short_description(&config.telegram_bot_token, &format!("I organize {} furry sticker sets 💚 {} taggings 💚 {} stickers ({:.1}% tagged) 💚  uwu", stats.sets, stats.taggings, stats.stickers, percentage_tagged)).await?;
+    simple_bot_api::set_my_description(&config.telegram_bot_token, &format!("Hi, I am {} and I organize furry sticker sets!
+
+To use me, type @{} followed some tags in any chat to find one of the {} already tagged stickers. 
+
+If you know some stickers I might not be aware of, want to help tag the remaining {} stickers, or want to find stickers related to ones you already have, chat with me 💚", &config.bot_display_name, &config.telegram_bot_username.to_lowercase(), stats.tagged_stickers, stats.stickers - stats.tagged_stickers)).await?;
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     Ok(())
 }

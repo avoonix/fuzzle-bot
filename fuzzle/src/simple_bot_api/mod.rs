@@ -44,6 +44,21 @@ pub async fn set_my_short_description(
     ).await
 }
 
+/// 0-512 characters, plain text
+#[tracing::instrument(skip(token))]
+pub async fn set_my_description(
+    token: &str,
+    description: &str,
+) -> Result<(), InternalError> {
+    perform_request(
+        "setMyDescription",
+        token,
+        json!({
+            "description": description,
+        }),
+    ).await
+}
+
 #[tracing::instrument(skip(token))]
 pub async fn create_new_sticker_set(
     token: &str,
