@@ -35,6 +35,7 @@ use crate::callback::CallbackData;
 
 use tracing::Instrument;
 
+#[tracing::instrument(skip(request_context, q))]
 async fn change_sticker_locked_status(
     lock: bool,
     unique_id: &str,
@@ -45,16 +46,6 @@ async fn change_sticker_locked_status(
         return Err(anyhow::anyhow!(
             "user is not permitted to change locked status"
         ))?;
-    } else {
-        // TODO: inform admin; this should not happen
-        return answer_callback_query(
-            request_context.clone(),
-            q,
-            Some(Text::sticker_not_found()),
-            None,
-            None,
-        )
-        .await;
     };
     let sticker = request_context
         .database

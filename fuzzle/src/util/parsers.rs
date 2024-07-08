@@ -1,6 +1,6 @@
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while1};
-use nom::character::complete::{alpha1, alphanumeric1};
+use nom::character::complete::{alpha1, alphanumeric1, satisfy};
 use nom::combinator::{fail, recognize, success, opt};
 use nom::multi::{many1, many1_count, separated_list1};
 use nom::sequence::{preceded, tuple};
@@ -30,10 +30,7 @@ pub fn tag_literal(input: &str) -> IResult<&str, &str> {
 }
 
 pub fn set_name_literal(input: &str) -> IResult<&str, &str> {
-    recognize(preceded(
-        tuple((alpha1, opt(tag("_")))),
-        separated_list1(tag("_"), alphanumeric1),
-    ))(input)
+    recognize( tuple((satisfy(|c| c.is_ascii_alphabetic()), opt(tag("_")), separated_list1(tag("_"), alphanumeric1))))(input)
 }
 
 pub fn parse_emoji(input: &str) -> IResult<&str, Emoji> {
@@ -48,6 +45,17 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use nom::Finish;
+
+    #[tokio::test]
+    async fn parse_set_names() -> anyhow::Result<()> {
+        for name in ["asdf", "a_b_c", "a1234"] {
+            assert_eq!(Ok(("", name)), set_name_literal(name).finish());
+        }
+        for name in ["_asdf_", "a__b", "1234a"] {
+            assert!(matches!(set_name_literal(name).finish(), Err(_)));
+        }
+        Ok(())
+    }
 
     #[tokio::test]
     async fn parse_tag_literals_from_tag_manager() -> anyhow::Result<()> {

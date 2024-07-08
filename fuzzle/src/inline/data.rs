@@ -341,7 +341,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                     tag(")"),
                     take_while(|c| true),
                 )),
-                |(_, sticker_id, _,  set_title)| InlineQueryData::AddToUserSet {
+                |(_, sticker_id, _, set_title)| InlineQueryData::AddToUserSet {
                     sticker_id: sticker_id.to_string(),
                     set_title: {
                         let title = set_title.trim();
@@ -543,6 +543,19 @@ impl From<InlineQueryData> for String {
 mod tests {
     use super::*;
     use anyhow::Result;
+
+    #[test]
+    fn set_tag_operation() -> Result<()> {
+        assert_eq!(
+            InlineQueryData::try_from("(se:asdf) dragon uwu".to_string())?,
+            InlineQueryData::SearchTagsForStickerSet {
+                set_name: "asdf".to_string(),
+                operation: SetOperation::Tag,
+                tags: vec![vec!["dragon".to_string(), "uwu".to_string()]],
+            }
+        );
+        Ok(())
+    }
 
     #[test]
     fn stringify_query() {
