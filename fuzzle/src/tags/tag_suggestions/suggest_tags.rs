@@ -49,7 +49,8 @@ pub async fn suggest_tags(
     let sticker = database.get_sticker_by_id(sticker_id).await?.required()?;
     let set = database
         .get_sticker_set_by_sticker_id(sticker_id)
-        .await?.required()?;
+        .await?
+        .required()?;
     let sticker_tags = database.get_sticker_tags(sticker_id).await?;
     let emojis = database.get_sticker_emojis(sticker_id).await?;
 
@@ -75,15 +76,23 @@ pub async fn suggest_tags(
             &sticker_tags,
             tag_manager.clone(),
         ),
-image_to_tag_similarity_based: suggest_closest_tags(&database, &vector_db, tag_manager.clone(), &sticker.sticker_file_id).await?,
-        static_rule_based_emoji_and_set_name: get_default_rules().suggest_tags(
-            emojis,
-            &set.title.unwrap_or_default(),
-            &set.id,
-        ),
+        image_to_tag_similarity_based: suggest_closest_tags(
+            &database,
+            &vector_db,
+            tag_manager.clone(),
+            &sticker.sticker_file_id,
+        )
+        .await?,
+        static_rule_based_emoji_and_set_name:
+            get_default_rules() // TODO: those are re-parsed every time!
+                .suggest_tags(emojis, &set.title.unwrap_or_default(), &set.id),
         static_default_tags: suggest_default_tags(),
     };
-    Ok(combine_suggestions_alt_1(suggestions, sticker_tags, tag_manager))
+    Ok(combine_suggestions_alt_1(
+        suggestions,
+        sticker_tags,
+        tag_manager,
+    ))
 }
 
 #[tracing::instrument(skip(tag_manager))]
@@ -147,16 +156,26 @@ fn combine_suggestions_alt_1(
         suggestions.static_default_tags,
         suggestions.image_to_tag_similarity_based,
     ];
-    let suggestion_vec = suggestion_vec.into_iter().map(|s| {
-        let ranked: HashMap<_, _> = ScoredTagSuggestion::merge(ScoredTagSuggestion::add_implications(s, tag_manager.clone()), vec![])
+    let suggestion_vec = suggestion_vec
+        .into_iter()
+        .map(|s| {
+            let ranked: HashMap<_, _> = ScoredTagSuggestion::merge(
+                ScoredTagSuggestion::add_implications(s, tag_manager.clone()),
+                vec![],
+            )
             .into_iter()
             .enumerate()
             .map(|(index, tag)| (tag.tag, index))
             .collect();
-        ranked
-    }).filter(|s| s.len() > 0).collect_vec();
+            ranked
+        })
+        .filter(|s| s.len() > 0)
+        .collect_vec();
 
-    let mut all_tags : HashMap<_, _> = suggestion_vec.iter().flat_map(|s| s.iter().map(|(tag, _)| (tag.to_string(), 0))).collect();
+    let mut all_tags: HashMap<_, _> = suggestion_vec
+        .iter()
+        .flat_map(|s| s.iter().map(|(tag, _)| (tag.to_string(), 0)))
+        .collect();
     for tags in suggestion_vec {
         for (tag, value) in all_tags.iter_mut() {
             let len = tags.len();
