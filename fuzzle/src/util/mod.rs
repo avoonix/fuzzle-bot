@@ -20,10 +20,17 @@ pub fn format_relative_time(time: NaiveDateTime) -> String {
         format!("in {} minutes", duration.num_minutes())
     } else if duration < Duration::minutes(1) {
         "less than a minute ago".to_string()
+    } else if duration < Duration::minutes(5) {
+        "a few minutes ago".to_string()
     } else if duration < Duration::hours(1) {
         format!("{} minutes ago", duration.num_minutes())
     } else if duration < Duration::days(1) {
-        format!("{} hours ago", duration.num_hours())
+        let hours = duration.num_hours();
+        if hours == 1 {
+            "1 hour ago".to_string()
+        } else {
+            format!("{} hours ago", duration.num_hours())
+        }
     } else if duration < Duration::days(2) {
         "yesterday".to_string()
     } else if duration < Duration::weeks(1) {

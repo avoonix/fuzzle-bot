@@ -6,7 +6,7 @@ use crate::{
     database::{Sticker, TagCreator, UserSettings, UserStats},
     inline::{InlineQueryData, SetOperation, TagKind},
     tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters},
-    util::Emoji,
+    util::{format_relative_time, Emoji},
 };
 use chrono::NaiveDateTime;
 use itertools::Itertools;
@@ -667,11 +667,7 @@ impl Keyboard {
                 },
             )],
             [InlineKeyboardButton::callback(
-                format!(
-                    "🗓️ Set known since {} ({} days)",
-                    created_at.format("%Y-%m-%d"),
-                    (now - created_at).num_days()
-                ),
+                format!( "🗓️ Set added {}", format_relative_time(created_at)),
                 CallbackData::NoAction,
             )],
             [InlineKeyboardButton::switch_inline_query_current_chat(
@@ -716,11 +712,7 @@ impl Keyboard {
                 },
             )],
             vec![InlineKeyboardButton::callback(
-                format!(
-                    "🗓️ Sticker known since {} ({} days)",
-                    created_at.format("%Y-%m-%d"),
-                    (now - created_at).num_days()
-                ),
+                format!( "🗓️ Sticker added {}", format_relative_time(created_at)),
                 CallbackData::NoAction,
             )],
             vec![
