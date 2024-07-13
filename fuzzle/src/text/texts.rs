@@ -46,11 +46,6 @@ impl Text {
     }
 
     #[must_use]
-    pub fn sticker_not_found() -> Markdown {
-        Markdown::new("Sticker not found")
-    }
-
-    #[must_use]
     pub fn get_settings_text(settings: &UserSettings) -> Markdown {
         let order = match settings.order() {
             crate::database::StickerOrder::LatestFirst => "🆕 Latest First",

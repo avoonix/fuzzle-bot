@@ -6,7 +6,7 @@ pub use histogram::{calculate_color_histogram, create_historgram_image};
 pub use measures::{Match, Measures};
 
 use crate::{
-    background_tasks::BackgroundTaskExt, bot::{report_bot_error, report_internal_error_result, report_periodic_task_error, Bot, BotError, InternalError, RequestContext, UserError}, database::Database, inference::{image_to_clip_embedding, text_to_clip_embedding}, util::Required, Config
+    background_tasks::BackgroundTaskExt, bot::{report_bot_error, report_internal_error_result, report_periodic_task_error, Bot, BotError, InternalError, RequestContext, UserError}, database::{Database, StickerType}, inference::{image_to_clip_embedding, text_to_clip_embedding}, util::Required, Config
 };
 
 use crate::inline::SimilarityAspect;
@@ -118,7 +118,7 @@ pub async fn analyze_sticker(
     let Some(file_info) = file_info else {
         return Ok(false);
     };
-    let buf = if !file_info.is_animated {
+    let buf = if file_info.sticker_type == StickerType::Static {
         let sticker = database
             .get_sticker_by_id(&sticker_unique_id)
             .await?

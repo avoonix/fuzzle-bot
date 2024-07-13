@@ -7,7 +7,7 @@ use tracing::warn;
 
 use crate::{
     database::{
-        StickerFile, MergeStatus, StickerSet, StickerUser, min_max, query_builder::StickerTagQuery, Order, Sticker, StickerIdStickerFileId
+        min_max, query_builder::StickerTagQuery, MergeStatus, Order, Sticker, StickerFile, StickerIdStickerFileId, StickerSet, StickerType, StickerUser
     },
     util::Emoji,
 };
@@ -54,10 +54,10 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn ___temp___update_is_animated(
+    pub async fn ___temp___update_sticker_type(
         &self,
         sticker_id: &str,
-        is_animated: bool,
+        sticker_type: StickerType,
     ) -> Result<(), DatabaseError> {
         let updated_rows = diesel::update(sticker_file::table)
             .filter(
@@ -67,7 +67,7 @@ impl Database {
                         .select((sticker::sticker_file_id)),
                 ),
             )
-            .set(sticker_file::is_animated.eq(is_animated))
+            .set(sticker_file::sticker_type.eq(sticker_type))
             .execute(&mut self.pool.get()?)?;
         #[cfg(debug_assertions)]
         assert_eq!(updated_rows, 1);
@@ -93,13 +93,13 @@ impl Database {
         &self,
         sticker_file_id: &str,
         thumbnail_file_id: Option<String>,
-        is_animated: bool,
+        sticker_type: StickerType,
     ) -> Result<(), DatabaseError> {
         let q = insert_into(sticker_file::table)
             .values((
                 sticker_file::id.eq(sticker_file_id),
                 sticker_file::thumbnail_file_id.eq(thumbnail_file_id.clone()),
-                sticker_file::is_animated.eq(is_animated),
+                sticker_file::sticker_type.eq(sticker_type),
             ))
             .on_conflict(sticker_file::id);
         if let Some(thumbnail_file_id) = thumbnail_file_id {
@@ -492,7 +492,7 @@ impl Database {
         duplicate_file_id: &str,
         user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
-        Ok(self.pool.get()?.transaction(|conn| {
+        Ok(self.pool.get()?.immediate_transaction(|conn| {
             let stickers_affected_merge = sql_query("INSERT INTO merged_sticker (canonical_sticker_file_id, removed_sticker_file_id, removed_sticker_id, removed_sticker_set_id, created_by_user_id)
                SELECT ?1, sticker_file_id, id, sticker_set_id, ?2 FROM sticker WHERE sticker_file_id = ?3")
                                 .bind::<Text, _>(canonical_file_id)

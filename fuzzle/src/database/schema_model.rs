@@ -15,7 +15,7 @@ use std::{
 
 use crate::tags::Category;
 
-use super::{schema, Blacklist, DatabaseError, DialogState, TagData, UserSettings};
+use super::{schema, Blacklist, DatabaseError, DialogState, StickerType, TagData, UserSettings};
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = schema::sticker_file)]
@@ -25,7 +25,7 @@ pub struct StickerFile {
     pub created_at: chrono::NaiveDateTime,
     pub tags_locked_by_user_id: Option<i64>,
     pub thumbnail_file_id: Option<String>,
-    pub is_animated: bool,
+    pub sticker_type: StickerType,
 }
 
 #[derive(Queryable, Selectable)]

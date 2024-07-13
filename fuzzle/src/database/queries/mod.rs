@@ -38,10 +38,9 @@ impl diesel::r2d2::CustomizeConnection<SqliteConnection, diesel::r2d2::Error>
 {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
         (|| {
-            conn.batch_execute(&format!("PRAGMA busy_timeout = {};", Duration::from_secs(30).as_millis()))?;
-            conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
-            conn.batch_execute("PRAGMA foreign_keys = ON;")?;
-            conn.batch_execute("PRAGMA temp_store = MEMORY;")?;
+            conn.batch_execute(&format!("PRAGMA busy_timeout = {};", Duration::from_secs(60).as_millis()))?;
+            conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA wal_autocheckpoint = 1000; PRAGMA wal_checkpoint(TRUNCATE);")?;
+            conn.batch_execute("PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;")?;
             conn.batch_execute(&format!("PRAGMA cache_size = {};", format_cache_size(2 * GB)))?;
             conn.batch_execute(&format!("PRAGMA mmap_size = {};", (4 * GB).to_string()))?;
             // TODO: need to run optimize before close as well

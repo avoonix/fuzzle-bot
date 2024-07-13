@@ -183,6 +183,14 @@ pub enum MergeStatus {
     NotMerged = 2,
 }
 
+#[derive(PartialEq, Debug, Copy, Clone, Primitive, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::BigInt)]
+pub enum StickerType {
+    Animated = 0,
+    Video = 1,
+    Static = 2,
+}
+
 macro_rules! impl_enum {
     ($type_name:ty) => {
         impl serialize::ToSql<diesel::sql_types::BigInt, Sqlite> for $type_name
@@ -214,6 +222,7 @@ macro_rules! impl_enum {
 }
 
 impl_enum!(MergeStatus);
+impl_enum!(StickerType);
 impl_enum!(Category);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

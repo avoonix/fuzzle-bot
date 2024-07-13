@@ -45,7 +45,6 @@ pub async fn fetch_sticker_file(
     bot: Bot,
 ) -> Result<(Vec<u8>, teloxide::types::File), InternalError> {
     let file = bot.get_file(file_id).await?;
-    tracing::info!(file.path = file.path);
     let mut buf = Vec::new();
     bot.download_file(&file.path, &mut buf).await?;
     if buf.len() == file.size as usize {

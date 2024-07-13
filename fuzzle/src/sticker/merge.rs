@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     bot::{Bot, InternalError},
     database::{
-Database, MergeStatus
+Database, MergeStatus, StickerType
     },
     qdrant::VectorDatabase, util::Required,
 };
@@ -110,7 +110,6 @@ pub async fn automerge(
     let already_considered = database
         .get_all_merge_candidate_file_ids(&sticker.sticker_file_id)
         .await?;
-    tracing::info!(embedding = ?similar_sticker_file_hashes_1, histogram = ?similar_sticker_file_hashes_2);
     let similar_sticker_file_hashes_1 = similar_sticker_file_hashes_1
         .into_iter()
         .filter(|sticker| !already_considered.contains(&sticker.file_hash))
@@ -119,7 +118,6 @@ pub async fn automerge(
         .into_iter()
         .filter(|sticker| !already_considered.contains(&sticker.file_hash))
         .collect_vec();
-    tracing::info!(embedding = ?similar_sticker_file_hashes_1, histogram = ?similar_sticker_file_hashes_2);
     let most_similar = similar_sticker_file_hashes_1
         .into_iter()
         .filter_map(|match_1| {
@@ -158,7 +156,7 @@ pub async fn automerge(
         else {
             continue;
         };
-        if sticker_b_file.is_animated || sticker_a_file.id == sticker_b_file.id {
+        if sticker_b_file.sticker_type != StickerType::Static || sticker_a_file.id == sticker_b_file.id {
             continue;
         }
         let buf_b = get_sticker_file(database.clone(), bot.clone(), &sticker_id_b).await?;
@@ -224,7 +222,6 @@ pub async fn determine_canonical_sticker_and_merge(
 }
 
 // TODO: unit tests
-#[tracing::instrument(ret)]
 fn harmonic_mean(numbers: Vec<f32>) -> f32 {
     let len = numbers.len() as f32;
     let mut sum = 0.0;

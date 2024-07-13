@@ -32,7 +32,7 @@ impl Database {
         tag_names: &[String],
         user: Option<i64>,
     ) -> Result<(), DatabaseError> {
-        self.pool.get()?.transaction(|conn| {
+        self.pool.get()?.immediate_transaction(|conn| {
             for tag in tag_names {
                 let inserted = insert_into(sticker_file_tag::table)
                     .values((
@@ -55,7 +55,7 @@ impl Database {
         tag_names: &[String],
         user_id: i64,
     ) -> Result<(), DatabaseError> {
-        self.pool.get()?.transaction(|conn| {
+        self.pool.get()?.immediate_transaction(|conn| {
             for tag in tag_names {
                 // TODO: figure out how to do this in a single query
 
@@ -95,7 +95,7 @@ impl Database {
         tags: &[String],
         user: i64,
     ) -> Result<usize, DatabaseError> {
-        let affected = self.pool.get()?.transaction(|conn| {
+        let affected = self.pool.get()?.immediate_transaction(|conn| {
             let mut tags_affected = 0;
         for tag in tags {
             // TODO: translate to proper diesel query?
@@ -121,7 +121,7 @@ impl Database {
         tags: &[String],
         user: i64,
     ) -> Result<usize, DatabaseError> {
-        let affected = self.pool.get()?.transaction(|conn| {
+        let affected = self.pool.get()?.immediate_transaction(|conn| {
             let mut tags_affected = 0;
             for tag in tags {
                 let result: Vec<(String, Option<i64>)> = sticker_file_tag::table
@@ -167,7 +167,8 @@ impl Database {
         &self,
         sticker_file_id: &str,
         tag: &str,
-        conn: &mut PooledConnection<ConnectionManager<SqliteConnection>>,
+        // conn: &mut PooledConnection<ConnectionManager<SqliteConnection>>,
+        conn: &mut SqliteConnection,
     ) -> Result<usize, diesel::result::Error> {
         delete(
             sticker_file_tag::table

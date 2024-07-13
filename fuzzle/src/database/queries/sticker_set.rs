@@ -41,7 +41,7 @@ impl Database {
         title: &str,
         created_by_user_id: i64,
     ) -> Result<(), DatabaseError> {
-        self.pool.get()?.transaction(|conn| {
+        self.pool.get()?.immediate_transaction(|conn| {
             self.check_removed(id, conn)?;
             insert_into(sticker_set::table)
                 .values((
@@ -61,7 +61,7 @@ impl Database {
         id: &str,
         title: &str,
     ) -> Result<(), DatabaseError> {
-        self.pool.get()?.transaction(|conn| {
+        self.pool.get()?.immediate_transaction(|conn| {
             self.check_removed(id, conn)?;
             insert_into(sticker_set::table)
                 .values((sticker_set::id.eq(id), sticker_set::title.eq(title)))
@@ -81,7 +81,7 @@ impl Database {
         id: &str,
         added_by_user_id: i64,
     ) -> Result<(), DatabaseError> {
-        self.pool.get()?.transaction(|conn| {
+        self.pool.get()?.immediate_transaction(|conn| {
             self.check_removed(id, conn)?;
             insert_into(sticker_set::table)
                 .values((
@@ -98,7 +98,8 @@ impl Database {
     fn check_removed(
         &self,
         set_id: &str,
-        conn: &mut PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+        // conn: &mut PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+        conn: &mut SqliteConnection,
     ) -> Result<(), DatabaseError> {
         let removed: Option<String> = removed_set::table
             .filter(removed_set::id.eq(set_id))

@@ -6,7 +6,8 @@ diesel::table! {
         created_at -> Timestamp,
         tags_locked_by_user_id -> Nullable<BigInt>,
         thumbnail_file_id -> Nullable<Text>,
-        is_animated -> Bool,
+        // is_animated -> Bool,
+        sticker_type -> BigInt,
     }
 }
 

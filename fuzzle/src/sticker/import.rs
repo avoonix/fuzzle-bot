@@ -136,7 +136,6 @@ async fn fetch_sticker_and_save_to_db(
     bot: Bot,
     database: Database,
 ) -> Result<(), InternalError> {
-    info!("fetching sticker from set {set_name}");
     let emoji = sticker.emoji.map(|e| Emoji::new_from_string_single(&e));
 
     let (buf, file) = fetch_sticker_file(sticker.file.id.clone(), bot.clone()).await?;
@@ -154,7 +153,11 @@ async fn fetch_sticker_and_save_to_db(
         .create_file(
             &canonical_file_hash,
             sticker.thumb.map(|thumb| thumb.file.id),
-            !sticker.format.is_raster(),
+            match sticker.format {
+                teloxide::types::StickerFormat::Raster => crate::database::StickerType::Static,
+                teloxide::types::StickerFormat::Animated => crate::database::StickerType::Animated,
+                teloxide::types::StickerFormat::Video => crate::database::StickerType::Video,
+            },
         )
         .await?;
     database
@@ -261,7 +264,11 @@ async fn fetch_sticker_set_and_save_to_db(
             continue;
         };
         database
-            .___temp___update_is_animated(&sticker.id, !s.format.is_raster())
+            .___temp___update_sticker_type(&sticker.id, match s.format {
+                teloxide::types::StickerFormat::Raster => crate::database::StickerType::Static,
+                teloxide::types::StickerFormat::Animated => crate::database::StickerType::Animated,
+                teloxide::types::StickerFormat::Video => crate::database::StickerType::Video,
+            })
             .await?;
         if s.file.id != sticker.telegram_file_identifier {
             // TODO: might be updated too frequently
