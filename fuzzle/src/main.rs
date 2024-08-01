@@ -62,6 +62,7 @@ pub async fn init() -> Result<()> {
     let settings = config::Config::builder()
         // sticker from the set t.me/addstickers/FuzzleBot
         .set_default("greeting_sticker_id", "AgADbRIAAhZaEFI")?
+        .set_default("periodic_refetch_batch_size", 400)?
         .set_default(
             "default_blacklist",
             vec![

@@ -42,7 +42,7 @@ pub fn start_periodic_tasks(
     let vector_db = vector_db_clone.clone();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::minutes(5).to_std().expect("no overflow")).await;
+            sleep(Duration::minutes(10).to_std().expect("no overflow")).await;
             let span = tracing::info_span!("periodic_refetch_stickers");
             let bot = bot.clone();
             let database = database.clone();
@@ -51,7 +51,7 @@ pub fn start_periodic_tasks(
             async move {
                 // TODO: make this configurable
                 let result = refetch_stickers(
-                    69,
+                    paths.periodic_refetch_batch_size,
                     database.clone(),
                     bot.clone(),
                     paths.clone(),
@@ -200,13 +200,13 @@ async fn fix_missing_tag_implications(
 
 #[tracing::instrument(skip(database, bot, config, vector_db))]
 async fn refetch_stickers(
-    count: i64,
+    count: u64,
     database: Database,
     bot: Bot,
     config: Arc<Config>,
     vector_db: VectorDatabase,
 ) -> Result<(), InternalError> {
-    let set_names = database.get_n_least_recently_fetched_set_ids(count).await?;
+    let set_names = database.get_n_least_recently_fetched_set_ids(count as i64).await?;
     for (i, set_name) in set_names.into_iter().enumerate() {
         import_all_stickers_from_set(
             &set_name,

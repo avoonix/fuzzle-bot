@@ -8,6 +8,8 @@ pub struct Config {
     pub cache_dir_path: String,
     pub db_file_path: String,
 
+    pub periodic_refetch_batch_size: u64,
+
     pub bot_display_name: String, // TODO: use this instead of hardcoding
     pub greeting_sticker_id: Option<String>,
     pub default_blacklist: Vec<String>,
