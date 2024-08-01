@@ -8,6 +8,8 @@ import torch
 from io import BytesIO
 import os
 
+print("starting setup")
+
 model_name = os.environ.get("FUZZLE_INFERENCE_MODEL_NAME")
 port = os.environ.get("FUZZLE_INFERENCE_PORT")
 if model_name is None:
@@ -18,8 +20,11 @@ if port is None:
     exit(1)
 
 processor = AutoProcessor.from_pretrained(model_name)
+print("processor initialized")
 model = AutoModelForZeroShotImageClassification.from_pretrained(model_name)
+print("model initialized")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
+print("tokenizer initialized")
 
 
 # TODO: batch requests?
@@ -34,13 +39,14 @@ class Generator(inference_pb2_grpc.GenerateServicer):
     def ImageEmbedding(self, request: inference_pb2.ImageEmbeddingRequest, context):
         assert request.model == inference_pb2.ImageModel.CLIP_IMAGE
         image = Image.open(BytesIO(request.image))
-        inputs = processor(images=[image], return_tensors="pt")
+        inputs = processor(images=[image], return_tensors="pt", input_data_format="channels_last")
         with torch.no_grad():
             image_features = model.get_image_features(**inputs)
         return inference_pb2.EmbeddingResponse(embedding=image_features[0])
 
 
 def serve():
+    print("starting server")
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     inference_pb2_grpc.add_GenerateServicer_to_server(Generator(), server)
     server.add_insecure_port("0.0.0.0:" + port)
