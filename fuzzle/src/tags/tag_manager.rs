@@ -229,22 +229,22 @@ impl TagManager {
             .any(|allowed_status| allowed_status == status)
     }
 
-    //     #[must_use]
-    //
-    //     pub fn add_aliases_from_csv(mut self, csv: Vec<TagAliasCsv>) -> Self {
-    //         let mut aliases = self.aliases.clone();
-    //         for alias in csv {
-    //             if !self.allowed_status(&alias.status) {
-    //                 continue;
-    //             }
-    //             if self.tags.get(&alias.consequent_name).is_some() {
-    //                 aliases.insert(alias.antecedent_name, alias.consequent_name);
-    //             }
-    //         }
+        #[must_use]
+    
+        pub fn add_aliases_from_csv(mut self, csv: Vec<TagAliasCsv>) -> Self {
+            let mut aliases = self.aliases.clone();
+            for alias in csv {
+                if !self.allowed_status(&alias.status) {
+                    continue;
+                }
+                if self.tags.get(&alias.consequent_name).is_some() {
+                    aliases.insert(alias.antecedent_name, alias.consequent_name);
+                }
+            }
 
-    //         self.aliases = aliases;
-    //         self
-    //     }
+            self.aliases = aliases;
+            self
+        }
 
     #[must_use]
 

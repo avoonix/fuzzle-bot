@@ -277,7 +277,7 @@ pub async fn query_stickers(
 
     let emoji = emoji
         .into_iter()
-        .map(|emoji| emoji.to_string())
+        .map(|emoji| emoji.to_string_without_variant())
         .collect_vec();
 
     let stickers = if query_empty {
@@ -928,14 +928,13 @@ async fn handle_most_used_emojis(
             let thumbnail_url = Url::parse(&thumbnail_url)?;
             Ok::<InlineQueryResult, BotError>(
                 InlineQueryResultArticle::new(
-                    InlineQueryResultId::Emoji(emoji.to_string()).to_string(),
-                    emoji.to_string(),
+                    InlineQueryResultId::Emoji(emoji.clone()).to_string(),
+                    emoji.to_string_with_variant(),
                     InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
-                        emoji.to_string(),
+                        emoji.to_string_with_variant(),
                     ))),
                 )
                 .description(Markdown::escaped(format!("used by {count} stickers")))
-                .reply_markup(Keyboard::emoji_article(emoji))
                 .thumb_url(thumbnail_url)
                 .thumb_width(THUMBNAIL_SIZE)
                 .thumb_height(THUMBNAIL_SIZE)

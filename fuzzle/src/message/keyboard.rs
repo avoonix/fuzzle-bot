@@ -440,11 +440,11 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn emoji_article(emoji: Emoji) -> InlineKeyboardMarkup {
+    pub fn emoji_article(emoji: &Emoji) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![vec![
             InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("List stickers (ignores blacklist)"),
-                InlineQueryData::search_emoji(vec![], vec![emoji]),
+                InlineQueryData::search_emoji(vec![], vec![emoji.clone()]),
             ),
         ]])
     }
@@ -590,11 +590,6 @@ impl Keyboard {
                 },
             ),
         ))
-    }
-
-    #[must_use]
-    pub fn new_user(user_id: UserId) -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new([[user_button(user_id)]])
     }
 
     #[must_use]

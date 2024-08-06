@@ -6,14 +6,14 @@ use nom::combinator::{eof, map};
 use nom::sequence::{preceded, terminated};
 use nom::{branch::alt, IResult};
 
-use crate::util::{parse_emoji, set_name_literal, sticker_id_literal, tag_literal};
+use crate::util::{parse_emoji, set_name_literal, sticker_id_literal, tag_literal, Emoji};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub(super) enum InlineQueryResultId {
     Sticker(String),
     Tag(String),
     Set(String),
-    Emoji(String),
+    Emoji(Emoji),
     Other(String),
 }
 
@@ -42,7 +42,7 @@ fn parse_result(input: &str) -> IResult<&str, InlineQueryResultId> {
         ),
         map(
             preceded(tag("e:"), parse_emoji),
-            |emoji| InlineQueryResultId::Emoji(emoji.to_string()),
+            |emoji| InlineQueryResultId::Emoji(emoji),
         ),
         map(
             preceded(tag("o:"), alphanumeric1),
@@ -57,7 +57,7 @@ impl Display for InlineQueryResultId {
             Self::Sticker(id) => write!(f, "s:{id}"),
             Self::Tag(tag) => write!(f, "t:{tag}"),
             Self::Set(set_id) => write!(f, "st:{set_id}"),
-            Self::Emoji(emoji) => write!(f, "e:{emoji}"),
+            Self::Emoji(emoji) => write!(f, "e:{}", emoji.to_string_without_variant()),
             Self::Other(description) => write!(f, "o:{description}"),
         }
     }

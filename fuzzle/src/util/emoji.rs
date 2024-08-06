@@ -13,9 +13,13 @@ impl Emoji {
     }
 }
 
-impl Display for Emoji {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+impl Emoji {
+    pub fn to_string_without_variant(&self) -> String {
+        self.0.to_string()
+    }
+    
+    pub fn to_string_with_variant(&self) -> String {
+        format!("{}\u{fe0f}", self.0)
     }
 }
 
@@ -33,7 +37,7 @@ pub fn parse_first_emoji(input: &str) -> (Option<Emoji>, &str) {
     }) else {
         return (None, input);
     };
-    let emoji = Some(Emoji(emoji.as_str().to_string()));
+    let emoji = Some(Emoji::new_from_string_single(emoji.as_str()));
     if let Some((second_index, _)) = graphemes.next() {
         (emoji, &input[second_index..])
     } else {

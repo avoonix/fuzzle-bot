@@ -151,7 +151,7 @@ impl Database {
                 sticker::sticker_set_id.eq(set_id),
                 sticker::telegram_file_identifier.eq(file_id),
                 sticker::sticker_file_id.eq(sticker_file_id),
-                sticker::emoji.eq(emoji.map(|e| e.to_string())),
+                sticker::emoji.eq(emoji.map(|e| e.to_string_without_variant())),
             ))
             .on_conflict_do_nothing()
             .execute(&mut self.pool.get()?)?;

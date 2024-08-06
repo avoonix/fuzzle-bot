@@ -123,13 +123,4 @@ impl Database {
         .execute(&mut self.pool.get()?)?;
         Ok(())
     }
-
-    #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_users_added_24_hours(&self) -> Result<Vec<i64>, DatabaseError> {
-        let current_time = chrono::Utc::now().naive_utc(); // TODO: pass time as parameter?
-        Ok(user::table
-            .select(user::id)
-            .filter(user::created_at.ge(current_time - chrono::Duration::hours(24)))
-            .load(&mut self.pool.get()?)?)
-    }
 }

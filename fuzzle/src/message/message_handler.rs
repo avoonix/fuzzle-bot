@@ -1,8 +1,10 @@
 use std::{future::IntoFuture, time::Duration};
 
 use itertools::Itertools;
-use tracing::{info, Instrument};
-
+use nom::combinator::eof;
+use nom::combinator::map;
+use nom::sequence::tuple;
+use nom::{character::complete::multispace0, Finish};
 use teloxide::{
     dispatching::dialogue::GetChatId,
     payloads::{SendMessageSetters, SendPhotoSetters},
@@ -13,6 +15,7 @@ use teloxide::{
     },
     utils::command::{BotCommands, ParseError},
 };
+use tracing::{info, Instrument};
 use url::Url;
 
 use crate::{
@@ -26,7 +29,7 @@ use crate::{
     sticker::{fetch_sticker_file, import_individual_sticker_and_queue_set},
     tags::suggest_tags,
     text::{Markdown, Text},
-    util::{Emoji, Required},
+    util::{parse_emoji, Emoji, Required},
 };
 
 use super::{
@@ -115,6 +118,28 @@ async fn handle_sticker_sets(
     Ok(())
 }
 
+fn emoji_search_command(input: &str) -> Option<Emoji> {
+    Finish::finish(map(
+        tuple((multispace0, parse_emoji, multispace0, eof)),
+        |(_, emoji, _, _)| emoji,
+    )(input))
+    .map(|(_, emoji)| emoji)
+    .ok()
+}
+
+async fn emoji_search_command_execute(
+    msg: &Message,
+    request_context: &RequestContext,
+    emoji: &Emoji,
+) -> Result<(), BotError> {
+    request_context
+        .bot
+        .send_markdown(msg.chat.id, Markdown::escaped(format!("You sent a {} emoji", emoji.to_string_with_variant())))
+        .reply_markup(Keyboard::emoji_article(emoji))
+        .await?;
+    Ok(())
+}
+
 #[tracing::instrument(skip(request_context, msg))]
 async fn handle_text_message(
     text: &str,
@@ -122,6 +147,11 @@ async fn handle_text_message(
     msg: Message,
 ) -> Result<(), BotError> {
     let text = &fix_underline_command_separator(text);
+
+    if let Some(emoji) = emoji_search_command(text) {
+        return emoji_search_command_execute(&msg, &request_context, &emoji).await;
+    }
+
     match RegularCommand::parse(text, &request_context.config.telegram_bot_username) {
         Ok(command) => {
             return command.execute(msg, request_context).await;
@@ -386,7 +416,7 @@ async fn handle_sticker_message(
                 .instrument(tracing::info_span!("telegram_bot_send_markdown"))
                 .await?;
         }
-        DialogState::TagCreator (mut tag_creator) => {
+        DialogState::TagCreator(mut tag_creator) => {
             let sticker = request_context
                 .database
                 .get_sticker_by_id(&sticker.file.unique_id)
@@ -397,7 +427,6 @@ async fn handle_sticker_message(
             //     .get_sticker_user(&sticker.id, request_context.user.id)
             //     .await?;
             // let is_favorited = sticker_user.map_or(false, |su| su.is_favorite); // TODO: duplicated code
-
 
             if !tag_creator.example_sticker_id.contains(&sticker.id) {
                 tag_creator.example_sticker_id.push(sticker.id.clone());

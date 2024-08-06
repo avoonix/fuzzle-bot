@@ -464,7 +464,7 @@ impl Display for InlineQueryData {
             }
             InlineQueryData::SearchStickers { emoji, tags } => {
                 let tags = tags.join(" ");
-                let emoji = emoji.into_iter().map(|e| e.to_string()).join(" ");
+                let emoji = emoji.into_iter().map(|e| e.to_string_with_variant()).join(" ");
                 write!(f, "{emoji}")?;
                 if emoji.len() > 0 {
                     write!(f, " ")?;

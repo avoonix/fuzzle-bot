@@ -24,15 +24,7 @@ pub async fn send_daily_report(
         .reply_markup(Keyboard::daily_report(taggings)?)
         .await?;
 
-    let new_users = database.get_users_added_24_hours().await?;
     let new_sticker_sets = database.get_sticker_sets_added_24_hours().await?;
-
-    for new_user_id in new_users {
-        let new_user_id = UserId(new_user_id as u64);
-        bot.send_markdown(admin_id, Text::new_user(new_user_id))
-            .reply_markup(Keyboard::new_user(new_user_id))
-            .await?;
-    }
 
     for (set_name, added_by_user_id) in new_sticker_sets {
         let added_by_user_id = added_by_user_id.map(|user_id| UserId(user_id as u64));
