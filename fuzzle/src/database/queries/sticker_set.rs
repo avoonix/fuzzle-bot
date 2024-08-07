@@ -1,12 +1,6 @@
 use base64::{engine::general_purpose, Engine};
 use diesel::{
-    delete,
-    dsl::{count_star, now, sql},
-    insert_into,
-    prelude::*,
-    sql_types::BigInt,
-    update,
-    upsert::excluded,
+    delete, dsl::{count_star, now, sql}, insert_into, prelude::*, sql_query, sql_types::BigInt, update, upsert::excluded
 };
 use itertools::Itertools;
 use r2d2::PooledConnection;
@@ -14,9 +8,7 @@ use tracing::warn;
 
 use crate::{
     database::{
-        query_builder::StickerTagQuery,
-        schema_model::{StickerFile, StickerSet},
-        Order, Sticker, StickerIdStickerFileId,
+        query_builder::StickerTagQuery, schema_model::{StickerFile, StickerSet}, Order, Sticker, StickerChange, StickerIdStickerFileId
     },
     util::Emoji,
 };
@@ -179,6 +171,12 @@ impl Database {
             .select(StickerSet::as_select())
             .order_by(sticker_set::created_at.desc())
             .limit(n)
+            .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_n_latest_sticker_changes(&self, n: i64) -> Result<Vec<StickerChange>, DatabaseError> {
+        Ok(sql_query("select sticker.id AS sticker_id, sticker_set_id, count(case when julianday('now') - julianday(sticker_file.created_at) < 1 then true else null end) as today, count(case when julianday('now') - julianday(sticker_file.created_at) < 7 then true else null end) as this_week from sticker inner join sticker_file on sticker.sticker_file_id = sticker_file.id where julianday('now') - julianday(sticker_file.created_at) < 7 group by sticker_set_id order by max(sticker_file.created_at) desc limit 10;")
             .load(&mut self.pool.get()?)?)
     }
 

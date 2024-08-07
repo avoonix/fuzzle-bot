@@ -450,6 +450,17 @@ pub async fn callback_handler(
             )
             .await
         }
+        CallbackData::LatestStickers => {
+            let changes = request_context.database.get_n_latest_sticker_changes(20).await?;
+            answer_callback_query(
+                request_context.clone(),
+                q,
+                Some(Text::latest_stickers(changes.clone())),
+                Some(Keyboard::latest_stickers(changes)),
+                None,
+            )
+            .await
+        }
         CallbackData::PersonalStats => {
             let stats = request_context
                 .database

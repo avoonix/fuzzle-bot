@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     callback::TagOperation,
     database::{
-        StickerSet, AddedRemoved, AdminStats, FullUserStats, PersonalStats, PopularTag, Stats, UserSettings, UserStats
+        AddedRemoved, AdminStats, FullUserStats, PersonalStats, PopularTag, Stats, StickerChange, StickerSet, UserSettings, UserStats
     },
     message::{
         admin_command_description, escape_sticker_unique_id_for_command, user_command_description,
@@ -106,6 +106,22 @@ Current Order: {order}
             .collect_vec()
             .join("\n"); // TODO: add relative age (eg "added 10h ago")
         Markdown::new(format!("Latest Sets:\n{sets_str}"))
+    }
+
+    #[must_use]
+    pub fn latest_stickers(changes: Vec<StickerChange>) -> Markdown {
+        let sets_str = changes
+            .into_iter()
+            .map(|change| {
+                let link = format_set_as_markdown_link(
+                    &change.sticker_set_id,
+                    &change.sticker_set_id,
+                );
+                format!("{link}: {} added today, {} added this week", change.today, change.this_week)
+            })
+            .collect_vec()
+            .join("\n");
+        Markdown::new(format!("Latest Stickers:\n{sets_str}"))
     }
 
     #[must_use]

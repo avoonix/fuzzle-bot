@@ -20,7 +20,7 @@ pub async fn get_default_tag_manager(dir: PathBuf) -> anyhow::Result<Arc<TagMana
         .set_match_distance(0.7)
         .set_allowed_statuses(HashSet::from(["active".to_string()]))
         .add_default_tags()
-        .add_tags_from_csv(tags, 500, 1_000, true, true)
+        .add_tags_from_csv(tags, 400, 1_000, true, true)
         .add_default_aliases()
         .add_aliases_from_csv(aliases)
         .add_default_implications()
@@ -28,4 +28,26 @@ pub async fn get_default_tag_manager(dir: PathBuf) -> anyhow::Result<Arc<TagMana
         .compute_transitive_implications()
         .compute_inverse_implications();
     Ok(Arc::new(tags))
+}
+
+#[cfg(test)]
+mod tests {
+
+    // use super::*;
+    // use anyhow::Result;
+    // use bk_tree::{BKTree, metrics};
+    // use itertools::Itertools;
+
+
+    // #[tokio::test]
+    // async fn compare_tag_finders() -> anyhow::Result<()> {
+    //     let tag_manager = get_default_tag_manager(std::env::temp_dir()).await?;
+    //     let mut tree: BKTree<&str> = BKTree::new(metrics::Levenshtein);
+    //     for tag in tag_manager.get_tags() {
+    //         tree.add(&tag)
+    //     }
+
+    //     dbg!(tree.find("bup", 2).collect_vec());
+    //     Ok(())
+    // }
 }

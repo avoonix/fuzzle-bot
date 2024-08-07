@@ -11,7 +11,7 @@ use crate::message::{Keyboard, StartParameter};
 use crate::sticker::{compute_similar, find_with_text_embedding, with_sticker_id};
 use crate::tags::TagManager;
 use crate::text::{Markdown, Text};
-use crate::util::{create_sticker_set_id, create_tag_id, Emoji, Required};
+use crate::util::{create_sticker_set_id, create_tag_id, format_relative_time, Emoji, Required};
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use std::convert::TryFrom;
@@ -662,6 +662,9 @@ pub async fn inline_query_handler(
         InlineQueryData::ListOverlappingSets { sticker_id } => {
             handle_overlapping_sets(current_offset, sticker_id, q, request_context).await
         }
+        InlineQueryData::ListSetStickersByDate { sticker_id } => {
+            handle_stickers_by_date(current_offset, sticker_id, q, request_context).await
+        }
         InlineQueryData::ListAllTagsFromSet { sticker_id } => {
             handle_all_set_tags(current_offset, sticker_id, q, request_context).await
         }
@@ -926,10 +929,13 @@ async fn handle_most_used_emojis(
             let thumbnail_url =
                 format!("https://placehold.co/{THUMBNAIL_SIZE}/007f0e/black.png?text={rank}");
             let thumbnail_url = Url::parse(&thumbnail_url)?;
+            let emo = emojis::get(&emoji.to_string_with_variant())
+                .or_else(|| emojis::get(&emoji.to_string_without_variant()));
+            let description = emo.map_or("".to_string(), |emo| emo.name().to_string());
             Ok::<InlineQueryResult, BotError>(
                 InlineQueryResultArticle::new(
                     InlineQueryResultId::Emoji(emoji.clone()).to_string(),
-                    emoji.to_string_with_variant(),
+                    format!("{} {}", emoji.to_string_with_variant(), description),
                     InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
                         emoji.to_string_with_variant(),
                     ))),
@@ -1178,7 +1184,9 @@ async fn handle_user_sets(
 
     let mut articles = vec![];
     for set in sets {
-        request_context.process_sticker_set(set.id.clone(), false).await;
+        request_context
+            .process_sticker_set(set.id.clone(), false)
+            .await;
         // TODO: use futuresunordered
         let url = format!(
             "https://fuzzle-bot.avoonix.com/thumbnails/sticker-set/{}/image.png",
@@ -1204,8 +1212,7 @@ async fn handle_user_sets(
             set_title,
             content,
         )
-        .description(
-            if sticker_in_set.is_some() {
+        .description(if sticker_in_set.is_some() {
             "❌ Remove from this set"
         } else {
             "✅ Add to this set"
@@ -1255,6 +1262,65 @@ async fn handle_user_sets(
         .bot
         .answer_inline_query(q.id, articles)
         .next_offset("")
+        .cache_time(0) // in seconds // TODO: constant?
+        .await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(skip(q, request_context))]
+async fn handle_stickers_by_date(
+    current_offset: QueryPage,
+    sticker_id: String,
+    q: InlineQuery,
+    request_context: RequestContext,
+) -> Result<(), BotError> {
+    let set = request_context
+        .database
+        .get_sticker_set_by_sticker_id(&sticker_id)
+        .await?
+        .required()?;
+    let stickers = request_context
+        .database
+        .get_all_stickers_in_set(&set.id)
+        .await?;
+
+    let r = stickers
+        .into_iter()
+        .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
+        .rev()
+        .chunk_by(|s| format_relative_time(s.created_at))
+        .into_iter()
+        .flat_map(|(key, chunk)| {
+            // TODO: this looks weird in telegram
+            let mut res = vec![InlineQueryResultArticle::new(
+                InlineQueryResultId::Other(key.clone()).to_string(),
+                format!("{}", &key),
+                InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
+                    format!("{}", key),
+                ))),
+            )
+            .into()];
+            for sticker in chunk {
+                res.push(
+                    InlineQueryResultCachedSticker::new(
+                        InlineQueryResultId::Sticker(sticker.id).to_string(),
+                        sticker.telegram_file_identifier,
+                    )
+                    .into(),
+                );
+            }
+            res
+        })
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
+        .collect_vec();
+
+    require_some_results("stickers", current_offset, r.len())?;
+    request_context
+        .bot
+        .answer_inline_query(q.id, r.clone())
+        .next_offset(current_offset.next_query_offset(r.len()))
         .cache_time(0) // in seconds // TODO: constant?
         .await?;
 

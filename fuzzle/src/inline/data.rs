@@ -66,6 +66,9 @@ pub enum InlineQueryData {
     ListOverlappingSets {
         sticker_id: String,
     },
+    ListSetStickersByDate {
+        sticker_id: String,
+    },
     ListSimilarStickers {
         unique_id: String,
         aspect: SimilarityAspect,
@@ -186,6 +189,11 @@ impl InlineQueryData {
     #[must_use]
     pub fn overlapping_sets(sticker_id: String) -> Self {
         Self::ListOverlappingSets { sticker_id }
+    }
+
+    #[must_use]
+    pub fn set_stickers_by_date(sticker_id: String) -> Self {
+        Self::ListSetStickersByDate { sticker_id }
     }
 
     #[must_use]
@@ -329,6 +337,12 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                 },
             ),
             map(
+                terminated(preceded(tag("(dates:"), sticker_id_literal), tag(")")),
+                |sticker_id| InlineQueryData::ListSetStickersByDate {
+                    sticker_id: sticker_id.to_string(),
+                },
+            ),
+            map(
                 terminated(preceded(tag("(settags:"), sticker_id_literal), tag(")")),
                 |sticker_id| InlineQueryData::ListAllTagsFromSet {
                     sticker_id: sticker_id.to_string(),
@@ -448,6 +462,9 @@ impl Display for InlineQueryData {
             }
             InlineQueryData::ListOverlappingSets { sticker_id } => {
                 write!(f, "(overlap:{sticker_id}) ")
+            }
+            InlineQueryData::ListSetStickersByDate { sticker_id } => {
+                write!(f, "(dates:{sticker_id}) ")
             }
             InlineQueryData::ListAllTagsFromSet { sticker_id } => {
                 write!(f, "(settags:{sticker_id}) ")

@@ -242,7 +242,7 @@ pub enum DialogState {
         negative_sticker_id: Vec<String>,
     },
     TagCreator(TagCreator),
-    // TODO: use 
+    // TODO: use
     //     bot.set_sticker_set_thumb(name, user_id); // as soon as the sticker pack has 4 stickers -> thumnail: first 3 stickers + fuzzle bot icon
     //     // not existing yet: setStickerEmojiList, setStickerKeywords
 }
@@ -262,7 +262,6 @@ pub struct TagCreator {
     pub example_sticker_id: Vec<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
-
     // TODO: when transitioning from/to other modes, keep some of the data
     // eg example_sticker_id could become positive_sticker_id
 }
@@ -270,3 +269,15 @@ pub struct TagCreator {
 // TODO: test that defaults work
 // - database null -> Normal
 // - database ContinuousTag {} -> defaults for add_tag and remove_tag
+
+#[derive(QueryableByName, Debug, Clone)]
+pub struct StickerChange {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub sticker_id: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub sticker_set_id: String,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub today: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub this_week: i64,
+}

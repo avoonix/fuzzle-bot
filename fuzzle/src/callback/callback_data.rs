@@ -67,6 +67,7 @@ pub enum CallbackData {
     GeneralStats,
     PersonalStats,
     LatestSets,
+    LatestStickers,
     Info,
 
     RemoveBlacklistedTag(String),
@@ -190,6 +191,7 @@ fn parse_simple(input: &str) -> IResult<&str, CallbackData> {
         map(tag("gstats"), |_| CallbackData::GeneralStats),
         map(tag("pstats"), |_| CallbackData::PersonalStats),
         map(tag("lsets"), |_| CallbackData::LatestSets),
+        map(tag("lstickers"), |_| CallbackData::LatestStickers),
         map(tag("help"), |_| CallbackData::Help),
         map(tag("blacklist"), |_| CallbackData::Blacklist),
         map(tag("info"), |_| CallbackData::Info),
@@ -415,6 +417,7 @@ impl Display for CallbackData {
             Self::GeneralStats => write!(f, "gstats"),
             Self::PersonalStats => write!(f, "pstats"),
             Self::LatestSets => write!(f, "lsets"),
+            Self::LatestStickers => write!(f, "lstickers"),
             Self::FavoriteSticker {
                 operation,
                 sticker_id,

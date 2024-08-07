@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     bot::InternalError,
     callback::CallbackData,
-    database::{Sticker, TagCreator, UserSettings, UserStats},
+    database::{Sticker, StickerChange, TagCreator, UserSettings, UserStats},
     inline::{InlineQueryData, SetOperation, TagKind},
     tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters},
     util::{format_relative_time, Emoji},
@@ -316,7 +316,8 @@ impl Keyboard {
                     },
                 ),
             ],
-            vec![favorite_button(is_favorite, sticker_id),
+            vec![
+                favorite_button(is_favorite, sticker_id),
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     "🔧 Add to your set",
                     InlineQueryData::add_to_user_set(sticker_id.to_string()),
@@ -453,7 +454,7 @@ impl Keyboard {
     pub fn general_stats() -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![
             vec![
-                InlineKeyboardButton::callback("⬅️ Latest Sets", CallbackData::LatestSets),
+                InlineKeyboardButton::callback("⬅️ Latest Stickers", CallbackData::LatestStickers),
                 InlineKeyboardButton::callback("Personal Stats ➡️", CallbackData::PersonalStats),
             ],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
@@ -487,8 +488,26 @@ impl Keyboard {
     pub fn latest_sets() -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new([[
             InlineKeyboardButton::callback("⬅️ Popular Tags", CallbackData::PopularTags),
-            InlineKeyboardButton::callback("General Stats ➡️", CallbackData::GeneralStats),
+            InlineKeyboardButton::callback("Latest Stickers ➡️", CallbackData::LatestStickers),
         ]])
+    }
+
+    #[must_use]
+    pub fn latest_stickers(changes: Vec<StickerChange>) -> InlineKeyboardMarkup {
+        let mut markup = InlineKeyboardMarkup::new(vec![vec![
+            InlineKeyboardButton::callback("⬅️ Latest Sets", CallbackData::LatestSets),
+            InlineKeyboardButton::callback("General Stats ➡️", CallbackData::GeneralStats),
+        ]]);
+        for change in changes {
+            markup = markup.append_row(vec![
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("{}", change.sticker_set_id),
+                    InlineQueryData::set_stickers_by_date(change.sticker_id), // TODO: change placeholder
+                ),
+            ]);
+        }
+
+        markup
     }
 
     #[must_use]
@@ -653,31 +672,37 @@ impl Keyboard {
     ) -> InlineKeyboardMarkup {
         let now = chrono::Utc::now().naive_utc();
 
-        InlineKeyboardMarkup::new([
-            [InlineKeyboardButton::callback(
+        InlineKeyboardMarkup::new(vec![
+            vec![InlineKeyboardButton::callback(
                 "🔙 Set",
                 CallbackData::Sticker {
                     sticker_id: sticker_id.to_string(),
                     operation: None,
                 },
             )],
-            [InlineKeyboardButton::callback(
-                format!( "🗓️ Set added {}", format_relative_time(created_at)),
+            vec![InlineKeyboardButton::callback(
+                format!("🗓️ Set added {}", format_relative_time(created_at)),
                 CallbackData::NoAction,
             )],
-            [InlineKeyboardButton::switch_inline_query_current_chat(
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("🪞 Set overlaps"),
                 InlineQueryData::overlapping_sets(sticker_id.to_string()),
             )],
-            [InlineKeyboardButton::switch_inline_query_current_chat(
-                format!("🏷️ All tags"),
-                InlineQueryData::all_set_tags(sticker_id.to_string()),
-            )],
-            [InlineKeyboardButton::switch_inline_query_current_chat(
+            vec![
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("🏷️ All tags"),
+                    InlineQueryData::all_set_tags(sticker_id.to_string()),
+                ),
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("🗓️ All stickers by date added"),
+                    InlineQueryData::set_stickers_by_date(sticker_id.to_string()),
+                ),
+            ],
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("➕ Add tags to all stickers in the set \"{set_id}\""),
                 InlineQueryData::set_operation(set_id, vec![], SetOperation::Tag),
             )],
-            [InlineKeyboardButton::switch_inline_query_current_chat(
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("➖ Remove tags from all stickers in the set \"{set_id}\""),
                 InlineQueryData::set_operation(set_id, vec![], SetOperation::Untag),
             )],
@@ -707,7 +732,7 @@ impl Keyboard {
                 },
             )],
             vec![InlineKeyboardButton::callback(
-                format!( "🗓️ Sticker added {}", format_relative_time(created_at)),
+                format!("🗓️ Sticker added {}", format_relative_time(created_at)),
                 CallbackData::NoAction,
             )],
             vec![
