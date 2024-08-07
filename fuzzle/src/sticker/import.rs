@@ -263,13 +263,6 @@ async fn fetch_sticker_set_and_save_to_db(
         let Some(s) = set.stickers.iter().find(|s| s.file.unique_id == sticker.id) else {
             continue;
         };
-        database
-            .___temp___update_sticker_type(&sticker.id, match s.format {
-                teloxide::types::StickerFormat::Raster => crate::database::StickerType::Static,
-                teloxide::types::StickerFormat::Animated => crate::database::StickerType::Animated,
-                teloxide::types::StickerFormat::Video => crate::database::StickerType::Video,
-            })
-            .await?;
         if s.file.id != sticker.telegram_file_identifier {
             // TODO: might be updated too frequently
             database

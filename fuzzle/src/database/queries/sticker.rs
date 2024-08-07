@@ -54,27 +54,6 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn ___temp___update_sticker_type(
-        &self,
-        sticker_id: &str,
-        sticker_type: StickerType,
-    ) -> Result<(), DatabaseError> {
-        let updated_rows = diesel::update(sticker_file::table)
-            .filter(
-                sticker_file::id.eq_any(
-                    sticker::table
-                        .filter((sticker::id.eq(sticker_id)))
-                        .select((sticker::sticker_file_id)),
-                ),
-            )
-            .set(sticker_file::sticker_type.eq(sticker_type))
-            .execute(&mut self.pool.get()?)?;
-        #[cfg(debug_assertions)]
-        assert_eq!(updated_rows, 1);
-        Ok(())
-    }
-
-    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn update_sticker(
         &self,
         sticker_id: String,
