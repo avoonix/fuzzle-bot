@@ -71,8 +71,8 @@ impl TagManager {
         tags.insert("explicit".to_string(), Category::Rating);
 
         tags.insert("meta_sticker".to_string(), Category::Meta);
-
-        tags.insert("attribution".to_string(), Category::Artist);
+        tags.insert("attribution".to_string(), Category::Meta);
+        tags.insert("segmented_sticker".to_string(), Category::Meta);
 
         tags.insert("nowandlater".to_string(), Category::Artist);
         tags.insert("keavemind".to_string(), Category::Artist);
@@ -190,6 +190,17 @@ impl TagManager {
         aliases.insert("information".to_string(), "meta_sticker".to_string());
         aliases.insert("advertisement".to_string(), "meta_sticker".to_string());
         aliases.insert("placeholder".to_string(), "meta_sticker".to_string());
+        aliases.insert("artist_signature".to_string(), "meta_sticker".to_string());
+        aliases.insert("contact_info".to_string(), "meta_sticker".to_string());
+        aliases.insert("creator_sticker".to_string(), "meta_sticker".to_string());
+        aliases.insert("author_sticker".to_string(), "meta_sticker".to_string());
+
+        aliases.insert("split_sticker".to_string(), "segmented_sticker".to_string());
+        aliases.insert("combined_sticker".to_string(), "segmented_sticker".to_string());
+        aliases.insert("puzzle_sticker".to_string(), "segmented_sticker".to_string());
+        aliases.insert("composite_sticker".to_string(), "segmented_sticker".to_string());
+        aliases.insert("modular_sticker".to_string(), "segmented_sticker".to_string());
+        aliases.insert("match-up_sticker".to_string(), "segmented_sticker".to_string());
 
         aliases.insert("ych".to_string(), "ych_(character)".to_string());
         aliases.insert("you".to_string(), "ych_(character)".to_string());
