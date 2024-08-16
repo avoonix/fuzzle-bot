@@ -160,7 +160,7 @@ impl Database {
     ) -> Result<Vec<String>, DatabaseError> {
         Ok(sticker_set::table
             .select(sticker_set::id)
-            .order_by(sql::<BigInt>("random()")) // TODO: change back to least recently
+            .order_by(sticker_set::last_fetched)
             .limit(n)
             .load(&mut self.pool.get()?)?)
     }
