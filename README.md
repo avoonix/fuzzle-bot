@@ -48,6 +48,8 @@ I organize Telegram stickers with e621 tags.
 
 The easiest way to deploy the bot yourself is with Docker compose.
 
+> OUTDATED - a better example should come soon
+
 ```yml
 version: '3.8'
 services:
