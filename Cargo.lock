@@ -3085,7 +3085,7 @@ checksum = "20f34339676cdcab560c9a82300c4c2581f68b9369aedf0fae86f2ff9565ff3e"
 [[package]]
 name = "teloxide"
 version = "0.12.2"
-source = "git+https://github.com/avoonix/teloxide.git?branch=future-bot-api#4a47a59beae8f6ae7c761e6b08a3802fc66b253b"
+source = "git+https://github.com/avoonix/teloxide.git?branch=future-bot-api#529403754c364fd76c472bada3a8ba0d161e56a9"
 dependencies = [
  "ahash",
  "aquamarine",
@@ -3111,7 +3111,7 @@ dependencies = [
 [[package]]
 name = "teloxide-core"
 version = "0.9.1"
-source = "git+https://github.com/avoonix/teloxide.git?branch=future-bot-api#4a47a59beae8f6ae7c761e6b08a3802fc66b253b"
+source = "git+https://github.com/avoonix/teloxide.git?branch=future-bot-api#529403754c364fd76c472bada3a8ba0d161e56a9"
 dependencies = [
  "bitflags 1.3.2",
  "bytes",
@@ -3141,7 +3141,7 @@ dependencies = [
 [[package]]
 name = "teloxide-macros"
 version = "0.7.1"
-source = "git+https://github.com/avoonix/teloxide.git?branch=future-bot-api#4a47a59beae8f6ae7c761e6b08a3802fc66b253b"
+source = "git+https://github.com/avoonix/teloxide.git?branch=future-bot-api#529403754c364fd76c472bada3a8ba0d161e56a9"
 dependencies = [
  "heck 0.4.1",
  "proc-macro2",
