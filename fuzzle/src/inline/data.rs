@@ -3,10 +3,12 @@ use itertools::Itertools;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::bytes::complete::take_while;
+use nom::character::complete::digit1;
 use nom::character::complete::multispace0;
 use nom::character::complete::multispace1;
 use nom::combinator::eof;
 use nom::combinator::map;
+use nom::combinator::map_res;
 use nom::combinator::opt;
 use nom::error::ParseError;
 use nom::multi::{many0, many1, separated_list0};
@@ -78,6 +80,9 @@ pub enum InlineQueryData {
     ListRecommendationModeRecommendations,
     SearchByEmbedding {
         query: String,
+    },
+    SetsByUserId {
+        user_id: i64,
     },
     TagCreatorTagId {
         tag_id: String,
@@ -343,6 +348,12 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                 },
             ),
             map(
+                terminated(preceded(tag("(usersets:"), map_res(digit1, str::parse)), tag(")")),
+                |user_id: i64| InlineQueryData::SetsByUserId {
+                    user_id: user_id,
+                },
+            ),
+            map(
                 terminated(preceded(tag("(settags:"), sticker_id_literal), tag(")")),
                 |sticker_id| InlineQueryData::ListAllTagsFromSet {
                     sticker_id: sticker_id.to_string(),
@@ -546,6 +557,7 @@ impl Display for InlineQueryData {
             InlineQueryData::ListMostDuplicatedStickers => write!(f, "(dup) "),
             InlineQueryData::ListMostUsedEmojis => write!(f, "(emo) "),
             InlineQueryData::ListRecommendationModeRecommendations => write!(f, "(rec) "),
+            InlineQueryData::SetsByUserId { user_id } => write!(f, "(usersets:{user_id}) "),
         }
     }
 }

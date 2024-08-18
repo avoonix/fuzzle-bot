@@ -1,6 +1,8 @@
 use diesel::dsl::count_distinct;
 use diesel::dsl::count_star;
 use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::BigInt;
 use std::collections::HashMap;
 
 use crate::database::model::Stats;
@@ -9,6 +11,7 @@ use crate::database::AdminStats;
 use crate::database::FullUserStats;
 use crate::database::PersonalStats;
 use crate::database::UserStats;
+use crate::database::UserStickerStat;
 
 use super::DatabaseError;
 
@@ -213,5 +216,12 @@ impl Database {
             sets: affected_24,
         };
         Ok(stats)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_general_user_stats(&self, n: i64) -> Result<Vec<UserStickerStat>, DatabaseError> {
+        Ok(sql_query("select created_by_user_id as user_id, count(*) as set_count from sticker_set where user_id is not null group by created_by_user_id order by set_count desc limit ?1;")
+                                .bind::<BigInt, _>(n)
+            .load(&mut self.pool.get()?)?)
     }
 }

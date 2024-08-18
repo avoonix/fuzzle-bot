@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     bot::InternalError,
     callback::CallbackData,
-    database::{Sticker, StickerChange, TagCreator, UserSettings, UserStats},
+    database::{Sticker, StickerChange, TagCreator, UserSettings, UserStats, UserStickerStat},
     inline::{InlineQueryData, SetOperation, TagKind},
     tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters},
     util::{format_relative_time, Emoji},
@@ -454,7 +454,7 @@ impl Keyboard {
     pub fn general_stats() -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![
             vec![
-                InlineKeyboardButton::callback("⬅️ Latest Stickers", CallbackData::LatestStickers),
+                InlineKeyboardButton::callback("⬅️ User Stats", CallbackData::UserStats),
                 InlineKeyboardButton::callback("Personal Stats ➡️", CallbackData::PersonalStats),
             ],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
@@ -469,11 +469,16 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn personal_stats() -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new([[
+    pub fn personal_stats(user_id: i64) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(vec![vec![
             InlineKeyboardButton::callback("⬅️ General Stats", CallbackData::GeneralStats),
             InlineKeyboardButton::callback("Popular Tags ➡️", CallbackData::PopularTags),
-        ]])
+        ],
+        vec![InlineKeyboardButton::switch_inline_query_current_chat(
+            "My sets",
+            InlineQueryData::SetsByUserId{ user_id: user_id },
+        )]
+        ])
     }
 
     #[must_use]
@@ -496,7 +501,7 @@ impl Keyboard {
     pub fn latest_stickers(changes: Vec<StickerChange>) -> InlineKeyboardMarkup {
         let mut markup = InlineKeyboardMarkup::new(vec![vec![
             InlineKeyboardButton::callback("⬅️ Latest Sets", CallbackData::LatestSets),
-            InlineKeyboardButton::callback("General Stats ➡️", CallbackData::GeneralStats),
+            InlineKeyboardButton::callback("User Stats ➡️", CallbackData::UserStats),
         ]]);
         for change in changes {
             markup = markup.append_row(vec![
@@ -505,6 +510,24 @@ impl Keyboard {
                     InlineQueryData::set_stickers_by_date(change.sticker_id), // TODO: change placeholder
                 ),
             ]);
+        }
+
+        markup
+    }
+
+    #[must_use]
+    pub fn general_user_stats(stats: Vec<UserStickerStat>) -> InlineKeyboardMarkup {
+        let mut markup = InlineKeyboardMarkup::new(vec![vec![
+            InlineKeyboardButton::callback("⬅️ Latest Stickers", CallbackData::LatestStickers),
+            InlineKeyboardButton::callback("General Stats ➡️", CallbackData::GeneralStats),
+        ]]);
+        for stat in stats.chunks(2) {
+            markup = markup.append_row(stat.into_iter().map(|stat|
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("Unknown User ({} Sets)", stat.set_count), // TODO: some users are known - display those names?
+                    InlineQueryData::SetsByUserId{ user_id: stat.user_id },
+                ),
+            ));
         }
 
         markup
@@ -650,18 +673,24 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn new_set(
+    pub fn new_sets(
         submitted_by: Option<UserId>,
-        set_name: &str,
+        set_names: &[String],
     ) -> Result<InlineKeyboardMarkup, InternalError> {
-        Ok(InlineKeyboardMarkup::new(vec![
-            vec![set_button(set_name)?],
-            vec![InlineKeyboardButton::callback(
-                "Delete/Ban Set",
-                CallbackData::change_set_status(set_name, true),
-            )],
-            submitted_by.map_or_else(Vec::new, |submitted_by| vec![user_button(submitted_by)]),
-        ]))
+        let mut markup = InlineKeyboardMarkup::new(vec![
+            submitted_by.map_or_else(Vec::new, |submitted_by| vec![user_button(submitted_by)])
+        ]);
+        for set_name in set_names {
+            markup = markup.append_row(vec![
+                set_button(set_name)?,
+                InlineKeyboardButton::callback(
+                    format!("Delete/Ban {}", set_name),
+                    CallbackData::change_set_status(set_name, true),
+                ),
+            ]);
+        }
+
+        Ok(markup)
     }
 
     #[must_use]
@@ -706,6 +735,34 @@ impl Keyboard {
                 format!("➖ Remove tags from all stickers in the set \"{set_id}\""),
                 InlineQueryData::set_operation(set_id, vec![], SetOperation::Untag),
             )],
+        ])
+    }
+
+    #[must_use]
+    pub fn owner_page(
+        sticker_id: &str,
+        user_id: i64,
+        set_count: i64,
+    ) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(vec![
+            vec![InlineKeyboardButton::callback(
+                "🔙 Owner",
+                CallbackData::Sticker {
+                    sticker_id: sticker_id.to_string(),
+                    operation: None,
+                },
+            )],
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                format!("{} sets owned by this user", set_count), // TODO: some users are known - display those names?
+                InlineQueryData::SetsByUserId{ user_id: user_id },
+            )],
+            vec![InlineKeyboardButton::url(
+                format!("Show user if known (Android)"),
+                Url::parse(format!("tg://openmessage?user_id={}", user_id).as_str()).expect("url to be valid"),
+            ),InlineKeyboardButton::url(
+                format!("Show user if known (iOS)"),
+                Url::parse(format!("https://t.me/@id{}", user_id).as_str()).expect("url to be valid"),
+            )]
         ])
     }
 
@@ -779,6 +836,12 @@ fn add_sticker_main_menu(
     other_buttons: Vec<Vec<InlineKeyboardButton>>,
 ) -> Vec<Vec<InlineKeyboardButton>> {
     vec![vec![
+        InlineKeyboardButton::callback(
+            "️👤 Owner",
+            CallbackData::OwnerPage {
+                sticker_id: sticker_id.to_string(),
+            },
+        ),
         InlineKeyboardButton::callback(
             "️🗂️ Set",
             CallbackData::StickerSetPage {

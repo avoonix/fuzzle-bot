@@ -67,6 +67,7 @@ pub enum CallbackData {
     GeneralStats,
     PersonalStats,
     LatestSets,
+    UserStats,
     LatestStickers,
     Info,
 
@@ -77,6 +78,9 @@ pub enum CallbackData {
     SetOrder(StickerOrder),
     SetCategory(Option<Category>),
 
+     OwnerPage {
+        sticker_id: String,
+    },
     StickerSetPage {
         sticker_id: String,
     },
@@ -171,6 +175,7 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
             parse_lock_data,
             parse_recommend_sticker,
             parse_sticker_set_page,
+            parse_owner_page,
             parse_download_sticker,
             parse_sticker_explore_page,
             parse_toggle_example_sticker,
@@ -190,6 +195,7 @@ fn parse_simple(input: &str) -> IResult<&str, CallbackData> {
         map(tag("pop"), |_| CallbackData::PopularTags),
         map(tag("gstats"), |_| CallbackData::GeneralStats),
         map(tag("pstats"), |_| CallbackData::PersonalStats),
+        map(tag("ustats"), |_| CallbackData::UserStats),
         map(tag("lsets"), |_| CallbackData::LatestSets),
         map(tag("lstickers"), |_| CallbackData::LatestStickers),
         map(tag("help"), |_| CallbackData::Help),
@@ -237,6 +243,17 @@ fn parse_favorite_sticker_data(input: &str) -> IResult<&str, CallbackData> {
             operation,
         },
     )(input)
+}
+
+fn parse_owner_page(input: &str) -> IResult<&str, CallbackData> {
+    let (input, _) = tag("owner;")(input)?;
+    let (input, sticker_id) = sticker_id_literal(input)?;
+    Ok((
+        input,
+        CallbackData::OwnerPage {
+            sticker_id: sticker_id.to_string(),
+        },
+    ))
 }
 
 fn parse_sticker_set_page(input: &str) -> IResult<&str, CallbackData> {
@@ -416,6 +433,7 @@ impl Display for CallbackData {
             Self::PopularTags => write!(f, "pop"),
             Self::GeneralStats => write!(f, "gstats"),
             Self::PersonalStats => write!(f, "pstats"),
+            Self::UserStats => write!(f, "ustats"),
             Self::LatestSets => write!(f, "lsets"),
             Self::LatestStickers => write!(f, "lstickers"),
             Self::FavoriteSticker {
@@ -437,6 +455,7 @@ impl Display for CallbackData {
             Self::CreateTag => write!(f, "createtag"),
             Self::RemoveLinkedChannel => write!(f, "removechannel"),
             Self::StickerSetPage { sticker_id } => write!(f, "ssp;{sticker_id}"),
+            Self::OwnerPage { sticker_id } => write!(f, "owner;{sticker_id}"),
             Self::DownloadSticker { sticker_id } => write!(f, "dls;{sticker_id}"),
             Self::StickerExplorePage { sticker_id } => write!(f, "sep;{sticker_id}"),
             Self::ToggleExampleSticker { sticker_id } => write!(f, "tex;{sticker_id}"),

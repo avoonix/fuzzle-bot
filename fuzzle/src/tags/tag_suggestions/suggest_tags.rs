@@ -95,49 +95,49 @@ pub async fn suggest_tags(
     ))
 }
 
-#[tracing::instrument(skip(tag_manager))]
-fn combine_suggestions(
-    suggestions: TagSuggestions,
-    sticker_tags: Vec<String>,
-    tag_manager: Arc<TagManager>,
-) -> Vec<String> {
-    // TODO: weighting, etc:
-    let suggested_tags = suggestions
-        .db_based_sticker_tags_from_same_set
-        .into_iter()
-        .chain(suggestions.worker_based_tf_idf)
-        .chain(suggestions.clip_and_db_based_tags_from_similar_stickers)
-        .chain(suggestions.clip_text_embedding_based_on_existing_tags)
-        .chain(suggestions.tag_manager_based_reverse_implications)
-        .chain(suggestions.static_rule_based_emoji_and_set_name)
-        .chain(suggestions.static_default_tags)
-        .chain(suggestions.image_to_tag_similarity_based)
-        .collect_vec();
-    let suggested_tags = ScoredTagSuggestion::merge(suggested_tags, vec![]);
+// #[tracing::instrument(skip(tag_manager))]
+// fn combine_suggestions(
+//     suggestions: TagSuggestions,
+//     sticker_tags: Vec<String>,
+//     tag_manager: Arc<TagManager>,
+// ) -> Vec<String> {
+//     // TODO: weighting, etc:
+//     let suggested_tags = suggestions
+//         .db_based_sticker_tags_from_same_set
+//         .into_iter()
+//         .chain(suggestions.worker_based_tf_idf)
+//         .chain(suggestions.clip_and_db_based_tags_from_similar_stickers)
+//         .chain(suggestions.clip_text_embedding_based_on_existing_tags)
+//         .chain(suggestions.tag_manager_based_reverse_implications)
+//         .chain(suggestions.static_rule_based_emoji_and_set_name)
+//         .chain(suggestions.static_default_tags)
+//         .chain(suggestions.image_to_tag_similarity_based)
+//         .collect_vec();
+//     let suggested_tags = ScoredTagSuggestion::merge(suggested_tags, vec![]);
 
-    let mut limits = HashMap::new();
-    limits.insert(Category::General, 10);
-    limits.insert(Category::Species, 4);
-    limits.insert(Category::Meta, 5);
+//     let mut limits = HashMap::new();
+//     limits.insert(Category::General, 10);
+//     limits.insert(Category::Species, 4);
+//     limits.insert(Category::Meta, 5);
 
-    let result = suggested_tags
-        .into_iter()
-        .filter(|suggestion| !sticker_tags.contains(&suggestion.tag))
-        .filter(|suggestion| {
-            tag_manager
-                .get_category(&suggestion.tag)
-                .map(|category| {
-                    let entry = limits.entry(category).or_insert(2);
-                    *entry -= 1;
-                    *entry >= 0
-                })
-                .unwrap_or_default()
-        })
-        .take(16)
-        .map(|suggestion| suggestion.tag)
-        .collect_vec();
-    result
-}
+//     let result = suggested_tags
+//         .into_iter()
+//         .filter(|suggestion| !sticker_tags.contains(&suggestion.tag))
+//         .filter(|suggestion| {
+//             tag_manager
+//                 .get_category(&suggestion.tag)
+//                 .map(|category| {
+//                     let entry = limits.entry(category).or_insert(2);
+//                     *entry -= 1;
+//                     *entry >= 0
+//                 })
+//                 .unwrap_or_default()
+//         })
+//         .take(16)
+//         .map(|suggestion| suggestion.tag)
+//         .collect_vec();
+//     result
+// }
 
 #[tracing::instrument(skip(tag_manager))]
 fn combine_suggestions_alt_1(

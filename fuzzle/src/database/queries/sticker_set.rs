@@ -87,6 +87,18 @@ impl Database {
         })
     }
 
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn __temp__add_sticker_pack_creator(
+        &self,
+        set_id: &str,
+        creator_id: i64,
+    ) -> Result<(), DatabaseError> {
+        update(sticker_set::table.find(set_id))
+            .set(sticker_set::created_by_user_id.eq(Some(creator_id)))
+            .execute(&mut self.pool.get()?)?;
+        Ok(())
+    }
+
     fn check_removed(
         &self,
         set_id: &str,
@@ -181,7 +193,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_owned_sticker_sets(
+    pub async fn get_owned_sticker_sets_by_bot(
         &self,
         bot_username: &str,
         user_id: i64,
@@ -191,6 +203,32 @@ impl Database {
             .filter(sticker_set::id.like(format!("%_by_{bot_username}")))
             .select(StickerSet::as_select())
             .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_owned_sticker_sets(
+        &self,
+        user_id: i64,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<StickerSet>, DatabaseError> {
+        Ok(sticker_set::table
+            .filter(sticker_set::created_by_user_id.eq(user_id))
+            .select(StickerSet::as_select())
+            .limit(limit)
+            .offset(offset)
+            .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_owned_sticker_set_count(
+        &self,
+        user_id: i64
+    ) -> Result<i64, DatabaseError> {
+        Ok(sticker_set::table
+            .filter(sticker_set::created_by_user_id.eq(user_id))
+            .select(count_star())
+            .first(&mut self.pool.get()?)?)
     }
 
     /// returns id of sticker in the set

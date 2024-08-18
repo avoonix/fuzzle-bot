@@ -16,6 +16,7 @@ use teloxide::prelude::*;
 use teloxide::types::{AllowedUpdate, ParseMode, UpdateKind};
 use teloxide::update_listeners::Polling;
 use tracing::{info, warn};
+use url::Url;
 
 use super::error_handler::ErrorHandler;
 use super::user_meta::inject_context;
@@ -38,6 +39,7 @@ impl UpdateListener {
             .build()?;
         // let bot = Bot::with_client(scrape_config.token, client);
         let bot = teloxide::Bot::with_client(config.telegram_bot_token.clone(), client)
+            .set_api_url(Url::parse(&config.telegram_bot_api_url).unwrap())
             .parse_mode(ParseMode::MarkdownV2)
             .throttle(Limits::default());
         let database = Database::new(config.db()).await?;

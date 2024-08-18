@@ -281,3 +281,12 @@ pub struct StickerChange {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub this_week: i64,
 }
+
+
+#[derive(QueryableByName, Debug, Clone)]
+pub struct UserStickerStat {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub user_id: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub set_count: i64,
+}

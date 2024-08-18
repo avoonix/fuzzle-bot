@@ -10,7 +10,7 @@ use crate::{
     bot::{Bot, BotError, InternalError, RequestContext, UserError},
     database::Database,
     qdrant::VectorDatabase,
-    util::{is_wrong_file_id_error, Emoji},
+    util::{decode_sticker_set_id, is_wrong_file_id_error, Emoji},
     Config,
 };
 
@@ -20,7 +20,7 @@ use super::{
     hash::calculate_sticker_file_hash,
 };
 
-#[tracing::instrument(skip(database, bot, config), err(Debug))]
+#[tracing::instrument(skip(database, bot, config, vector_db), err(Debug))]
 pub async fn import_all_stickers_from_set(
     set_id: &str,
     ignore_last_fetched: bool,
@@ -62,6 +62,9 @@ pub async fn import_all_stickers_from_set(
             return Err(e.into());
         }
     };
+
+    let creator_id = decode_sticker_set_id(set.__custom__id.clone())?.owner_id;
+    database.__temp__add_sticker_pack_creator(&set.name, creator_id).await?;
 
     if !set.is_regular() {
         database.delete_sticker_set(&set.name).await?;

@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use teloxide::{payloads::SendMessageSetters, types::UserId};
 
 use crate::{
@@ -25,11 +26,13 @@ pub async fn send_daily_report(
         .await?;
 
     let new_sticker_sets = database.get_sticker_sets_added_24_hours().await?;
+    let new_sticker_sets = new_sticker_sets.into_iter().sorted_by_key(|(_, user)| user.clone()).chunk_by(|(_, user)| user.clone()).into_iter().map(|(user_id, chunk)| 
+(user_id.map(|user_id| UserId(user_id as u64)), chunk.map(|(set_name, _)| set_name).collect_vec())
+).collect_vec();
 
-    for (set_name, added_by_user_id) in new_sticker_sets {
-        let added_by_user_id = added_by_user_id.map(|user_id| UserId(user_id as u64));
-        bot.send_markdown(admin_id, Text::new_set(&set_name))
-            .reply_markup(Keyboard::new_set(added_by_user_id, &set_name)?)
+    for (user_id, set_names) in new_sticker_sets {
+        bot.send_markdown(admin_id, Text::new_set(&set_names))
+            .reply_markup(Keyboard::new_sets(user_id, &set_names)?)
             .await?;
     }
 

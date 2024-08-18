@@ -71,6 +71,7 @@ pub async fn init() -> Result<()> {
                 "scat".to_string(),
             ],
         )?
+        .set_default("telegram_bot_api_url", "https://api.telegram.org")?
         .add_source(config::File::with_name("./config").required(false))
         .add_source(config::Environment::with_prefix("FUZZLE"))
         .build()?;

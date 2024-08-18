@@ -209,6 +209,7 @@ impl HiddenCommand {
                     .collect_vec();
 
                 simple_bot_api::add_sticker_to_set(
+                    &request_context.config.telegram_bot_api_url,
                     &request_context.config.telegram_bot_token,
                     request_context.user_id(),
                     &set_id,
@@ -268,6 +269,7 @@ impl HiddenCommand {
                     .collect_vec();
 
                 simple_bot_api::create_new_sticker_set(
+                    &request_context.config.telegram_bot_api_url,
                     &request_context.config.telegram_bot_token,
                     request_context.user_id(),
                     &set_id,

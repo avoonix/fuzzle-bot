@@ -1,3 +1,5 @@
+use crate::bot::InternalError;
+
 #[must_use]
 pub fn teloxide_error_can_safely_be_ignored(err: &teloxide::RequestError) -> bool {
     match err {
@@ -23,4 +25,33 @@ pub fn is_wrong_file_id_error(err: &teloxide::ApiError) -> bool {
         teloxide::ApiError::Unknown(message) if message == "Bad Request: invalid file_id" => true,
         _ => false,
     }
+}
+
+#[derive(Debug)]
+pub struct DecodedStickerId {
+    pub owner_id: i64,
+    pub set_id: i64,
+}
+
+#[must_use]
+// https://github.com/LyoSU/fStikBot/blob/fca2d4b4c3433332f0f4d7a994b0f2d84d69bc0f/update-packs.js#L15
+pub fn decode_sticker_set_id(set_id: String) -> Result<DecodedStickerId, anyhow::Error> {
+    let set_id: i64 = set_id.parse()?;
+    let upper ;
+    let lower ;
+
+    if ((set_id >> 24 & 0xff) == 0xff) { // for 64-bit ids
+        upper = (set_id >> 32) + 0x100000000;
+        lower = (set_id & 0xf);
+    } else {
+        upper = set_id >> 32;
+        lower = set_id & 0xffffffff;
+    }
+
+    Ok(
+        DecodedStickerId {
+            owner_id: upper,
+            set_id: lower,
+        }
+    )
 }

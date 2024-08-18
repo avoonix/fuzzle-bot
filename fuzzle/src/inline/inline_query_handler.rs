@@ -662,6 +662,9 @@ pub async fn inline_query_handler(
         InlineQueryData::ListOverlappingSets { sticker_id } => {
             handle_overlapping_sets(current_offset, sticker_id, q, request_context).await
         }
+        InlineQueryData::SetsByUserId { user_id } => {
+            handle_sets_by_user_id(current_offset, user_id, q, request_context).await
+        }
         InlineQueryData::ListSetStickersByDate { sticker_id } => {
             handle_stickers_by_date(current_offset, sticker_id, q, request_context).await
         }
@@ -1158,7 +1161,7 @@ async fn handle_user_sets(
 ) -> Result<(), BotError> {
     let sets = request_context
         .database
-        .get_owned_sticker_sets(
+        .get_owned_sticker_sets_by_bot(
             &request_context.config.telegram_bot_username,
             request_context.user.id,
         )
@@ -1317,6 +1320,41 @@ async fn handle_stickers_by_date(
         .collect_vec();
 
     require_some_results("stickers", current_offset, r.len())?;
+    request_context
+        .bot
+        .answer_inline_query(q.id, r.clone())
+        .next_offset(current_offset.next_query_offset(r.len()))
+        .cache_time(0) // in seconds // TODO: constant?
+        .await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(skip(q, request_context))]
+async fn handle_sets_by_user_id(
+    current_offset: QueryPage,
+    user_id: i64,
+    q: InlineQuery,
+    request_context: RequestContext,
+) -> Result<(), BotError> {
+    let sets = request_context
+        .database
+        .get_owned_sticker_sets(user_id, current_offset.page_size() as i64, current_offset.skip() as i64)
+        .await?;
+
+    let mut r = Vec::new();
+    for set in sets {
+        r.push(create_query_set(
+            &set,
+            None,
+            format!(
+                "https://fuzzle-bot.avoonix.com/thumbnails/sticker-set/{}/image.png",
+                &set.id
+            )
+        )?);
+    }
+
+    require_some_results("sets", current_offset, r.len())?;
     request_context
         .bot
         .answer_inline_query(q.id, r.clone())

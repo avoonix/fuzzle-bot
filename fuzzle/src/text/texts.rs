@@ -3,11 +3,13 @@ use std::collections::HashMap;
 use crate::{
     callback::TagOperation,
     database::{
-        AddedRemoved, AdminStats, FullUserStats, PersonalStats, PopularTag, Stats, StickerChange, StickerSet, UserSettings, UserStats
+        AddedRemoved, AdminStats, FullUserStats, PersonalStats, PopularTag, Stats, StickerChange,
+        StickerSet, UserSettings, UserStats, UserStickerStat,
     },
     message::{
         admin_command_description, escape_sticker_unique_id_for_command, user_command_description,
     },
+    tags::Category,
     util::{format_relative_time, Emoji},
 };
 use itertools::Itertools;
@@ -65,10 +67,17 @@ Current Order: {order}
     }
 
     #[must_use]
-    pub fn popular_tags(tags: Vec<PopularTag>) -> Markdown {
+    pub fn popular_tags(tags: Vec<(PopularTag, Category)>) -> Markdown {
         let tags_str = tags
             .into_iter()
-            .map(|tag| format!("{}: {} Stickers", escape(&tag.name), tag.count))
+            .map(|(tag, category)| {
+                format!(
+                    "{} {}: {} Stickers",
+                    category.to_emoji(),
+                    escape(&tag.name),
+                    tag.count
+                )
+            })
             .collect_vec()
             .join("\n");
         Markdown::new(format!("Popular Tags: \n{tags_str}"))
@@ -83,11 +92,8 @@ Current Order: {order}
     }
 
     #[must_use]
-    pub fn personal_stats(stats: PersonalStats) -> Markdown {
-        Markdown::new(format!(
-            "Favorites: {}",
-            stats.favorites
-        ))
+    pub fn personal_stats(stats: PersonalStats, set_count: i64) -> Markdown {
+        Markdown::new(format!("Favorites: {}\nTracked Sets: {set_count}", stats.favorites))
     }
 
     #[must_use]
@@ -109,15 +115,22 @@ Current Order: {order}
     }
 
     #[must_use]
+    pub fn general_user_stats() -> Markdown {
+        // TODO: add aggregate stats (eg total number of unique users)
+        Markdown::new(format!("User Stats"))
+    }
+
+    #[must_use]
     pub fn latest_stickers(changes: Vec<StickerChange>) -> Markdown {
         let sets_str = changes
             .into_iter()
             .map(|change| {
-                let link = format_set_as_markdown_link(
-                    &change.sticker_set_id,
-                    &change.sticker_set_id,
-                );
-                format!("{link}: {} added today, {} added this week", change.today, change.this_week)
+                let link =
+                    format_set_as_markdown_link(&change.sticker_set_id, &change.sticker_set_id);
+                format!(
+                    "{link}: {} added today, {} added this week",
+                    change.today, change.this_week
+                )
             })
             .collect_vec()
             .join("\n");
@@ -172,10 +185,23 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
 
     #[must_use]
     pub fn get_sticker_text(emoji: Option<Emoji>) -> Markdown {
-        Markdown::new(format!(
-            "UwU you sent a{}sticker :3",
-            escape(&emoji.map_or_else(|| " ".to_string(), |emoji| format!(" {} ", emoji.to_string_with_variant())))
-        ))
+        let value = if let Some(emoji) = emoji {
+            if let Some(emo) = emojis::get(&emoji.to_string_with_variant())
+                .or_else(|| emojis::get(&emoji.to_string_without_variant()))
+            {
+                format!(
+                    " {} {} ",
+                    emo.name().to_string(),
+                    emoji.to_string_with_variant()
+                )
+            } else {
+                format!(" {} ", emoji.to_string_with_variant())
+            }
+        } else {
+            " ".to_string()
+        };
+
+        Markdown::new(format!("UwU you sent a{}sticker :3", escape(&value)))
     }
 
     #[must_use]
@@ -287,10 +313,24 @@ Taggings per set \\(24 hours\\):
 
     #[must_use]
     pub fn get_continuous_tag_mode_text(add_tags: &[String], remove_tags: &[String]) -> Markdown {
-        let add_tags = if add_tags.len() > 0 {add_tags.iter().map(|tag| format!("`{}`", escape(tag))).join(", ") } else { "none".to_string() }; // TODO: better join with ` and `
-        let remove_tags = if remove_tags.len() > 0 {remove_tags.iter().map(|tag| format!("`{}`", escape(tag))).join(", ") } else { "none".to_string() }; // TODO: better join with ` and `
+        let add_tags = if add_tags.len() > 0 {
+            add_tags
+                .iter()
+                .map(|tag| format!("`{}`", escape(tag)))
+                .join(", ")
+        } else {
+            "none".to_string()
+        }; // TODO: better join with ` and `
+        let remove_tags = if remove_tags.len() > 0 {
+            remove_tags
+                .iter()
+                .map(|tag| format!("`{}`", escape(tag)))
+                .join(", ")
+        } else {
+            "none".to_string()
+        }; // TODO: better join with ` and `
         Markdown::new(format!(
-                "You are in Continuous Tag Mode\\.
+            "You are in Continuous Tag Mode\\.
 Tags that will be added:
 {add_tags}
 Tags that will be removed: 
@@ -299,10 +339,13 @@ Tags that will be removed:
     }
 
     #[must_use]
-    pub fn new_set(set_name: &str) -> Markdown {
+    pub fn new_set(set_names: &[String]) -> Markdown {
         Markdown::new(format!(
-            "Someone added the set {}",
-            format_set_as_markdown_link(set_name, set_name)
+            "Someone added the sets {}",
+            set_names
+                .into_iter()
+                .map(|set_name| format_set_as_markdown_link(set_name, set_name))
+                .join(", ")
         ))
     }
 

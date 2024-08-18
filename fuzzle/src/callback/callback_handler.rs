@@ -461,16 +461,31 @@ pub async fn callback_handler(
             )
             .await
         }
+        CallbackData::UserStats => {
+            let stats = request_context
+                .database
+                .get_general_user_stats(20)
+                .await?;
+            answer_callback_query(
+                request_context.clone(),
+                q,
+                Some(Text::general_user_stats()),
+                Some(Keyboard::general_user_stats(stats)),
+                None,
+            )
+            .await
+        }
         CallbackData::PersonalStats => {
             let stats = request_context
                 .database
                 .get_personal_stats(request_context.user.id)
                 .await?;
+            let set_count = request_context.database.get_owned_sticker_set_count(request_context.user.id).await?;
             answer_callback_query(
                 request_context.clone(),
                 q,
-                Some(Text::personal_stats(stats)),
-                Some(Keyboard::personal_stats()),
+                Some(Text::personal_stats(stats, set_count)),
+                Some(Keyboard::personal_stats(request_context.user.id)),
                 None,
             )
             .await
@@ -487,7 +502,8 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::PopularTags => {
-            let tags = request_context.database.get_popular_tags(30).await?;
+            let tags = request_context.database.get_popular_tags(40).await?;
+            let tags = tags.into_iter().filter_map(|tag| request_context.tag_manager.get_category(&tag.name).map(|category| (tag, category))).collect_vec();
             answer_callback_query(
                 request_context.clone(),
                 q,
@@ -557,6 +573,27 @@ pub async fn callback_handler(
                 .disable_content_type_detection(true)
                 .await?;
             Ok(())
+        }
+        CallbackData::OwnerPage { sticker_id } => {
+            let set = request_context
+                .database
+                .get_sticker_set_by_sticker_id(&sticker_id)
+                .await?
+                .required()?;
+            let owner = set.created_by_user_id.required()?;
+            let set_count = request_context.database.get_owned_sticker_set_count(owner).await?;
+            answer_callback_query(
+                request_context.clone(),
+                q,
+                None,
+                Some(Keyboard::owner_page(
+                    &sticker_id,
+                    owner,
+                    set_count,
+                )),
+                None,
+            )
+            .await
         }
         CallbackData::StickerSetPage { sticker_id } => {
             let set = request_context
@@ -1110,14 +1147,18 @@ async fn ban_set(
         .database
         .ban_set(&set_name, added_by_user_id)
         .await?;
-    answer_callback_query(
-        request_context.clone(),
-        q,
-        Some(Text::removed_set()),
-        Some(Keyboard::removed_set(request_context.is_admin(), set_name)),
-        None,
-    )
-    .await?;
+    
+            request_context
+                .bot
+                .send_markdown(
+                    request_context.user_id(),
+                    Text::removed_set(),
+                )
+                .reply_markup(Keyboard::removed_set(request_context.is_admin(), set_name))
+                .await?;
+    request_context
+        .bot
+        .answer_callback_query(&q.id).await?;
     Ok(())
 }
 
