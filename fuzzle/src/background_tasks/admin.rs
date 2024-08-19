@@ -31,9 +31,11 @@ pub async fn send_daily_report(
 ).collect_vec();
 
     for (user_id, set_names) in new_sticker_sets {
-        bot.send_markdown(admin_id, Text::new_set(&set_names))
-            .reply_markup(Keyboard::new_sets(user_id, &set_names)?)
-            .await?;
+        for set_names in set_names.chunks(50) {
+            bot.send_markdown(admin_id, Text::new_set(set_names))
+                .reply_markup(Keyboard::new_sets(user_id, set_names)?)
+                .await?;
+        }
     }
 
     Ok(())
