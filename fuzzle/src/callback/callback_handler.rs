@@ -168,6 +168,7 @@ async fn send_tagging_keyboard(
         &suggested_tags,
         is_locked,
         request_context.is_continuous_tag_state(),
+        request_context.tag_manager.clone(),
     ));
 
     answer_callback_query(request_context, q, None, keyboard, notification).await

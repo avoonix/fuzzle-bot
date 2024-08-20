@@ -502,7 +502,8 @@ async fn handle_sticker_1(
             &suggested_tags,
             is_locked,
             is_continuous_tag,
-        ))
+        request_context.tag_manager.clone(),
+    ))
         .allow_sending_without_reply(true)
         .reply_to_message_id(msg.id)
         .into_future()

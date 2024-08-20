@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     bot::InternalError,
     callback::CallbackData,
     database::{Sticker, StickerChange, TagCreator, UserSettings, UserStats, UserStickerStat},
     inline::{InlineQueryData, SetOperation, TagKind},
-    tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters},
+    tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters, TagManager},
     util::{format_relative_time, Emoji},
 };
 use chrono::NaiveDateTime;
@@ -25,6 +25,7 @@ impl Keyboard {
         suggested_tags: &[String],
         tagging_locked: bool,
         is_continuous_tag: bool,
+        tag_manager: Arc<TagManager>,
     ) -> InlineKeyboardMarkup {
         let mut button_layout: Vec<Vec<String>> = vec![];
         // trio implies group; trio is more important than group
@@ -37,7 +38,7 @@ impl Keyboard {
 
         let (_rating, count) = match (rating, count) {
             (Some(rating), Some(count)) => {
-                button_layout.push(vec![rating.to_string(), count.to_string()]);
+                // button_layout.push(vec![rating.to_string(), count.to_string()]);
                 (rating, count)
             }
             _ => {
@@ -65,51 +66,41 @@ impl Keyboard {
                         button_layout,
                         current_tags,
                         sticker_unique_id,
+                        tag_manager,
                     ),
                 ));
             }
         };
 
-        match count {
-            Characters::Zero => {}
-            Characters::One => {
-                button_layout.push(vec![
-                    "male".to_string(),
-                    "female".to_string(),
-                    "ambiguous_gender".to_string(),
-                ]);
-            }
-            _ => {
-                button_layout.push(vec![
-                    "male".to_string(),
-                    "female".to_string(),
-                    "ambiguous_gender".to_string(),
-                ]);
-                button_layout.push(vec!["male/male".to_string(), "male/female".to_string()]);
-                button_layout.push(vec![
-                    "ych_(character)".to_string(),
-                    "female/female".to_string(),
-                ]);
-            }
-        }
-
         let present_tags = current_tags
             .iter()
-            .filter(|tag| {
-                character_count(&(*tag).to_string()).is_none()
-                    && tags::rating(&(*tag).to_string()).is_none()
-            })
+            // .filter(|tag| {
+            //     character_count(&(*tag).to_string()).is_none()
+            //         && tags::rating(&(*tag).to_string()).is_none()
+            // })
             .filter(|tag| !button_layout.iter().flatten().any(|button| &button == tag))
             .cloned()
             .collect::<Vec<String>>();
 
-        for tags in present_tags.chunks(2) {
-            button_layout.push(tags.iter().map(std::string::ToString::to_string).collect());
+        'outer: for tag in present_tags.into_iter().sorted_by_key(|s| s.len()).rev() {
+            for last in button_layout.iter_mut() {
+                let width: usize = last.iter().map(|tag| tag.len()).sum::<usize>() + tag.len(); // add tag in consideration to final width
+                let width = width + (last.len() ) * 4; // check marks count as 2 characters for the width + gap
+                if width <= 32 {
+                    last.push(tag);
+                    continue 'outer;
+                }
+            }
+
+            button_layout.push(vec![tag]);
         }
+
+        button_layout.push(vec![]);
 
         let suggested_tags = suggested_tags
             .iter()
             .filter(|tag| {
+                // TODO: instead of filtering this, allow these suggestions + remove incompatible tags if clicked (eg safe is present, user clicks explicit, -> safe is removed)
                 character_count(&(*tag).to_string()).is_none()
                     && tags::rating(&(*tag).to_string()).is_none()
             })
@@ -117,13 +108,25 @@ impl Keyboard {
             .cloned()
             .collect::<Vec<String>>();
 
-        for tags in suggested_tags.chunks(2) {
-            button_layout.push(tags.iter().map(std::string::ToString::to_string).collect());
+        // for tags in &suggested_tags.into_iter().chunks(2) {
+        //     button_layout.push(tags.collect());
+        // }
+        for tag in suggested_tags.into_iter() {
+            if let Some(last) = button_layout.last_mut() {
+                let width: usize = last.iter().map(|tag| tag.len()).sum::<usize>() + tag.len(); // add tag in consideration to final width
+                let width = width + (last.len() ) * 2; // gap
+                if width <= 32 {
+                    last.push(tag);
+                    continue;
+                }
+            }
+
+            button_layout.push(vec![tag]);
         }
 
         let mut keyboard = add_sticker_main_menu(
             sticker_unique_id,
-            button_layout_to_keyboard_layout(button_layout, current_tags, sticker_unique_id),
+            button_layout_to_keyboard_layout(button_layout, current_tags, sticker_unique_id, tag_manager),
         );
         keyboard.push(vec![
             InlineKeyboardButton::switch_inline_query_current_chat(
@@ -945,12 +948,13 @@ fn button_layout_to_keyboard_layout(
     button_layout: Vec<Vec<String>>,
     current_tags: &[String],
     sticker_unique_id: &str,
+    tag_manager: Arc<TagManager>,
 ) -> Vec<Vec<InlineKeyboardButton>> {
     let keyboard = button_layout
         .iter()
         .map(|row| {
             row.iter()
-                .map(|tag| tag_to_button(tag, current_tags, sticker_unique_id))
+                .map(|tag| tag_to_button(tag, current_tags, sticker_unique_id, tag_manager.clone()))
                 .collect()
         })
         .collect();
@@ -961,6 +965,7 @@ fn tag_to_button(
     tag: &str,
     current_tags: &[String],
     sticker_unique_id: &str,
+    tag_manager: Arc<TagManager>,
 ) -> InlineKeyboardButton {
     let is_already_tagged = current_tags.contains(&tag.to_string());
     let callback_data = if is_already_tagged {
@@ -969,7 +974,9 @@ fn tag_to_button(
         CallbackData::tag_sticker(sticker_unique_id, tag.to_string())
     };
     let text = if is_already_tagged {
-        format!("✅ {}", tag.to_owned())
+        // format!("✅ {}", tag.to_owned())
+        let emoji = tag_manager.get_category(tag).map(|c| c.to_emoji()).unwrap_or("✅");
+        format!("{} {}", emoji, tag.to_owned())
     } else {
         tag.to_owned()
     };

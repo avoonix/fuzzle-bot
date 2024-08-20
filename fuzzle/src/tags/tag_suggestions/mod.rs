@@ -1,4 +1,3 @@
-mod defaults;
 mod implied;
 mod rules;
 mod same_set_tags;

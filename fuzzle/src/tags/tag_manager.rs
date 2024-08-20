@@ -572,14 +572,14 @@ impl Category {
     #[must_use]
     pub const fn to_emoji(self) -> &'static str {
         match self {
-            Self::General => "⬜",
-            Self::Artist => "🟧",
-            Self::Character => "🟩",
-            Self::Species => "🟥",
-            Self::Lore => "🟫",
-            Self::Copyright => "🟪",
+            Self::General => "⚪️",
+            Self::Artist => "🟠",
+            Self::Character => "🟢",
+            Self::Species => "🔴",
+            Self::Lore => "🟤",
+            Self::Copyright => "🟣",
 
-            Self::Meta | Self::Rating => "⬛",
+            Self::Meta | Self::Rating => "⚫",
         }
     }
 

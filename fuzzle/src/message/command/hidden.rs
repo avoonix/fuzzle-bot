@@ -388,7 +388,8 @@ impl HiddenCommand {
                             &suggested_tags,
                             is_locked,
                             request_context.is_continuous_tag_state(),
-                        ))
+        request_context.tag_manager.clone(),
+    ))
                         .await?;
                 } else {
                     request_context

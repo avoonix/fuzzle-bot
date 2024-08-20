@@ -12,7 +12,6 @@ use tracing::Instrument;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use super::defaults::suggest_default_tags;
 use super::image_tag_similarity::suggest_closest_tags;
 use super::implied::suggest_tags_by_reverse_implication;
 use super::rules::get_default_rules;
@@ -90,8 +89,6 @@ pub async fn suggest_tags(
         // static_rule_based_emoji_and_set_name:
             get_default_rules() // TODO: those are re-parsed every time!
                 .suggest_tags(emojis, &set.title.unwrap_or_default(), &set.id),
-        // static_default_tags: 
-        suggest_default_tags(),
     ];
     Ok(combine_suggestions_alt_1(
         suggestions,
@@ -235,6 +232,8 @@ fn combine_suggestions_alt_1(
         }
     }
 
+    let all_tags = filter(all_tags, sticker_tags.clone());
+
     let mut limits = HashMap::new();
     limits.insert(Category::General, 15);
     limits.insert(Category::Species, 5);
@@ -259,4 +258,31 @@ fn combine_suggestions_alt_1(
         // .map(|suggestion| suggestion.tag)
         .collect_vec();
     result
+}
+
+fn filter(mut all_tags: HashMap<String, i32>, sticker_tags: Vec<String>
+) -> HashMap<String, i32> {
+    let default_tags = [
+        "ych_(character)",
+        "questionable",
+        "explicit",
+        "safe",
+        "solo",
+        "diaper",
+        "duo",
+        "watersports",
+        "young",
+        "vore",
+        "scat",
+        "gore",
+        "attribution",
+        "male",
+        "female",
+        "ambiguous_gender"
+    ];
+    for tag in default_tags {
+        all_tags.entry(tag.to_string()).or_default(); // add default tags with score 0
+    }
+
+    all_tags
 }
