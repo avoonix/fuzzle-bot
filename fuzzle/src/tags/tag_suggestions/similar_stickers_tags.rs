@@ -9,8 +9,10 @@ pub async fn suggest_tags_from_similar_stickers(
     database: &Database,
     vector_db: &VectorDatabase,
     file_hash: &str,
+    score_threshold: f32,
+    limit: u64,
 ) -> Result<Vec<ScoredTagSuggestion>, BotError> {
-    let result = vector_db.find_similar_stickers(&[file_hash.to_string()], &[], crate::inline::SimilarityAspect::Embedding, 0.9, 30, 0).await;
+    let result = vector_db.find_similar_stickers(&[file_hash.to_string()], &[], crate::inline::SimilarityAspect::Embedding, score_threshold, limit, 0).await;
     let Some(result) = (match result {
         Ok(res) => res,
         Err(err) => {

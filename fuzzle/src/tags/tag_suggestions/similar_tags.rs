@@ -15,7 +15,7 @@ pub async fn suggest_similar_tags(
     tag_manager: Arc<TagManager>,
     tags: &[String],
 ) -> Result<Vec<ScoredTagSuggestion>, BotError> {
-    if tags.len() <= 2 || tags.len() >= 30 {
+    if tags.len() < 2 || tags.len() >= 30 {
         return Ok(vec![]);
     }
     let result = vector_db.recommend_tags_from_existing_tags(tags).await?;

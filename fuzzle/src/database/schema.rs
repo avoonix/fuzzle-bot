@@ -114,7 +114,6 @@ diesel::table! {
 diesel::joinable!(sticker_file -> user (tags_locked_by_user_id));
 diesel::joinable!(sticker_file_tag -> sticker_file (sticker_file_id));
 diesel::joinable!(sticker_file_tag -> user (added_by_user_id));
-diesel::joinable!(sticker_file_tag -> sticker (sticker_file_id));
 diesel::joinable!(sticker_file_tag_history -> sticker_file (sticker_file_id));
 diesel::joinable!(merged_sticker -> user (created_by_user_id));
 diesel::joinable!(tag -> user (created_by_user_id));

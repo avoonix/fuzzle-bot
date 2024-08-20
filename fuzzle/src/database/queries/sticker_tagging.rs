@@ -217,8 +217,8 @@ impl Database {
         &self,
     ) -> Result<Vec<(Emoji, String, i64)>, DatabaseError> {
         let result: Vec<(String, String, i64)> = sticker_file_tag::table
-            .inner_join(sticker::table)
-            .group_by((
+        .inner_join(sticker::table.on(sticker::sticker_file_id.eq(sticker_file_tag::sticker_file_id)))
+        .group_by((
                 // TODO: possible to use regular field selectors?
                 sql::<diesel::sql_types::Text>("sticker.emoji"),
                 sql::<diesel::sql_types::Text>("sticker_file_tag.tag"),
