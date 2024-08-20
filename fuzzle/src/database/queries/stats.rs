@@ -26,6 +26,7 @@ impl Database {
         let conn = &mut self.pool.get()?;
         let favorites: i64 = sticker_user::table
             .filter(sticker_user::is_favorite.eq(true))
+            .filter(sticker_user::user_id.eq(user_id))
             .select(count_star())
             .first(conn)?;
         Ok(PersonalStats { favorites })
