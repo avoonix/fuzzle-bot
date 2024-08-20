@@ -63,9 +63,6 @@ pub async fn import_all_stickers_from_set(
         }
     };
 
-    let creator_id = decode_sticker_set_id(set.__custom__id.clone())?.owner_id;
-    database.__temp__add_sticker_pack_creator(&set.name, creator_id).await?;
-
     if !set.is_regular() {
         database.delete_sticker_set(&set.name).await?;
         return Ok(()); // ignore custom emojis as the bot is unable to send those
@@ -185,8 +182,10 @@ async fn fetch_sticker_set_and_save_to_db(
 ) -> Result<(), InternalError> {
     // TODO: result should be how many stickers were added/removed/updated
 
+    let creator_id = decode_sticker_set_id(set.__custom__id.clone())?.owner_id;
+
     database
-        .upsert_sticker_set_with_title(&set.name, &set.title)
+        .upsert_sticker_set_with_title_and_creator(&set.name, &set.title, creator_id, None)
         .await?;
     let saved_stickers = database.get_all_stickers_in_set(&set.name).await?;
 

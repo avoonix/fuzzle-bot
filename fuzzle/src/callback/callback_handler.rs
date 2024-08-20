@@ -213,6 +213,16 @@ pub async fn callback_handler(
 ) -> Result<(), BotError> {
     let data: CallbackData = q.data.clone().unwrap_or_default().try_into()?;
     match data {
+        CallbackData::Privacy(privacy) => {
+            answer_callback_query(
+                request_context,
+                q,
+                Some(Text::privacy(privacy.unwrap_or_default())),
+                Some(Keyboard::privacy(privacy.unwrap_or_default())),
+                None,
+            )
+            .await
+        }
         CallbackData::CreateTag => {
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
@@ -466,10 +476,14 @@ pub async fn callback_handler(
                 .database
                 .get_general_user_stats(20)
                 .await?;
+            let aggregated_stats = request_context
+                .database
+                .get_aggregated_user_stats()
+                .await?;
             answer_callback_query(
                 request_context.clone(),
                 q,
-                Some(Text::general_user_stats()),
+                Some(Text::general_user_stats(aggregated_stats)),
                 Some(Keyboard::general_user_stats(stats)),
                 None,
             )

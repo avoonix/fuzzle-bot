@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use crate::database::model::Stats;
 use crate::database::AddedRemoved;
 use crate::database::AdminStats;
+use crate::database::AggregatedUserStats;
 use crate::database::FullUserStats;
 use crate::database::PersonalStats;
 use crate::database::UserStats;
@@ -223,5 +224,15 @@ impl Database {
         Ok(sql_query("select created_by_user_id as user_id, count(*) as set_count from sticker_set where user_id is not null group by created_by_user_id order by set_count desc limit ?1;")
                                 .bind::<BigInt, _>(n)
             .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_aggregated_user_stats(&self) -> Result<AggregatedUserStats, DatabaseError> {
+        let unique_sticker_owners = sticker_set::table
+            .select(count_distinct(sticker_set::created_by_user_id))
+            .first(&mut self.pool.get()?)?;
+        Ok(AggregatedUserStats {
+            unique_sticker_owners,
+        })
     }
 }

@@ -3,11 +3,10 @@ use std::collections::HashMap;
 use crate::{
     callback::TagOperation,
     database::{
-        AddedRemoved, AdminStats, FullUserStats, PersonalStats, PopularTag, Stats, StickerChange,
-        StickerSet, UserSettings, UserStats, UserStickerStat,
+        AddedRemoved, AdminStats, AggregatedUserStats, FullUserStats, PersonalStats, PopularTag, Stats, StickerChange, StickerSet, UserSettings, UserStats, UserStickerStat
     },
     message::{
-        admin_command_description, escape_sticker_unique_id_for_command, user_command_description,
+        admin_command_description, escape_sticker_unique_id_for_command, user_command_description, PrivacyPolicy,
     },
     tags::Category,
     util::{format_relative_time, Emoji},
@@ -80,20 +79,20 @@ Current Order: {order}
             })
             .collect_vec()
             .join("\n");
-        Markdown::new(format!("Popular Tags: \n{tags_str}"))
+        Markdown::new(format!("🏷 *Most Used Tags*\n\n{tags_str}"))
     }
 
     #[must_use]
     pub fn general_stats(stats: Stats) -> Markdown {
         Markdown::new(format!(
-            "Sets: {}\nStickers: {}\nTagged Stickers: {}\nTaggings: {}",
+            "🌐 *General Stats*\n\nSets: {}\nStickers: {}\nTagged Stickers: {}\nTaggings: {}",
             stats.sets, stats.stickers, stats.tagged_stickers, stats.taggings
         ))
     }
 
     #[must_use]
     pub fn personal_stats(stats: PersonalStats, set_count: i64) -> Markdown {
-        Markdown::new(format!("Favorites: {}\nTracked Sets: {set_count}", stats.favorites))
+        Markdown::new(format!("👤 *Personal Stats*\n\nFavorites: {}\nOwned Sets: {set_count}", stats.favorites))
     }
 
     #[must_use]
@@ -111,13 +110,13 @@ Current Order: {order}
             })
             .collect_vec()
             .join("\n"); // TODO: add relative age (eg "added 10h ago")
-        Markdown::new(format!("Latest Sets:\n{sets_str}"))
+        Markdown::new(format!("🗂️ *New Sets*\n\n{sets_str}"))
     }
 
     #[must_use]
-    pub fn general_user_stats() -> Markdown {
+    pub fn general_user_stats(stats: AggregatedUserStats) -> Markdown {
         // TODO: add aggregate stats (eg total number of unique users)
-        Markdown::new(format!("User Stats"))
+        Markdown::new(format!("👥 *User Stats*\n\nUnique sticker owners: {}", stats.unique_sticker_owners))
     }
 
     #[must_use]
@@ -134,7 +133,7 @@ Current Order: {order}
             })
             .collect_vec()
             .join("\n");
-        Markdown::new(format!("Latest Stickers:\n{sets_str}"))
+        Markdown::new(format!("✨️ *New Stickers*\n\n{sets_str}"))
     }
 
     #[must_use]
@@ -382,6 +381,11 @@ Tags that will be removed:
     #[must_use]
     pub fn get_set_article_link(set_id: &str, set_title: &str) -> Markdown {
         Markdown::new(format_set_as_markdown_link(set_id, set_title))
+    }
+
+    #[must_use]
+    pub fn privacy(section: PrivacyPolicy) -> Markdown {
+        Markdown::new(section.text())
     }
 }
 

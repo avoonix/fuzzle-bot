@@ -48,24 +48,28 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn upsert_sticker_set_with_title(
+    pub async fn upsert_sticker_set_with_title_and_creator(
         &self,
         id: &str,
         title: &str,
+        created_by_user_id: i64,
+        added_by_user_id: Option<i64>, // only set if the set is new, not updated
     ) -> Result<(), DatabaseError> {
         self.pool.get()?.immediate_transaction(|conn| {
             self.check_removed(id, conn)?;
             insert_into(sticker_set::table)
-                .values((sticker_set::id.eq(id), sticker_set::title.eq(title)))
+                .values((sticker_set::id.eq(id), sticker_set::title.eq(title), sticker_set::created_by_user_id.eq(created_by_user_id),
+                sticker_set::added_by_user_id.eq(added_by_user_id)
+            ))
                 .on_conflict(sticker_set::id)
                 .do_update()
-                .set(sticker_set::title.eq(excluded(sticker_set::title)))
+                .set((sticker_set::title.eq(excluded(sticker_set::title)), sticker_set::created_by_user_id.eq(created_by_user_id)))
                 .execute(conn)?;
             Ok(())
         })
     }
 
-    /// title is sometimes not known immediately
+    /// title and creator is sometimes not known immediately
     /// does not update last_fetched
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn upsert_sticker_set(
@@ -85,18 +89,6 @@ impl Database {
                 .execute(conn)?;
             Ok(())
         })
-    }
-
-    #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn __temp__add_sticker_pack_creator(
-        &self,
-        set_id: &str,
-        creator_id: i64,
-    ) -> Result<(), DatabaseError> {
-        update(sticker_set::table.find(set_id))
-            .set(sticker_set::created_by_user_id.eq(Some(creator_id)))
-            .execute(&mut self.pool.get()?)?;
-        Ok(())
     }
 
     fn check_removed(
@@ -215,6 +207,7 @@ impl Database {
         Ok(sticker_set::table
             .filter(sticker_set::created_by_user_id.eq(user_id))
             .select(StickerSet::as_select())
+            .order_by(sticker_set::created_at.desc())
             .limit(limit)
             .offset(offset)
             .load(&mut self.pool.get()?)?)

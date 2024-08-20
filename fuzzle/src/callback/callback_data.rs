@@ -14,6 +14,7 @@ use std::fmt::Display;
 
 use crate::database::StickerOrder;
 
+use crate::message::PrivacyPolicy;
 use crate::tags::Category;
 use crate::util::{sticker_id_literal, tag_literal};
 
@@ -77,6 +78,7 @@ pub enum CallbackData {
     UserInfo(u64),
     SetOrder(StickerOrder),
     SetCategory(Option<Category>),
+    Privacy(Option<PrivacyPolicy>),
 
      OwnerPage {
         sticker_id: String,
@@ -171,6 +173,7 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
             parse_user_info_data,
             parse_order_data,
             parse_set_category,
+            parse_privacy_policy,
             parse_remove_alias,
             parse_lock_data,
             parse_recommend_sticker,
@@ -350,6 +353,13 @@ fn parse_set_category(input: &str) -> IResult<&str, CallbackData> {
     ))(input)
 }
 
+fn parse_privacy_policy(input: &str) -> IResult<&str, CallbackData> {
+    
+        map(preceded(tag("ppolicy;"), u8), |p| {
+            CallbackData::Privacy(PrivacyPolicy::from_u8(p))
+        })(input)
+}
+
 fn parse_remove_alias(input: &str) -> IResult<&str, CallbackData> {
     map(preceded(tag("ras;"), tag_literal), |tag| {
         CallbackData::RemoveAlias(tag.to_string())
@@ -478,6 +488,13 @@ impl Display for CallbackData {
                     None => "none".to_string(),
                 };
                 write!(f, "cat;{category}")
+            }
+            Self::Privacy(pp) => {
+                let pp = match pp {
+                    Some(pp) => pp.to_u8().unwrap_or_default().to_string(),
+                    None => "0".to_string(),
+                };
+                write!(f, "ppolicy;{pp}")
             }
             Self::SetLock { lock, sticker_id } => {
                 let lock = if *lock { "lock" } else { "unlock" };

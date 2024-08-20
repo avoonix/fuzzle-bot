@@ -13,6 +13,8 @@ use itertools::Itertools;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, LoginUrl, UserId};
 use url::Url;
 
+use super::PrivacyPolicy;
+
 pub struct Keyboard;
 
 impl Keyboard {
@@ -453,10 +455,7 @@ impl Keyboard {
     #[must_use]
     pub fn general_stats() -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![
-            vec![
-                InlineKeyboardButton::callback("⬅️ User Stats", CallbackData::UserStats),
-                InlineKeyboardButton::callback("Personal Stats ➡️", CallbackData::PersonalStats),
-            ],
+            stat_tabs(StatTab::General),
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("Stickers with most duplicates"),
                 InlineQueryData::most_duplicated_stickers(),
@@ -470,39 +469,28 @@ impl Keyboard {
 
     #[must_use]
     pub fn personal_stats(user_id: i64) -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new(vec![vec![
-            InlineKeyboardButton::callback("⬅️ General Stats", CallbackData::GeneralStats),
-            InlineKeyboardButton::callback("Popular Tags ➡️", CallbackData::PopularTags),
-        ],
-        vec![InlineKeyboardButton::switch_inline_query_current_chat(
-            "My sets",
-            InlineQueryData::SetsByUserId{ user_id: user_id },
-        )]
+        InlineKeyboardMarkup::new(vec![
+            stat_tabs(StatTab::Personal),
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                "My sets",
+                InlineQueryData::SetsByUserId { user_id: user_id },
+            )],
         ])
     }
 
     #[must_use]
     pub fn popular_tags() -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new([[
-            InlineKeyboardButton::callback("⬅️ Personal Stats", CallbackData::PersonalStats),
-            InlineKeyboardButton::callback("Latest Sets ➡️", CallbackData::LatestSets),
-        ]])
+        InlineKeyboardMarkup::new([stat_tabs(StatTab::Popular)])
     }
 
     #[must_use]
     pub fn latest_sets() -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new([[
-            InlineKeyboardButton::callback("⬅️ Popular Tags", CallbackData::PopularTags),
-            InlineKeyboardButton::callback("Latest Stickers ➡️", CallbackData::LatestStickers),
-        ]])
+        InlineKeyboardMarkup::new([stat_tabs(StatTab::LatestSets)])
     }
 
     #[must_use]
     pub fn latest_stickers(changes: Vec<StickerChange>) -> InlineKeyboardMarkup {
-        let mut markup = InlineKeyboardMarkup::new(vec![vec![
-            InlineKeyboardButton::callback("⬅️ Latest Sets", CallbackData::LatestSets),
-            InlineKeyboardButton::callback("User Stats ➡️", CallbackData::UserStats),
-        ]]);
+        let mut markup = InlineKeyboardMarkup::new(vec![stat_tabs(StatTab::LatestStickers)]);
         for change in changes {
             markup = markup.append_row(vec![
                 InlineKeyboardButton::switch_inline_query_current_chat(
@@ -517,17 +505,16 @@ impl Keyboard {
 
     #[must_use]
     pub fn general_user_stats(stats: Vec<UserStickerStat>) -> InlineKeyboardMarkup {
-        let mut markup = InlineKeyboardMarkup::new(vec![vec![
-            InlineKeyboardButton::callback("⬅️ Latest Stickers", CallbackData::LatestStickers),
-            InlineKeyboardButton::callback("General Stats ➡️", CallbackData::GeneralStats),
-        ]]);
+        let mut markup = InlineKeyboardMarkup::new(vec![stat_tabs(StatTab::User)]);
         for stat in stats.chunks(2) {
-            markup = markup.append_row(stat.into_iter().map(|stat|
+            markup = markup.append_row(stat.into_iter().map(|stat| {
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     format!("Unknown User ({} Sets)", stat.set_count), // TODO: some users are known - display those names?
-                    InlineQueryData::SetsByUserId{ user_id: stat.user_id },
-                ),
-            ));
+                    InlineQueryData::SetsByUserId {
+                        user_id: stat.user_id,
+                    },
+                )
+            }));
         }
 
         markup
@@ -543,24 +530,22 @@ impl Keyboard {
 
     #[must_use]
     pub fn info() -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new([[InlineKeyboardButton::callback(
-            "🔙 Help",
-            CallbackData::Help,
-        )]])
+        let mut keyboard = vec![vec![InlineKeyboardButton::callback(
+            "🔙 Start",
+            CallbackData::Start,
+        )]];
+        keyboard.extend(help_tabs(HelpTab::Other));
+        InlineKeyboardMarkup::new(keyboard)
     }
 
     #[must_use]
     pub fn make_help_keyboard() -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new([
-            [InlineKeyboardButton::callback(
-                "🔙 Start",
-                CallbackData::Start,
-            )],
-            [InlineKeyboardButton::callback(
-                "Other Info",
-                CallbackData::Info,
-            )],
-        ])
+        let mut keyboard = vec![vec![InlineKeyboardButton::callback(
+            "🔙 Start",
+            CallbackData::Start,
+        )]];
+        keyboard.extend(help_tabs(HelpTab::Commands));
+        InlineKeyboardMarkup::new(keyboard)
     }
 
     #[must_use]
@@ -702,13 +687,7 @@ impl Keyboard {
         let now = chrono::Utc::now().naive_utc();
 
         InlineKeyboardMarkup::new(vec![
-            vec![InlineKeyboardButton::callback(
-                "🔙 Set",
-                CallbackData::Sticker {
-                    sticker_id: sticker_id.to_string(),
-                    operation: None,
-                },
-            )],
+            sticker_tabs(StickerTab::Set, sticker_id),
             vec![InlineKeyboardButton::callback(
                 format!("🗓️ Set added {}", format_relative_time(created_at)),
                 CallbackData::NoAction,
@@ -739,30 +718,25 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn owner_page(
-        sticker_id: &str,
-        user_id: i64,
-        set_count: i64,
-    ) -> InlineKeyboardMarkup {
+    pub fn owner_page(sticker_id: &str, user_id: i64, set_count: i64) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![
-            vec![InlineKeyboardButton::callback(
-                "🔙 Owner",
-                CallbackData::Sticker {
-                    sticker_id: sticker_id.to_string(),
-                    operation: None,
-                },
-            )],
+            sticker_tabs(StickerTab::Owner, sticker_id),
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("{} sets owned by this user", set_count), // TODO: some users are known - display those names?
-                InlineQueryData::SetsByUserId{ user_id: user_id },
+                InlineQueryData::SetsByUserId { user_id: user_id },
             )],
-            vec![InlineKeyboardButton::url(
-                format!("Show user if known (Android)"),
-                Url::parse(format!("tg://openmessage?user_id={}", user_id).as_str()).expect("url to be valid"),
-            ),InlineKeyboardButton::url(
-                format!("Show user if known (iOS)"),
-                Url::parse(format!("https://t.me/@id{}", user_id).as_str()).expect("url to be valid"),
-            )]
+            vec![
+                InlineKeyboardButton::url(
+                    format!("Show user if known (Android)"),
+                    Url::parse(format!("tg://openmessage?user_id={}", user_id).as_str())
+                        .expect("url to be valid"),
+                ),
+                InlineKeyboardButton::url(
+                    format!("Show user if known (iOS)"),
+                    Url::parse(format!("https://t.me/@id{}", user_id).as_str())
+                        .expect("url to be valid"),
+                ),
+            ],
         ])
     }
 
@@ -781,13 +755,7 @@ impl Keyboard {
         };
 
         InlineKeyboardMarkup::new([
-            vec![InlineKeyboardButton::callback(
-                "🔙 Sticker",
-                CallbackData::Sticker {
-                    sticker_id: sticker_id.to_string(),
-                    operation: None,
-                },
-            )],
+            sticker_tabs(StickerTab::Sticker, sticker_id),
             vec![InlineKeyboardButton::callback(
                 format!("🗓️ Sticker added {}", format_relative_time(created_at)),
                 CallbackData::NoAction,
@@ -829,35 +797,134 @@ impl Keyboard {
             // )],
         ])
     }
+
+
+    #[must_use]
+    pub fn privacy(section: PrivacyPolicy) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(privacy_tabs(section))
+    }
+
+
+    
+}
+
+#[derive(PartialEq)]
+enum StickerTab {
+    Owner,
+    Set,
+    Sticker,
+    Tags,
+}
+
+fn sticker_tabs(active: StickerTab, sticker_id: &str) -> Vec<InlineKeyboardButton> {
+    let tabs = vec![
+        (
+            StickerTab::Tags,
+            InlineKeyboardButton::callback(
+                "🏷 Tags",
+                CallbackData::Sticker {
+                    sticker_id: sticker_id.to_string(),
+                    operation: None,
+                },
+            ),
+        ),
+        (
+            StickerTab::Sticker,
+            InlineKeyboardButton::callback(
+                "✨️ Sticker",
+                CallbackData::StickerExplorePage {
+                    sticker_id: sticker_id.to_string(),
+                },
+            ),
+        ),
+        (
+            StickerTab::Set,
+            InlineKeyboardButton::callback(
+                "️🗂️ Set",
+                CallbackData::StickerSetPage {
+                    sticker_id: sticker_id.to_string(),
+                },
+            ),
+        ),
+        (
+            StickerTab::Owner,
+            InlineKeyboardButton::callback(
+                "️👤 Owner",
+                CallbackData::OwnerPage {
+                    sticker_id: sticker_id.to_string(),
+                },
+            ),
+        ),
+    ];
+
+    tabs.into_iter()
+        .map(|(tab, button)| {
+            let mut button = button;
+            if tab == active {
+                button.text = format!("▸ {} ◂", button.text);
+            }
+            button
+        })
+        .collect_vec()
+}
+
+#[derive(PartialEq)]
+enum StatTab {
+    General,
+    Personal,
+    Popular,
+    LatestSets,
+    LatestStickers,
+    User,
+}
+
+fn stat_tabs(active: StatTab) -> Vec<InlineKeyboardButton> {
+    let tabs = vec![
+        (
+            StatTab::General,
+            InlineKeyboardButton::callback("🌐", CallbackData::GeneralStats),
+        ),
+        (
+            StatTab::Personal,
+            InlineKeyboardButton::callback("👤", CallbackData::PersonalStats),
+        ),
+        (
+            StatTab::Popular,
+            InlineKeyboardButton::callback("🏷", CallbackData::PopularTags),
+        ),
+        (
+            StatTab::LatestSets,
+            InlineKeyboardButton::callback("🗂️", CallbackData::LatestSets),
+        ),
+        (
+            StatTab::LatestStickers,
+            InlineKeyboardButton::callback("✨️", CallbackData::LatestStickers),
+        ),
+        (
+            StatTab::User,
+            InlineKeyboardButton::callback("👥", CallbackData::UserStats),
+        ),
+    ];
+
+    tabs.into_iter()
+        .map(|(tab, button)| {
+            let mut button = button;
+            if tab == active {
+                button.text = format!("▸ {} ◂", button.text);
+            }
+            button
+        })
+        .collect_vec()
 }
 
 fn add_sticker_main_menu(
     sticker_id: &str,
     other_buttons: Vec<Vec<InlineKeyboardButton>>,
 ) -> Vec<Vec<InlineKeyboardButton>> {
-    vec![vec![
-        InlineKeyboardButton::callback(
-            "️👤 Owner",
-            CallbackData::OwnerPage {
-                sticker_id: sticker_id.to_string(),
-            },
-        ),
-        InlineKeyboardButton::callback(
-            "️🗂️ Set",
-            CallbackData::StickerSetPage {
-                sticker_id: sticker_id.to_string(),
-            },
-        ),
-        InlineKeyboardButton::callback(
-            "✨️ Sticker",
-            CallbackData::StickerExplorePage {
-                sticker_id: sticker_id.to_string(),
-            },
-        ),
-    ]]
-    .into_iter()
-    .chain(other_buttons)
-    .collect_vec()
+    vec![sticker_tabs(StickerTab::Tags, sticker_id)]
+        .into_iter()
+        .chain(other_buttons)
+        .collect_vec()
 }
 
 fn user_button(user_id: UserId) -> InlineKeyboardButton {
@@ -927,4 +994,57 @@ fn favorite_button(is_favorite: bool, sticker_id: &str) -> InlineKeyboardButton 
             },
         )
     }
+}
+
+#[derive(PartialEq)]
+enum HelpTab {
+    Commands,
+    Other,
+}
+
+fn help_tabs(active: HelpTab) -> Vec<Vec<InlineKeyboardButton>> {
+    // vertical tabs
+    let tabs = vec![
+        (
+            HelpTab::Commands,
+            InlineKeyboardButton::callback("Commands", CallbackData::Help),
+        ),
+        (
+            HelpTab::Other,
+            InlineKeyboardButton::callback("Other Infos", CallbackData::Info),
+        )
+    ];
+
+    tabs.into_iter()
+        .map(|(tab, button)| {
+            let mut button = button;
+            if tab == active {
+                button.text = format!("▸ {} ◂", button.text);
+            }
+            vec![button]
+        })
+        .collect_vec()
+}
+
+fn privacy_tabs(active: PrivacyPolicy) -> Vec<Vec<InlineKeyboardButton>> {
+    // vertical tabs
+    let tabs = vec![
+        PrivacyPolicy::Introduction,
+        PrivacyPolicy::License,
+        PrivacyPolicy::DataCollection,
+        PrivacyPolicy::DataUsage
+    ].into_iter().map(|tab| (
+        tab,
+        InlineKeyboardButton::callback(tab.title(), CallbackData::Privacy(Some(tab)))
+    ));
+
+    tabs.into_iter()
+        .map(|(tab, button)| {
+            let mut button = button;
+            if tab == active {
+                button.text = format!("▸ {} ◂", button.text);
+            }
+            vec![button]
+        })
+        .collect_vec()
 }

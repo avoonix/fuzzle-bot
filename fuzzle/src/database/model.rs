@@ -290,3 +290,8 @@ pub struct UserStickerStat {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub set_count: i64,
 }
+
+#[derive(Debug)]
+pub struct AggregatedUserStats {
+    pub unique_sticker_owners: i64,
+}

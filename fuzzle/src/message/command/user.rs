@@ -13,6 +13,7 @@ use tracing::warn;
 
 use teloxide::{prelude::*, utils::command::BotCommands};
 
+use super::privacy::PrivacyPolicy;
 use super::StartParameter;
 
 #[derive(BotCommands, Debug, Clone, Copy)]
@@ -44,6 +45,9 @@ pub enum RegularCommand {
 
     #[command(description = "display help text")]
     Help,
+
+    #[command(description = "show privacy information")]
+    Privacy,
 }
 
 impl RegularCommand {
@@ -59,6 +63,13 @@ impl RegularCommand {
         request_context: RequestContext,
     ) -> Result<(), BotError> {
         match self {
+            Self::Privacy => {
+                request_context
+                    .bot
+                    .send_markdown(msg.chat.id, Text::privacy(PrivacyPolicy::Introduction))
+                    .reply_markup(Keyboard::privacy(PrivacyPolicy::Introduction))
+                    .await?;
+            }
             Self::Help => {
                 request_context
                     .bot

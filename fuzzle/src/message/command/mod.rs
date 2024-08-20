@@ -3,6 +3,7 @@ mod hidden;
 mod start_parameter;
 mod user;
 mod util;
+mod privacy;
 
 pub use start_parameter::StartParameter;
 
@@ -11,6 +12,7 @@ pub use hidden::HiddenCommand;
 use teloxide::{types::BotCommand, utils::command::BotCommands};
 pub use user::{RegularCommand, send_sticker_with_tag_input};
 pub use util::*;
+pub use privacy::*;
 
 pub fn list_visible_admin_commands() -> Vec<BotCommand> {
     AdminCommand::list_visible()
