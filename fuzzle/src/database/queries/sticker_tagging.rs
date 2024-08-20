@@ -193,6 +193,7 @@ impl Database {
                         .select((sticker::sticker_file_id)),
                 ),
             )
+            .order_by(count_star().desc())
             .load(&mut self.pool.get()?)?)
     }
 

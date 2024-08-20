@@ -278,6 +278,8 @@ impl VectorDatabase {
     pub async fn find_stickers_given_vector(
         &self,
         clip_vector: Vec<f32>,
+        limit: u64,
+        offset: u64,
     ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
         let search_result = self
             .client
@@ -285,7 +287,8 @@ impl VectorDatabase {
                 collection_name: STICKER_COLLECTION_NAME.into(),
                 vector: clip_vector.into(),
                 vector_name: Some("clip".to_string()),
-                limit: 50,
+                limit,
+                offset: Some(offset),
                 with_payload: Some(true.into()),
                 ..Default::default()
             })

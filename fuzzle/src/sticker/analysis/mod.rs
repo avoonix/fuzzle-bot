@@ -24,15 +24,17 @@ pub async fn find_with_text_embedding(
     database: Database,
     text: String,
     vector_db: VectorDatabase,
-    n: usize,
     config: Arc<Config>,
-) -> Result<Vec<Match>, BotError> {
+    limit: usize,
+    offset: usize,
+) -> Result<(Vec<Match>, usize), BotError> {
     let query_embedding = text_to_clip_embedding(text, config.inference_url.clone()).await?;
 
     let file_hashes = vector_db
-        .find_stickers_given_vector(query_embedding.into())
+        .find_stickers_given_vector(query_embedding.into(), limit as u64, offset as u64)
         .await?;
-    with_sticker_id(database, file_hashes).await
+    let len = file_hashes.len();
+    Ok((with_sticker_id(database, file_hashes).await?, len))
 }
 
 #[tracing::instrument(skip(database))]
@@ -75,7 +77,7 @@ pub async fn compute_similar(
     aspect: SimilarityAspect,
     limit: u64,
     offset: u64,
-) -> Result<Vec<Match>, BotError> {
+) -> Result<(Vec<Match>, usize), BotError> {
     let sticker = request_context.database.get_sticker_by_id(&sticker_id).await?.required()?;
     let score_threshold = 0.0;
 
@@ -86,20 +88,12 @@ pub async fn compute_similar(
     let file_hashes = match file_hashes {
     Some(hashes) => hashes,
     None => {
-        request_context.process_sticker_set(sticker.sticker_set_id, false).await;
+        request_context.process_sticker_set(sticker.sticker_set_id, false).await; // dispatch in background - otherwise the query would take too long if the set is large
         return Err(UserError::VectorNotFound.into());
     }};
-        // .required()?;
-    // TODO: if the vector is not in the database, embed and insert it
 
-    with_sticker_id(request_context.database.clone(), file_hashes).await
-    // worker
-    //     .execute(Retrieve::new(
-    //         query_embedding.into(),
-    //         n,
-    //         SimilarityAspect::Embedding,
-    //     ))
-    //     .await
+    let len = file_hashes.len();
+    Ok((with_sticker_id(request_context.database.clone(), file_hashes).await?, len))
 }
 
 #[tracing::instrument(skip(database, bot, config, vector_db), err(Debug))]

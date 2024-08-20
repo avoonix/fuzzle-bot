@@ -8,7 +8,7 @@ use crate::database::{self, min_max, DialogState, User};
 use crate::database::{Database, Sticker, StickerSet};
 use crate::inline::{InlineQueryData, SetOperation};
 use crate::message::{Keyboard, StartParameter};
-use crate::sticker::{compute_similar, find_with_text_embedding, with_sticker_id};
+use crate::sticker::{compute_similar, find_with_text_embedding, with_sticker_id, Match};
 use crate::tags::TagManager;
 use crate::text::{Markdown, Text};
 use crate::util::{create_sticker_set_id, create_tag_id, format_relative_time, Emoji, Required};
@@ -360,7 +360,7 @@ async fn handle_similar_sticker_query(
 ) -> Result<(), BotError> {
     // TODO: cache?
     // TODO: blacklist?
-    let result = compute_similar(
+    let (result, original_len) = compute_similar(
         request_context.clone(),
         sticker_unique_id,
         aspect,
@@ -386,11 +386,11 @@ async fn handle_similar_sticker_query(
         })
         .collect_vec();
 
-    require_some_results("stickers", current_offset, sticker_result.len())?;
+    require_some_results("stickers", current_offset, original_len)?;
     request_context
         .bot
         .answer_inline_query(q.id, sticker_result.clone())
-        .next_offset(current_offset.next_query_offset(sticker_result.len()))
+        .next_offset(current_offset.next_query_offset(original_len))
         .cache_time(0)
         .switch_pm_text(Text::switch_pm_text())
         .switch_pm_parameter(StartParameter::Greeting.to_string())
@@ -654,7 +654,7 @@ pub async fn inline_query_handler(
             handle_most_used_emojis(current_offset, q, request_context).await
         }
         InlineQueryData::ListRecommendationModeRecommendations => {
-            handle_recommendations(current_offset, q, request_context).await
+            get_recommended_stickers_in_recommender_mode(current_offset, q, request_context).await
         }
         InlineQueryData::ListAllSetsThatContainSticker { sticker_id } => {
             handle_sticker_contained_query(current_offset, sticker_id, q, request_context).await
@@ -663,7 +663,7 @@ pub async fn inline_query_handler(
             handle_overlapping_sets(current_offset, sticker_id, q, request_context).await
         }
         InlineQueryData::SetsByUserId { user_id } => {
-            handle_sets_by_user_id(current_offset, user_id, q, request_context).await
+            get_all_sticker_sets_owned_by_a_user(current_offset, user_id, q, request_context).await
         }
         InlineQueryData::ListSetStickersByDate { sticker_id } => {
             handle_stickers_by_date(current_offset, sticker_id, q, request_context).await
@@ -840,49 +840,19 @@ async fn handle_embedding_query(
 ) -> Result<(), BotError> {
     // TODO: cache?
     // TODO: blacklist?
-    let result = find_with_text_embedding(
+    let (matches, original_result_len) = find_with_text_embedding(
         request_context.database.clone(),
         query,
         request_context.vector_db,
-        current_offset.skip() + current_offset.page_size(),
         request_context.config.clone(),
+        current_offset.page_size(),
+        current_offset.skip(), 
     )
-    .await;
-    let result = match result {
-        Ok(result) => result,
-        // TODO: handle errors better
-        // Err(BotError::Embedding(embedding_error)) => {
-        //     warn!("{embedding_error:?}");
-        //     // TODO: use central error handler?
-        //     request_context
-        //         .bot
-        //         .answer_inline_query(q.id, vec![])
-        //         .await?;
-        //     request_context
-        //         .bot
-        //         .send_markdown(
-        //             Recipient::Id(q.from.id.into()),
-        //             Markdown::escaped(match embedding_error {
-        //                 crate::sticker::EmbeddingError::UnknownToken(token) => {
-        //                     format!("unknown token {token}")
-        //                 }
-        //                 _ => "an error occured".to_string(),
-        //             }),
-        //         )
-        //         .await?;
-        //     return Ok(());
-        // }
-        Err(err) => return Err(err),
-    };
-    let sticker_ids = result
-        .into_iter()
-        .map(|m| m.sticker_id)
-        .skip(current_offset.skip())
-        .take(current_offset.page_size())
-        .collect_vec();
+    .await?;
+
     let mut stickers = Vec::new();
-    for id in sticker_ids {
-        stickers.push(request_context.database.get_sticker_by_id(&id).await?); // TODO: single query?
+    for Match {sticker_id, ..} in matches {
+        stickers.push(request_context.database.get_sticker_by_id(&sticker_id).await?); // TODO: single query?
     }
 
     let sticker_result = stickers
@@ -897,11 +867,11 @@ async fn handle_embedding_query(
         })
         .collect_vec();
 
-    require_some_results("stickers", current_offset, sticker_result.len())?;
+    require_some_results("stickers", current_offset, original_result_len)?;
     request_context
         .bot
         .answer_inline_query(q.id, sticker_result.clone())
-        .next_offset(current_offset.next_query_offset(sticker_result.len()))
+        .next_offset(current_offset.next_query_offset(original_result_len))
         .cache_time(0)
         .switch_pm_text(Text::switch_pm_text())
         .switch_pm_parameter(StartParameter::Greeting.to_string())
@@ -1005,7 +975,7 @@ async fn handle_most_duplicated_stickers(
 }
 
 #[tracing::instrument(skip(q, request_context))]
-async fn handle_recommendations(
+async fn get_recommended_stickers_in_recommender_mode(
     current_offset: QueryPage,
     q: InlineQuery,
     request_context: RequestContext,
@@ -1040,6 +1010,7 @@ async fn handle_recommendations(
         )
         .await?
         .required()?;
+    let original_result_len = recommended_file_hashes.len();
 
     let recommended =
         with_sticker_id(request_context.database.clone(), recommended_file_hashes).await?;
@@ -1063,11 +1034,11 @@ async fn handle_recommendations(
         })
         .collect_vec();
 
-    require_some_results("stickers", current_offset, sticker_result.len())?;
+    require_some_results("stickers", current_offset, original_result_len)?;
     request_context
         .bot
         .answer_inline_query(q.id, sticker_result.clone())
-        .next_offset(current_offset.next_query_offset(0))
+        .next_offset(current_offset.next_query_offset(original_result_len))
         .cache_time(0)
         .switch_pm_text(Text::switch_pm_text())
         .switch_pm_parameter(StartParameter::Greeting.to_string())
@@ -1264,7 +1235,7 @@ async fn handle_user_sets(
     request_context
         .bot
         .answer_inline_query(q.id, articles)
-        .next_offset("")
+        .next_offset("") // TODO: paginate
         .cache_time(0) // in seconds // TODO: constant?
         .await?;
 
@@ -1331,7 +1302,7 @@ async fn handle_stickers_by_date(
 }
 
 #[tracing::instrument(skip(q, request_context))]
-async fn handle_sets_by_user_id(
+async fn get_all_sticker_sets_owned_by_a_user(
     current_offset: QueryPage,
     user_id: i64,
     q: InlineQuery,
