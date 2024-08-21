@@ -15,7 +15,10 @@ use std::sync::Arc;
 use super::image_tag_similarity::suggest_closest_tags;
 use super::implied::suggest_tags_by_reverse_implication;
 use super::rules::get_default_rules;
-use super::same_set_tags::suggest_tags_from_same_set;
+use super::same_set_tags::{
+    suggest_tags_from_same_set, suggest_tags_from_sets_with_same_owner,
+    suggest_tags_from_sets_with_same_sticker_file,
+};
 use super::similar_stickers_tags::suggest_tags_from_similar_stickers;
 use super::similar_tags::suggest_similar_tags;
 use super::ScoredTagSuggestion;
@@ -42,14 +45,20 @@ pub async fn suggest_tags(
     let emojis = database.get_sticker_emojis(sticker_id).await?;
 
     let suggestions = vec![
-        // db_based_sticker_tags_from_same_set: 
+        // db_based_sticker_tags_from_same_set:
         suggest_tags_from_same_set(&database, &set.id).await?,
-        // worker_based_tf_idf: 
+        suggest_tags_from_sets_with_same_sticker_file(&database, &sticker.sticker_file_id).await?,
+        if let Some(owner_id) = set.created_by_user_id {
+            suggest_tags_from_sets_with_same_owner(&database, owner_id).await?
+        } else {
+            vec![]
+        },
+        // worker_based_tf_idf:
         tagging_worker
             .execute(SuggestTags::new(sticker_id.to_string()))
             .await?,
-        // clip_and_db_based_tags_from_similar_stickers: 
-        suggest_tags_from_similar_stickers( 
+        // clip_and_db_based_tags_from_similar_stickers:
+        suggest_tags_from_similar_stickers(
             &database,
             &vector_db,
             &sticker.sticker_file_id,
@@ -66,20 +75,17 @@ pub async fn suggest_tags(
         )
         .await?,
         // clip_text_embedding_based_on_existing_tags:
-         suggest_similar_tags(
+        suggest_similar_tags(
             &database,
             &vector_db,
             tag_manager.clone(),
             sticker_tags.as_slice(),
         )
         .await?,
-        // tag_manager_based_reverse_implications: 
-        suggest_tags_by_reverse_implication(
-            &sticker_tags,
-            tag_manager.clone(),
-        ),
-        // image_to_tag_similarity_based: 
-        suggest_closest_tags( 
+        // tag_manager_based_reverse_implications:
+        suggest_tags_by_reverse_implication(&sticker_tags, tag_manager.clone()),
+        // image_to_tag_similarity_based:
+        suggest_closest_tags(
             &database,
             &vector_db,
             tag_manager.clone(),
@@ -87,8 +93,8 @@ pub async fn suggest_tags(
         )
         .await?,
         // static_rule_based_emoji_and_set_name:
-            get_default_rules() // TODO: those are re-parsed every time!
-                .suggest_tags(emojis, &set.title.unwrap_or_default(), &set.id),
+        get_default_rules() // TODO: those are re-parsed every time!
+            .suggest_tags(emojis, &set.title.unwrap_or_default(), &set.id),
     ];
     Ok(combine_suggestions_alt_1(
         suggestions,
@@ -241,7 +247,7 @@ fn combine_suggestions_alt_1(
 
     let result = all_tags
         .into_iter()
-        .sorted_unstable_by_key(|it| it.1)
+        .sorted_unstable_by_key(|it| -it.1)
         .map(|it| it.0)
         .filter(|suggestion| !sticker_tags.contains(&suggestion))
         .filter(|suggestion| {
@@ -260,8 +266,7 @@ fn combine_suggestions_alt_1(
     result
 }
 
-fn filter(mut all_tags: HashMap<String, i32>, sticker_tags: Vec<String>
-) -> HashMap<String, i32> {
+fn filter(mut all_tags: HashMap<String, i32>, sticker_tags: Vec<String>) -> HashMap<String, i32> {
     let default_tags = [
         "ych_(character)",
         "questionable",
@@ -278,7 +283,7 @@ fn filter(mut all_tags: HashMap<String, i32>, sticker_tags: Vec<String>
         "attribution",
         "male",
         "female",
-        "ambiguous_gender"
+        "ambiguous_gender",
     ];
     for tag in default_tags {
         all_tags.entry(tag.to_string()).or_default(); // add default tags with score 0

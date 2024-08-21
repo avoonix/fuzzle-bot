@@ -198,6 +198,53 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_all_sticker_set_tag_counts_by_sticker_file_id(
+        &self,
+        sticker_file_id: &str,
+    ) -> Result<Vec<(String, i64)>, DatabaseError> {
+        let (sticker1, sticker2) = diesel::alias!(sticker as sticker1, sticker as sticker2);
+
+        Ok(sticker_file_tag::table
+            .group_by(sticker_file_tag::tag)
+            .select((sticker_file_tag::tag, count_star()))
+            .filter(
+                sticker_file_tag::sticker_file_id.eq_any(
+                    sticker1
+                        .filter(sticker1.field(sticker::sticker_set_id).eq_any(
+                            sticker2
+                            .filter(sticker2.field(sticker::sticker_file_id).eq(&sticker_file_id))
+                            .select(sticker2.field(sticker::sticker_set_id))
+                        ))
+                        .select((sticker1.field(sticker::sticker_file_id))),
+                ),
+            )
+            .order_by(count_star().desc())
+            .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_all_sticker_set_tag_counts_by_owner_id(
+        &self,
+        owner_id: i64,
+    ) -> Result<Vec<(String, i64)>, DatabaseError> {
+        Ok(sticker_file_tag::table
+            .group_by(sticker_file_tag::tag)
+            .select((sticker_file_tag::tag, count_star()))
+            .filter(
+                sticker_file_tag::sticker_file_id.eq_any(
+                    sticker::table
+                        .filter(sticker::sticker_set_id.eq_any(
+                            sticker_set::table.filter(sticker_set::created_by_user_id.eq(owner_id))
+                            .select(sticker_set::id)
+                        ))
+                        .select((sticker::sticker_file_id)),
+                ),
+            )
+            .order_by(count_star().desc())
+            .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_popular_tags(&self, limit: i64) -> Result<Vec<PopularTag>, DatabaseError> {
         let tags = sticker_file_tag::table
             .group_by((sticker_file_tag::tag))
