@@ -5,6 +5,7 @@ mod sticker_tagging;
 mod user;
 mod export;
 mod tag;
+mod username;
 
 use std::{path::PathBuf, time::Duration};
 

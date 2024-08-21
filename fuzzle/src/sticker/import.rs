@@ -1,6 +1,7 @@
 use std::{future::IntoFuture, sync::Arc};
 
 use itertools::Itertools;
+use regex::Regex;
 use teloxide::requests::Requester;
 use tokio::task;
 use tracing::{info, warn, Instrument};
@@ -188,6 +189,11 @@ async fn fetch_sticker_set_and_save_to_db(
         .upsert_sticker_set_with_title_and_creator(&set.name, &set.title, creator_id, None)
         .await?;
     let saved_stickers = database.get_all_stickers_in_set(&set.name).await?;
+
+    let re = Regex::new(r"(\W|^)@([_a-zA-Z0-9]+)\b").unwrap();
+    for (_, [_, username]) in re.captures_iter(&set.title).map(|c| c.extract()) {
+        database.add_username(username).await?;
+    }
 
     let all_saved_sticker_file_hashes = saved_stickers
         .iter()

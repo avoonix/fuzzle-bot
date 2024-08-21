@@ -1,9 +1,5 @@
 use diesel::{
-    backend::Backend,
-    expression::AsExpression,
-    prelude::*,
-    serialize::{self, IsNull},
-    sqlite::Sqlite,
+    backend::Backend, deserialize::FromSqlRow, expression::AsExpression, prelude::*, serialize::{self, IsNull}, sqlite::Sqlite
 };
 use enum_primitive_derive::Primitive;
 use num_traits::{FromPrimitive, ToPrimitive};

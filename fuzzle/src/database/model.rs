@@ -191,6 +191,14 @@ pub enum StickerType {
     Static = 2,
 }
 
+
+#[derive(PartialEq, Debug, Copy, Clone, Primitive, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::BigInt)]
+pub enum UsernameKind {
+    User = 0,
+    Channel = 1,
+}
+
 macro_rules! impl_enum {
     ($type_name:ty) => {
         impl serialize::ToSql<diesel::sql_types::BigInt, Sqlite> for $type_name

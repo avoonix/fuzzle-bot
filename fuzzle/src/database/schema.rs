@@ -111,6 +111,15 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    username (tg_username) {
+        tg_username -> Text,
+        tg_id -> Nullable<BigInt>,
+        kind -> Nullable<BigInt>,
+        updated_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(sticker_file -> user (tags_locked_by_user_id));
 diesel::joinable!(sticker_file_tag -> sticker_file (sticker_file_id));
 diesel::joinable!(sticker_file_tag -> user (added_by_user_id));
@@ -136,4 +145,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     sticker_user,
     user,
     tag,
+    username,
 );

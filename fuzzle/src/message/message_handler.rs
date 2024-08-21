@@ -5,6 +5,7 @@ use nom::combinator::eof;
 use nom::combinator::map;
 use nom::sequence::tuple;
 use nom::{character::complete::multispace0, Finish};
+use regex::Regex;
 use teloxide::{
     dispatching::dialogue::GetChatId,
     payloads::{SendMessageSetters, SendPhotoSetters},
@@ -229,6 +230,57 @@ pub async fn message_handler(
     msg: Message,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
+    for user in msg.mentioned_users() {
+        if let Some(username) = &user.username {
+            request_context.database.add_username_details(username, crate::database::UsernameKind::User, user.id.0 as i64).await?;
+        }
+    }
+    if let Some (forward) = msg.forward_from_chat() {
+        let username = match forward.kind.clone() {
+            teloxide::types::ChatKind::Public(chat) => {
+                match chat.kind {
+                    teloxide::types::PublicChatKind::Channel(channel) => channel.username,
+                    teloxide::types::PublicChatKind::Group(group) => None,
+                    teloxide::types::PublicChatKind::Supergroup(supergroup) => supergroup.username,
+                }
+            },
+            teloxide::types::ChatKind::Private(chat) => chat.username,
+        };
+
+        if let Some(username) = username {
+            request_context.database.add_username_details(&username, crate::database::UsernameKind::Channel, forward.id.0 as i64).await?;
+        }
+    }
+    for entity in get_all_entities_from_message(&msg) {
+        let urls = get_all_urls_from_entities(vec![entity.clone()]);
+        for url in urls {
+            match url.host_str() {
+                Some("t.me") => {
+                    let path = url.path();
+                    let path = path.trim_start_matches("/")
+                        .trim_end_matches('/');
+                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$").unwrap().is_match(path);
+                    if matched {
+                        request_context.database.add_username(path).await?;
+                    }
+                }
+                _ => {},
+            }
+        }
+        match entity.kind() {
+            MessageEntityKind::Mention => {
+                let text = entity.text();
+                if text.starts_with("@") {
+                    let text = text.trim_start_matches("@");
+                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$").unwrap().is_match(text);
+                    if matched {
+                        request_context.database.add_username(text).await?;
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
     let potential_sticker_set_names = find_sticker_set_urls(&msg);
     if !potential_sticker_set_names.is_empty() {
         handle_sticker_sets(&msg, potential_sticker_set_names, request_context).await
@@ -237,8 +289,16 @@ pub async fn message_handler(
     } else if let Some(sticker) = msg.sticker() {
         handle_sticker_message(sticker, request_context, msg.clone()).await
     } else if let Some(shared_chat) = msg.shared_chat() {
+        if let Some(username) = &shared_chat.username {
+            request_context.database.add_username_details(&username, crate::database::UsernameKind::Channel, shared_chat.chat_id.0 as i64).await?;
+        }
         handle_shared_chat(&request_context, &msg, shared_chat).await
     } else if let Some(shared_users) = msg.shared_users() {
+        for user in &shared_users.users {
+            if let Some(username) = &user.username {
+                request_context.database.add_username_details(username, crate::database::UsernameKind::User, user.user_id.0 as i64).await?;
+            }
+        }
         handle_shared_users(&request_context, &msg, shared_users).await
     } else {
         Err(UserError::UnhandledMessageType.into())
