@@ -215,6 +215,7 @@ async fn refetch_stickers(
             database.clone(),
             config.clone(),
             vector_db.clone(),
+            None,
         )
         .await?;
     }

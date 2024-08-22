@@ -2,7 +2,7 @@ use std::{future::IntoFuture, sync::Arc};
 
 use itertools::Itertools;
 use regex::Regex;
-use teloxide::requests::Requester;
+use teloxide::{requests::Requester, types::UserId};
 use tokio::task;
 use tracing::{info, warn, Instrument};
 
@@ -29,6 +29,7 @@ pub async fn import_all_stickers_from_set(
     database: Database,
     config: Arc<Config>,
     vector_db: VectorDatabase,
+    user_id: Option<UserId>,
 ) -> Result<(), InternalError> {
     if !ignore_last_fetched {
         let fetched_recently = database
@@ -69,7 +70,7 @@ pub async fn import_all_stickers_from_set(
         return Ok(()); // ignore custom emojis as the bot is unable to send those
     }
 
-    fetch_sticker_set_and_save_to_db(set, bot, database, config, vector_db).await?;
+    fetch_sticker_set_and_save_to_db(set, bot, database, config, vector_db, user_id).await?;
 
     Ok(())
 }
@@ -180,13 +181,14 @@ async fn fetch_sticker_set_and_save_to_db(
     database: Database,
     config: Arc<Config>,
     vector_db: VectorDatabase,
+    user_id: Option<UserId>,
 ) -> Result<(), InternalError> {
     // TODO: result should be how many stickers were added/removed/updated
 
     let creator_id = decode_sticker_set_id(set.__custom__id.clone())?.owner_id;
 
     database
-        .upsert_sticker_set_with_title_and_creator(&set.name, &set.title, creator_id, None)
+        .upsert_sticker_set_with_title_and_creator(&set.name, &set.title, creator_id, user_id.map(|id| id.0 as i64))
         .await?;
     let saved_stickers = database.get_all_stickers_in_set(&set.name).await?;
 

@@ -22,7 +22,7 @@ impl BackgroundTaskExt for RequestContext {
         let span = tracing::info_span!("spawned_process_sticker_set");
         tokio::spawn(async move {
             let result =
-                import_all_stickers_from_set(&set_name, ignore_last_fetched, bot.clone(), database.clone(), request_context.config.clone(), request_context.vector_db.clone()).await;
+                import_all_stickers_from_set(&set_name, ignore_last_fetched, bot.clone(), database.clone(), request_context.config.clone(), request_context.vector_db.clone(), Some(request_context.user_id())).await;
             report_periodic_task_error(result);
         }.instrument(span));
     }
@@ -44,7 +44,7 @@ impl BackgroundTaskExt for RequestContext {
                 }
             };
             let result =
-                import_all_stickers_from_set(&set_id, false, bot.clone(), database.clone(), request_context.config.clone(), request_context.vector_db.clone()).await;
+                import_all_stickers_from_set(&set_id, false, bot.clone(), database.clone(), request_context.config.clone(), request_context.vector_db.clone(), Some(request_context.user_id())).await;
             report_periodic_task_error(result);
         }.instrument(span));
     }

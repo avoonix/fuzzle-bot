@@ -1129,6 +1129,7 @@ async fn unban_set(
         request_context.database.clone(),
         request_context.config.clone(),
         request_context.vector_db.clone(),
+        Some(request_context.user_id()), // TODO: add original user's user id?
     )
     .await?;
     answer_callback_query(
