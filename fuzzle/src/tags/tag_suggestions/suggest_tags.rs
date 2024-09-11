@@ -1,10 +1,11 @@
-use crate::background_tasks::{SuggestTags, TaggingWorker};
-use crate::bot::{Bot, BotError};
+use crate::background_tasks::{GetCategory, SuggestTags, TagManagerWorker, TfIdfWorker};
+use crate::bot::{Bot, BotError, InternalError};
 use crate::database::Database;
 
 use crate::qdrant::VectorDatabase;
-use crate::tags::{Category, TagManager};
+use crate::tags::{Category};
 use crate::util::{Emoji, Required};
+use futures::future::try_join_all;
 use itertools::Itertools;
 use teloxide::requests::Requester;
 use tracing::Instrument;
@@ -14,6 +15,7 @@ use std::sync::Arc;
 
 use super::image_tag_similarity::suggest_closest_tags;
 use super::implied::suggest_tags_by_reverse_implication;
+use super::owner_tags::suggest_owners_tags;
 use super::rules::get_default_rules;
 use super::same_set_tags::{
     suggest_tags_from_same_set, suggest_tags_from_sets_with_same_owner,
@@ -31,9 +33,9 @@ use super::ScoredTagSuggestion;
 pub async fn suggest_tags(
     sticker_id: &str,
     bot: Bot,
-    tag_manager: Arc<TagManager>,
+    tag_manager: TagManagerWorker,
     database: Database,
-    tagging_worker: TaggingWorker,
+    tagging_worker: TfIdfWorker,
     vector_db: VectorDatabase,
 ) -> Result<Vec<String>, BotError> {
     let sticker = database.get_sticker_by_id(sticker_id).await?.required()?;
@@ -45,6 +47,11 @@ pub async fn suggest_tags(
     let emojis = database.get_sticker_emojis(sticker_id).await?;
 
     let suggestions = vec![
+        if let Some(owner_id) = set.created_by_user_id {
+            suggest_owners_tags(&database, owner_id).await?
+        } else {
+            vec![]
+        },
         // db_based_sticker_tags_from_same_set:
         suggest_tags_from_same_set(&database, &set.id).await?,
         suggest_tags_from_sets_with_same_sticker_file(&database, &sticker.sticker_file_id).await?,
@@ -83,7 +90,7 @@ pub async fn suggest_tags(
         )
         .await?,
         // tag_manager_based_reverse_implications:
-        suggest_tags_by_reverse_implication(&sticker_tags, tag_manager.clone()),
+        suggest_tags_by_reverse_implication(&sticker_tags, tag_manager.clone()).await?,
         // image_to_tag_similarity_based:
         suggest_closest_tags(
             &database,
@@ -100,14 +107,14 @@ pub async fn suggest_tags(
         suggestions,
         sticker_tags,
         tag_manager,
-    ))
+    ).await?)
 }
 
 // #[tracing::instrument(skip(tag_manager))]
 // fn combine_suggestions(
 //     suggestions: TagSuggestions,
 //     sticker_tags: Vec<String>,
-//     tag_manager: Arc<TagManager>,
+//     tag_manager: TagManagerWorker,
 // ) -> Vec<String> {
 //     // TODO: weighting, etc:
 //     let suggested_tags = suggestions
@@ -151,7 +158,7 @@ pub async fn suggest_tags(
 // fn combine_suggestions_alt_1(
 //     suggestions: Vec<Vec<ScoredTagSuggestion>>,
 //     sticker_tags: Vec<String>,
-//     tag_manager: Arc<TagManager>,
+//     tag_manager: TagManagerWorker,
 // ) -> Vec<String> {
 //     let suggestion_vec = suggestions
 //         .into_iter()
@@ -208,22 +215,23 @@ pub async fn suggest_tags(
 // }
 
 #[tracing::instrument(skip(tag_manager))]
-fn combine_suggestions_alt_1(
+async fn combine_suggestions_alt_1(
     suggestions: Vec<Vec<ScoredTagSuggestion>>,
     sticker_tags: Vec<String>,
-    tag_manager: Arc<TagManager>,
-) -> Vec<String> {
-    let suggestion_vec = suggestions
+    tag_manager: TagManagerWorker,
+) -> Result<Vec<String>, InternalError> {
+    let suggestion_vec = try_join_all(suggestions
         .into_iter()
-        .map(|s| {
-            ScoredTagSuggestion::merge(
-                ScoredTagSuggestion::add_implications(s, tag_manager.clone()),
+        .map(|s| async {
+            Ok::<_, InternalError>(ScoredTagSuggestion::merge(
+                ScoredTagSuggestion::add_implications(s, tag_manager.clone()).await?,
                 vec![],
             )
             .into_iter()
             .take(30)
-            .collect_vec()
-        })
+            .collect_vec())
+        })).await?
+        .into_iter()
         .filter(|s| s.len() > 0)
         .collect_vec();
 
@@ -245,14 +253,19 @@ fn combine_suggestions_alt_1(
     limits.insert(Category::Species, 5);
     limits.insert(Category::Meta, 5);
 
-    let result = all_tags
+    let result = try_join_all(all_tags
         .into_iter()
         .sorted_unstable_by_key(|it| -it.1)
         .map(|it| it.0)
         .filter(|suggestion| !sticker_tags.contains(&suggestion))
-        .filter(|suggestion| {
-            tag_manager
-                .get_category(&suggestion)
+        .map(|suggestion| async {
+            let category = tag_manager .execute(GetCategory::new(suggestion.to_string())).await?;
+            Ok::<_, InternalError>((suggestion, category))
+        }))
+        .await?
+        .into_iter()
+        .filter(|(suggestion, category)| {
+            category
                 .map(|category| {
                     let entry = limits.entry(category).or_insert(2);
                     *entry -= 1;
@@ -261,9 +274,9 @@ fn combine_suggestions_alt_1(
                 .unwrap_or_default()
         })
         .take(20)
-        // .map(|suggestion| suggestion.tag)
+        .map(|(suggestion, _)| suggestion)
         .collect_vec();
-    result
+    Ok(result)
 }
 
 fn filter(mut all_tags: HashMap<String, i32>, sticker_tags: Vec<String>) -> HashMap<String, i32> {

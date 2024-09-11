@@ -11,7 +11,7 @@ use std::{
 
 use crate::tags::Category;
 
-use super::{schema, Blacklist, DatabaseError, DialogState, StickerType, TagData, UserSettings};
+use super::{schema, DatabaseError, DialogState, ModerationTaskDetails, ModerationTaskStatus, StickerType, StringVec, UserSettings};
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = schema::sticker_file)]
@@ -41,7 +41,7 @@ pub struct StickerSet {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct User {
     pub id: i64,
-    pub blacklist: Blacklist,
+    pub blacklist: StringVec,
     pub can_tag_stickers: bool,
     pub can_tag_sets: bool,
     pub created_at: chrono::NaiveDateTime,
@@ -83,14 +83,27 @@ pub struct StickerUser {
     pub last_used: chrono::NaiveDateTime,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, QueryableByName)]
+#[derive(Queryable, Selectable, Debug, Clone)]
 #[diesel(table_name = schema::tag)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Tag {
     pub id: String,
     pub category: Category,
-    pub is_pending: bool,
-    pub dynamic_data: Option<TagData>,
     pub created_by_user_id: Option<i64>,
     pub created_at: chrono::NaiveDateTime,
+    pub linked_channel_id: Option<i64>,
+    pub linked_user_id: Option<i64>,
+    pub aliases: Option<StringVec>,
+    pub implications: Option<StringVec>,
+}
+
+#[derive(Queryable, Selectable, Debug, Clone, QueryableByName)]
+#[diesel(table_name = schema::moderation_task)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct ModerationTask {
+    pub id: i64,
+    pub created_at: chrono::NaiveDateTime,
+    pub created_by_user_id: i64,
+    pub details: ModerationTaskDetails,
+    pub completion_status: ModerationTaskStatus,
 }

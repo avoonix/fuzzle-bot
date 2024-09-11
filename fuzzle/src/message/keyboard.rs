@@ -1,14 +1,19 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
+    background_tasks::{GetCategory, TagManagerWorker},
     bot::InternalError,
     callback::CallbackData,
-    database::{Sticker, StickerChange, TagCreator, UserSettings, UserStats, UserStickerStat},
+    database::{
+        ModerationTaskStatus, Sticker, StickerChange, Tag, TagCreator, UserSettings, UserStats,
+        UserStickerStat,
+    },
     inline::{InlineQueryData, SetOperation, TagKind},
-    tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters, TagManager},
+    tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters},
     util::{format_relative_time, Emoji},
 };
 use chrono::NaiveDateTime;
+use futures::future::try_join_all;
 use itertools::Itertools;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, LoginUrl, UserId};
 use url::Url;
@@ -19,14 +24,14 @@ pub struct Keyboard;
 
 impl Keyboard {
     #[must_use]
-    pub fn tagging(
+    pub async fn tagging(
         current_tags: &[String],
         sticker_unique_id: &str,
         suggested_tags: &[String],
         tagging_locked: bool,
         is_continuous_tag: bool,
-        tag_manager: Arc<TagManager>,
-    ) -> InlineKeyboardMarkup {
+        tag_manager: TagManagerWorker,
+    ) -> Result<InlineKeyboardMarkup, InternalError> {
         let mut button_layout: Vec<Vec<String>> = vec![];
         // trio implies group; trio is more important than group
         let count = current_tags
@@ -60,15 +65,16 @@ impl Keyboard {
                     },
                     |rating| vec![rating.to_string()],
                 ));
-                return InlineKeyboardMarkup::new(add_sticker_main_menu(
+                return Ok(InlineKeyboardMarkup::new(add_sticker_main_menu(
                     sticker_unique_id,
                     button_layout_to_keyboard_layout(
                         button_layout,
                         current_tags,
                         sticker_unique_id,
                         tag_manager,
-                    ),
-                ));
+                    )
+                    .await?,
+                )));
             }
         };
 
@@ -84,9 +90,7 @@ impl Keyboard {
 
         'outer: for tag in present_tags.into_iter().sorted_by_key(|s| s.len()).rev() {
             for last in button_layout.iter_mut() {
-                let width: usize = last.iter().map(|tag| tag.len()).sum::<usize>() + tag.len(); // add tag in consideration to final width
-                let width = width + (last.len() ) * 4; // check marks count as 2 characters for the width + gap
-                if width <= 32 {
+                if can_insert_tag_in_column(last.as_slice(), &tag, 3) {
                     last.push(tag);
                     continue 'outer;
                 }
@@ -113,9 +117,7 @@ impl Keyboard {
         // }
         for tag in suggested_tags.into_iter() {
             if let Some(last) = button_layout.last_mut() {
-                let width: usize = last.iter().map(|tag| tag.len()).sum::<usize>() + tag.len(); // add tag in consideration to final width
-                let width = width + (last.len() ) * 2; // gap
-                if width <= 32 {
+                if can_insert_tag_in_column(last.as_slice(), &tag, 0) {
                     last.push(tag);
                     continue;
                 }
@@ -126,7 +128,13 @@ impl Keyboard {
 
         let mut keyboard = add_sticker_main_menu(
             sticker_unique_id,
-            button_layout_to_keyboard_layout(button_layout, current_tags, sticker_unique_id, tag_manager),
+            button_layout_to_keyboard_layout(
+                button_layout,
+                current_tags,
+                sticker_unique_id,
+                tag_manager,
+            )
+            .await?,
         );
         keyboard.push(vec![
             InlineKeyboardButton::switch_inline_query_current_chat(
@@ -165,7 +173,7 @@ impl Keyboard {
             )]);
         }
 
-        InlineKeyboardMarkup::new(keyboard)
+        Ok(InlineKeyboardMarkup::new(keyboard))
     }
 
     // #[must_use]
@@ -210,6 +218,145 @@ impl Keyboard {
         ]])
     }
 
+    fn moderation_task_common(
+        current_status: ModerationTaskStatus,
+        creator_id: i64,
+        task_id: i64,
+    ) -> Vec<InlineKeyboardButton> {
+        let status_list = [
+            (ModerationTaskStatus::Pending, "Pending"),
+            (ModerationTaskStatus::Completed, "Completed"),
+            (ModerationTaskStatus::Cancelled, "Cancelled"),
+        ];
+        status_list
+            .into_iter()
+            .map(|(status, text)| {
+                InlineKeyboardButton::callback(
+                    if current_status == status {
+                        format!("[{text}]")
+                    } else {
+                        text.to_string()
+                    },
+                    CallbackData::ChangeModerationTaskStatus { status, task_id },
+                )
+            })
+            .chain(vec![user_button(UserId(creator_id as u64))])
+            .collect_vec()
+    }
+
+    #[must_use]
+    pub fn create_tag_task(
+        status: ModerationTaskStatus,
+        creator_id: i64,
+        task_id: i64,
+        user_username: Option<String>,
+        channel_username: Option<String>,
+    ) -> InlineKeyboardMarkup {
+        // todo! add useful buttons to approve (+undo if already exists)
+        InlineKeyboardMarkup::new(
+            vec![
+                vec![Self::moderation_task_common(status, creator_id, task_id)],
+
+                if let Some(user_username) = user_username {
+                    vec![vec![InlineKeyboardButton::url(
+                        format!("@{user_username}"),
+                        Url::parse(format!("https://t.me/{}", user_username).as_str())
+                            .expect("url to be valid"),
+                    )]]
+                } else {
+                    vec![]
+                },
+                if let Some(channel_username) = channel_username {
+                    vec![vec![InlineKeyboardButton::url(
+                        format!("@{channel_username}"),
+                        Url::parse(format!("https://t.me/{}", channel_username).as_str())
+                            .expect("url to be valid"),
+                    )]]
+                } else {
+                    vec![]
+                },
+                vec![
+                    vec![
+                        InlineKeyboardButton::callback(
+                            "Approve Tag",
+                            CallbackData::TagListAction {
+                                moderation_task_id: task_id,
+                                action: crate::callback::TagListAction::Add,
+                            },
+                        ),
+                        InlineKeyboardButton::callback(
+                            "Delete Tag",
+                            CallbackData::TagListAction {
+                                moderation_task_id: task_id,
+                                action: crate::callback::TagListAction::Remove,
+                            },
+                        )
+                    ]
+                ]
+            ]
+            .concat(),
+        )
+    }
+
+    #[must_use]
+    pub fn report_sticker_set_task(
+        status: ModerationTaskStatus,
+        creator_id: i64,
+        task_id: i64,
+        set_name: &str,
+        banned: bool,
+    ) -> Result<InlineKeyboardMarkup, InternalError> {
+        Ok(InlineKeyboardMarkup::new(vec![
+            Self::moderation_task_common(status, creator_id, task_id),
+            vec![
+                set_button(set_name)?,
+                if banned {
+                    InlineKeyboardButton::callback(
+                        format!("Unban {}", set_name),
+                        CallbackData::change_set_status(set_name, false, task_id),
+                    )
+                } else {
+                    InlineKeyboardButton::callback(
+                        format!("Ban {}", set_name),
+                        CallbackData::change_set_status(set_name, true, task_id),
+                    )
+                },
+            ],
+        ]))
+    }
+
+    #[must_use]
+    pub fn review_new_sets_task(
+        status: ModerationTaskStatus,
+        creator_id: i64,
+        task_id: i64,
+        added_sets: &[String],
+        indexed_sets: &[String],
+    ) -> Result<InlineKeyboardMarkup, InternalError> {
+        let mut markup = InlineKeyboardMarkup::new(vec![Self::moderation_task_common(
+            status, creator_id, task_id,
+        )]);
+
+        for set_name in added_sets {
+            markup = markup.append_row(vec![
+                set_button(set_name)?,
+                if indexed_sets.contains(set_name) {
+                    InlineKeyboardButton::callback(
+                        format!("Ban {}", set_name),
+                        CallbackData::change_set_status(set_name, true, task_id),
+                    )
+                } else {
+                    InlineKeyboardButton::callback(
+                        format!("Unban {}", set_name),
+                        CallbackData::change_set_status(set_name, false, task_id),
+                    )
+                },
+            ]);
+        }
+
+        Ok(markup)
+    }
+
     #[must_use]
     pub fn tag_creator(state: &TagCreator) -> InlineKeyboardMarkup {
         let mut markup = InlineKeyboardMarkup::new(vec![vec![
@@ -224,13 +371,13 @@ impl Keyboard {
         ]]);
         if let Some(ref channel) = state.linked_channel {
             markup = markup.append_row(vec![InlineKeyboardButton::callback(
-                format!("Remove linked channel {}", channel.1),
+                format!("Remove linked channel {}", channel), // TODO: get username from db
                 CallbackData::RemoveLinkedChannel,
             )]);
         }
         if let Some(ref user) = state.linked_user {
             markup = markup.append_row(vec![InlineKeyboardButton::callback(
-                format!("Remove linked user {}", user.1),
+                format!("Remove linked user {}", user), // TODO: get username from db
                 CallbackData::RemoveLinkedUser,
             )]);
         } else {
@@ -350,18 +497,6 @@ impl Keyboard {
                 InlineQueryData::recommendations(),
             )],
         ])
-    }
-
-    #[must_use]
-    pub fn removed_set(is_admin: bool, set_name: String) -> InlineKeyboardMarkup {
-        if is_admin {
-            InlineKeyboardMarkup::new([[InlineKeyboardButton::callback(
-                "Unban Set",
-                CallbackData::change_set_status(set_name, false),
-            )]])
-        } else {
-            InlineKeyboardMarkup::new([[]])
-        }
     }
 
     #[must_use]
@@ -511,8 +646,12 @@ impl Keyboard {
         let mut markup = InlineKeyboardMarkup::new(vec![stat_tabs(StatTab::User)]);
         for stat in stats.chunks(2) {
             markup = markup.append_row(stat.into_iter().map(|stat| {
+                let username = stat.username.clone().map_or_else(
+                    || "Unknown User".to_string(),
+                    |username| format!("@{username}"),
+                );
                 InlineKeyboardButton::switch_inline_query_current_chat(
-                    format!("Unknown User ({} Sets)", stat.set_count), // TODO: some users are known - display those names?
+                    format!("{username} ({} Sets)", stat.set_count), // TODO: some users are known - display those names?
                     InlineQueryData::SetsByUserId {
                         user_id: stat.user_id,
                     },
@@ -520,7 +659,12 @@ impl Keyboard {
             }));
         }
 
-        markup
+        markup.append_row(vec![
+            InlineKeyboardButton::switch_inline_query_current_chat(
+                "Show More",
+                InlineQueryData::TopOwners,
+            ),
+        ])
     }
 
     #[must_use]
@@ -661,27 +805,6 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn new_sets(
-        submitted_by: Option<UserId>,
-        set_names: &[String],
-    ) -> Result<InlineKeyboardMarkup, InternalError> {
-        let mut markup = InlineKeyboardMarkup::new(vec![
-            submitted_by.map_or_else(Vec::new, |submitted_by| vec![user_button(submitted_by)])
-        ]);
-        for set_name in set_names {
-            markup = markup.append_row(vec![
-                set_button(set_name)?,
-                InlineKeyboardButton::callback(
-                    format!("Delete/Ban {}", set_name),
-                    CallbackData::change_set_status(set_name, true),
-                ),
-            ]);
-        }
-
-        Ok(markup)
-    }
-
-    #[must_use]
     pub fn sticker_set_page(
         sticker_id: &str,
         set_id: &str,
@@ -691,10 +814,18 @@ impl Keyboard {
 
         InlineKeyboardMarkup::new(vec![
             sticker_tabs(StickerTab::Set, sticker_id),
-            vec![InlineKeyboardButton::callback(
-                format!("🗓️ Set added {}", format_relative_time(created_at)),
-                CallbackData::NoAction,
-            )],
+            vec![
+                InlineKeyboardButton::callback(
+                    format!("🗓️ Set added {}", format_relative_time(created_at)),
+                    CallbackData::NoAction,
+                ),
+                InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("🚩 Report Set"),
+                    InlineQueryData::ReportSet {
+                        set_id: set_id.to_string(),
+                    },
+                ),
+            ],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("🪞 Set overlaps"),
                 InlineQueryData::overlapping_sets(sticker_id.to_string()),
@@ -721,13 +852,51 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn owner_page(sticker_id: &str, user_id: i64, set_count: i64) -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new(vec![
-            sticker_tabs(StickerTab::Owner, sticker_id),
-            vec![InlineKeyboardButton::switch_inline_query_current_chat(
-                format!("{} sets owned by this user", set_count), // TODO: some users are known - display those names?
-                InlineQueryData::SetsByUserId { user_id: user_id },
-            )],
+    fn owner(
+        user_id: i64,
+        set_count: i64,
+        owner_username: Option<String>,
+        owner_tags: Vec<Tag>,
+        channel_usernames: Vec<(i64, String)>,
+    ) -> Vec<Vec<InlineKeyboardButton>> {
+        let linked_tags = owner_tags
+            .into_iter()
+            .map(|tag| {
+                let tag_search = InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("{} {}", tag.category.to_emoji(), &tag.id),
+                    InlineQueryData::search(vec![tag.id]),
+                );
+                let linked_channel = tag
+                    .linked_channel_id
+                    .map(|channel_id| {
+                        channel_usernames
+                            .iter()
+                            .find_map(|(id, username)| (*id == channel_id).then(|| username))
+                    })
+                    .flatten();
+
+                if let Some(linked_channel) = linked_channel {
+                    vec![
+                        tag_search,
+                        InlineKeyboardButton::url(
+                            format!("@{linked_channel}"),
+                            Url::parse(format!("https://t.me/{}", linked_channel).as_str())
+                                .expect("url to be valid"),
+                        ),
+                    ]
+                } else {
+                    vec![tag_search]
+                }
+            })
+            .collect_vec();
+
+        let open_owner_button = if let Some(owner_username) = owner_username {
+            vec![InlineKeyboardButton::url(
+                format!("@{owner_username}"),
+                Url::parse(format!("https://t.me/{}", owner_username).as_str())
+                    .expect("url to be valid"),
+            )]
+        } else {
             vec![
                 InlineKeyboardButton::url(
                     format!("Show user if known (Android)"),
@@ -739,8 +908,60 @@ impl Keyboard {
                     Url::parse(format!("https://t.me/@id{}", user_id).as_str())
                         .expect("url to be valid"),
                 ),
+            ]
+        };
+        vec![
+            vec![
+                vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                    format!("{} sets owned by this user", set_count), // TODO: some users are known - display those names?
+                    InlineQueryData::SetsByUserId { user_id: user_id },
+                )],
+                open_owner_button,
             ],
-        ])
+            linked_tags,
+        ]
+        .concat()
+    }
+
+    #[must_use]
+    pub fn owner_page(
+        sticker_id: &str,
+        user_id: i64,
+        set_count: i64,
+        owner_username: Option<String>,
+        owner_tags: Vec<Tag>,
+        channel_usernames: Vec<(i64, String)>,
+    ) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(
+            vec![
+                vec![sticker_tabs(StickerTab::Owner, sticker_id)],
+                Self::owner(
+                    user_id,
+                    set_count,
+                    owner_username,
+                    owner_tags,
+                    channel_usernames,
+                ),
+            ]
+            .concat(),
+        )
+    }
+
+    #[must_use]
+    pub fn owner_standalone(
+        user_id: i64,
+        set_count: i64,
+        owner_username: Option<String>,
+        owner_tags: Vec<Tag>,
+        channel_usernames: Vec<(i64, String)>,
+    ) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(Self::owner(
+            user_id,
+            set_count,
+            owner_username,
+            owner_tags,
+            channel_usernames,
+        ))
     }
 
     #[must_use]
@@ -749,6 +970,7 @@ impl Keyboard {
         set_count: usize,
         created_at: NaiveDateTime,
         is_favorite: bool,
+        emoji: Option<Emoji>,
     ) -> InlineKeyboardMarkup {
         let now = chrono::Utc::now().naive_utc();
         let set_text = if set_count == 1 {
@@ -757,58 +979,76 @@ impl Keyboard {
             "sets contain"
         };
 
-        InlineKeyboardMarkup::new([
-            sticker_tabs(StickerTab::Sticker, sticker_id),
-            vec![InlineKeyboardButton::callback(
-                format!("🗓️ Sticker added {}", format_relative_time(created_at)),
-                CallbackData::NoAction,
-            )],
+        InlineKeyboardMarkup::new(
             vec![
-                favorite_button(is_favorite, sticker_id),
-                InlineKeyboardButton::callback(
-                    format!("📥 Download file"),
-                    CallbackData::DownloadSticker {
-                        sticker_id: sticker_id.to_string(),
-                    },
-                ),
-            ],
-            vec![InlineKeyboardButton::switch_inline_query_current_chat(
-                "🎨 Similarly colored stickers (⚠️ ignores blacklist)",
-                InlineQueryData::similar(sticker_id, crate::inline::SimilarityAspect::Color),
-            )],
-            // vec![InlineKeyboardButton::switch_inline_query_current_chat(
-            //     "Similar shape (Warning: ignores blacklist)",
-            //     InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Shape),
-            // )],
-            vec![InlineKeyboardButton::switch_inline_query_current_chat(
-                "🦄 Similar stickers (⚠️ ignores blacklist)",
-                InlineQueryData::similar(sticker_id, crate::inline::SimilarityAspect::Embedding),
-            )],
-            vec![
-                InlineKeyboardButton::switch_inline_query_current_chat(
-                    format!("🗂️ {set_count} {set_text} this sticker"),
-                    InlineQueryData::sets(sticker_id.to_string()),
-                ),
-                InlineKeyboardButton::switch_inline_query_current_chat(
-                    "🔧 Add to your set",
-                    InlineQueryData::add_to_user_set(sticker_id.to_string()),
-                ),
-            ],
-            // [InlineKeyboardButton::callback(
-            //     "Other Info",
-            //     CallbackData::Info,
-            // )],
-        ])
+                vec![
+                    sticker_tabs(StickerTab::Sticker, sticker_id),
+                    vec![InlineKeyboardButton::callback(
+                        format!("🗓️ Sticker added {}", format_relative_time(created_at)),
+                        CallbackData::NoAction,
+                    )],
+                    vec![
+                        favorite_button(is_favorite, sticker_id),
+                        InlineKeyboardButton::callback(
+                            format!("📥 Download file"),
+                            CallbackData::DownloadSticker {
+                                sticker_id: sticker_id.to_string(),
+                            },
+                        ),
+                    ],
+                ],
+                if let Some(emoji) = emoji {
+                    vec![vec![
+                        InlineKeyboardButton::switch_inline_query_current_chat(
+                            format!(
+                                "{} Stickers with this emoji",
+                                emoji.to_string_with_variant()
+                            ),
+                            InlineQueryData::search_emoji(vec![], vec![emoji]),
+                        ),
+                    ]]
+                } else {
+                    vec![]
+                },
+                vec![
+                    vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                        "🎨 Similarly colored stickers (⚠️ ignores blacklist)",
+                        InlineQueryData::similar(
+                            sticker_id,
+                            crate::inline::SimilarityAspect::Color,
+                        ),
+                    )],
+                    // vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                    //     "Similar shape (Warning: ignores blacklist)",
+                    //     InlineQueryData::similar(sticker_unique_id, crate::inline::SimilarityAspect::Shape),
+                    // )],
+                    vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                        "🦄 Similar stickers (⚠️ ignores blacklist)",
+                        InlineQueryData::similar(
+                            sticker_id,
+                            crate::inline::SimilarityAspect::Embedding,
+                        ),
+                    )],
+                    vec![
+                        InlineKeyboardButton::switch_inline_query_current_chat(
+                            format!("🗂️ {set_count} {set_text} this sticker"),
+                            InlineQueryData::sets(sticker_id.to_string()),
+                        ),
+                        InlineKeyboardButton::switch_inline_query_current_chat(
+                            "🔧 Add to your set",
+                            InlineQueryData::add_to_user_set(sticker_id.to_string()),
+                        ),
+                    ],
+                ],
+            ]
+            .concat(),
+        )
     }
-
 
     #[must_use]
     pub fn privacy(section: PrivacyPolicy) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(privacy_tabs(section))
     }
-
-
-    
 }
 
 #[derive(PartialEq)]
@@ -944,29 +1184,33 @@ fn set_button(set_id: &str) -> Result<InlineKeyboardButton, InternalError> {
     ))
 }
 
-fn button_layout_to_keyboard_layout(
+async fn button_layout_to_keyboard_layout(
     button_layout: Vec<Vec<String>>,
     current_tags: &[String],
     sticker_unique_id: &str,
-    tag_manager: Arc<TagManager>,
-) -> Vec<Vec<InlineKeyboardButton>> {
-    let keyboard = button_layout
-        .iter()
-        .map(|row| {
-            row.iter()
-                .map(|tag| tag_to_button(tag, current_tags, sticker_unique_id, tag_manager.clone()))
-                .collect()
-        })
-        .collect();
-    keyboard
+    tag_manager: TagManagerWorker,
+) -> Result<Vec<Vec<InlineKeyboardButton>>, InternalError> {
+    let keyboard = try_join_all(button_layout.iter().map(|row| async {
+        Ok::<_, InternalError>(
+            try_join_all(row.iter().map(|tag| async {
+                Ok::<_, InternalError>(
+                    tag_to_button(tag, current_tags, sticker_unique_id, tag_manager.clone())
+                        .await?,
+                )
+            }))
+            .await?,
+        )
+    }))
+    .await?;
+    Ok(keyboard)
 }
 
-fn tag_to_button(
+async fn tag_to_button(
     tag: &str,
     current_tags: &[String],
     sticker_unique_id: &str,
-    tag_manager: Arc<TagManager>,
-) -> InlineKeyboardButton {
+    tag_manager: TagManagerWorker,
+) -> Result<InlineKeyboardButton, InternalError> {
     let is_already_tagged = current_tags.contains(&tag.to_string());
     let callback_data = if is_already_tagged {
         CallbackData::untag_sticker(sticker_unique_id, tag.to_string())
@@ -975,12 +1219,19 @@ fn tag_to_button(
     };
     let text = if is_already_tagged {
         // format!("✅ {}", tag.to_owned())
-        let emoji = tag_manager.get_category(tag).map(|c| c.to_emoji()).unwrap_or("✅");
+        let emoji = tag_manager
+            .execute(GetCategory::new(tag.to_string()))
+            .await?
+            .map(|c| c.to_emoji())
+            .unwrap_or("✅");
         format!("{} {}", emoji, tag.to_owned())
     } else {
         tag.to_owned()
     };
-    InlineKeyboardButton::callback(text, callback_data.to_string())
+    Ok(InlineKeyboardButton::callback(
+        text,
+        callback_data.to_string(),
+    ))
 }
 
 fn favorite_button(is_favorite: bool, sticker_id: &str) -> InlineKeyboardButton {
@@ -1019,7 +1270,7 @@ fn help_tabs(active: HelpTab) -> Vec<Vec<InlineKeyboardButton>> {
         (
             HelpTab::Other,
             InlineKeyboardButton::callback("Other Infos", CallbackData::Info),
-        )
+        ),
     ];
 
     tabs.into_iter()
@@ -1039,11 +1290,15 @@ fn privacy_tabs(active: PrivacyPolicy) -> Vec<Vec<InlineKeyboardButton>> {
         PrivacyPolicy::Introduction,
         PrivacyPolicy::License,
         PrivacyPolicy::DataCollection,
-        PrivacyPolicy::DataUsage
-    ].into_iter().map(|tab| (
-        tab,
-        InlineKeyboardButton::callback(tab.title(), CallbackData::Privacy(Some(tab)))
-    ));
+        PrivacyPolicy::DataUsage,
+    ]
+    .into_iter()
+    .map(|tab| {
+        (
+            tab,
+            InlineKeyboardButton::callback(tab.title(), CallbackData::Privacy(Some(tab))),
+        )
+    });
 
     tabs.into_iter()
         .map(|(tab, button)| {
@@ -1054,4 +1309,22 @@ fn privacy_tabs(active: PrivacyPolicy) -> Vec<Vec<InlineKeyboardButton>> {
             vec![button]
         })
         .collect_vec()
+}
+
+fn can_insert_tag_in_column(current: &[String], tag: &str, icon_width: usize) -> bool {
+    let final_button_count = current.len() + 1;
+    let max_string_len = match final_button_count {
+        0 | 1 => 9999,
+        2 => 20,
+        3 => 12,
+        4 => 9,
+        5 => 6,
+        6 => 5,
+        _ => 0,
+    };
+
+    current
+        .iter()
+        .all(|tag| tag.len() + icon_width <= max_string_len)
+        && tag.len() + icon_width <= max_string_len
 }

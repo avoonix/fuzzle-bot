@@ -43,7 +43,7 @@ impl AuthData {
     }
 
     fn data_check_string(&self) -> String {
-        let auth_date = self.auth_date.timestamp().to_string();
+        let auth_date = self.auth_date.and_utc().timestamp() .to_string();
         let id = self.id.to_string();
         let fields = vec![
             // sorted alphabetically

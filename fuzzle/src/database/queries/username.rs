@@ -19,7 +19,6 @@ use teloxide::types::UserId;
 
 use crate::database::model::PopularTag;
 use crate::database::Tag;
-use crate::database::TagData;
 use crate::database::UserStats;
 use crate::database::UsernameKind;
 use crate::tags::Category;
@@ -50,18 +49,37 @@ impl Database {
         insert_into(username::table)
         .values((
             username::tg_username.eq(name),
-            username::kind.eq(kind.to_i64()), // TODO: to_i64 should not be necessary
+            username::kind.eq(kind),
             username::tg_id.eq(Some(telegram_id)),
         ))
         .on_conflict(username::tg_username)
         .do_update()
         .set((
-            username::kind.eq(kind.to_i64()), // TODO: to_i64 should not be necessary
+            username::kind.eq(kind),
             username::tg_id.eq(Some(telegram_id)),
             username::updated_at.eq(now)
         ))
         .execute(&mut self.pool.get()?)?;
 
         Ok(())
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_username(&self, kind: UsernameKind, telegram_id: i64) -> Result<Option<String>, DatabaseError> {
+        Ok(username::table
+        .select( username::tg_username)
+        .filter( username::kind.eq(kind))
+        .filter( username::tg_id.eq(Some(telegram_id)))
+        .first(&mut self.pool.get()?) .optional()?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_usernames(&self, kind: UsernameKind, telegram_ids: Vec<i64>) -> Result<Vec<(i64, String)>, DatabaseError> {
+        Ok(username::table
+        .select((username::tg_id.assume_not_null(), username::tg_username))
+        .filter( username::tg_id.is_not_null())
+        .filter( username::kind.eq(kind))
+        .filter( username::tg_id.eq_any(telegram_ids))
+        .load(&mut self.pool.get()?)?)
     }
 }

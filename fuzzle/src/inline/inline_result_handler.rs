@@ -38,10 +38,8 @@ pub async fn inline_result_handler(
         InlineQueryResultId::Tag(tag) => {}
         InlineQueryResultId::Set(set_id) => {}
         InlineQueryResultId::Emoji(emoji) => {}
-        InlineQueryResultId::Other(description) => {
-            tracing::error!("some user clicked on the {description} message");
-            // TODO: show the user a "you were not supposed to click this" message?
-        }
+        InlineQueryResultId::User(user_id) => {}
+        InlineQueryResultId::Other(description) => {}
     }
 
     Ok(())

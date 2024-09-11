@@ -25,8 +25,8 @@ pub enum AdminCommand {
     #[command(description = "ADMIN export json")]
     ExportJson,
 
-    #[command(description = "ADMIN send daily report immediately")]
-    Report,
+    #[command(description = "ADMIN get pending moderation tasks")]
+    Tasks,
 
     #[command(description = "ADMIN ui")]
     Ui,
@@ -68,7 +68,7 @@ impl AdminCommand {
                     .reply_markup(Keyboard::ui(request_context.config.domain_name.clone())?)
                     .await?;
             }
-            Self::Report => {
+            Self::Tasks => {
                 send_daily_report(request_context.database, request_context.bot, request_context.config.get_admin_user_id()).await?;
             }
             Self::MergeQueue => {

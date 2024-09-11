@@ -4,7 +4,7 @@ use actix_files::Files;
 use actix_web::{middleware, web, App, HttpServer};
 
 use crate::{
-    background_tasks::TaggingWorker, bot::Bot, database::Database, qdrant::VectorDatabase, tags::TagManager, Config
+    background_tasks::{TagManagerWorker, TfIdfWorker}, bot::Bot, database::Database, qdrant::VectorDatabase, Config
 };
 
 use super::service;
@@ -12,9 +12,9 @@ use super::service;
 pub struct AppState {
     pub config: Arc<Config>,
     pub database: Database,
-    pub tag_manager: Arc<TagManager>,
+    pub tag_manager: TagManagerWorker,
     pub bot: Bot,
-    pub tagging_worker: TaggingWorker,
+    pub tagging_worker: TfIdfWorker,
     // pub tag_worker: TagWorker,
     pub vector_db: VectorDatabase,
 }
@@ -22,9 +22,9 @@ pub struct AppState {
 pub fn setup(
     config: Arc<Config>,
     database: Database,
-    tag_manager: Arc<TagManager>,
+    tag_manager: TagManagerWorker,
     bot: Bot,
-    tagging_worker: TaggingWorker,
+    tagging_worker: TfIdfWorker,
     // tag_worker: TagWorker,
     vector_db: VectorDatabase,
 ) {

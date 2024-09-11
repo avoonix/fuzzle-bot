@@ -347,7 +347,7 @@ pub async fn send_sticker_with_tag_input(
                     is_locked,
                     request_context.is_continuous_tag_state(),
         request_context.tag_manager.clone(),
-    )
+    ).await?
             }
             DialogState::StickerRecommender {
                 positive_sticker_id,

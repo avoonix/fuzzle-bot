@@ -1,7 +1,7 @@
 use diesel::dsl::now;
 use diesel::{delete, insert_into, prelude::*, update};
 
-use crate::database::{UserSettings, UserStats, Blacklist, User, DialogState};
+use crate::database::{UserSettings, UserStats, StringVec, User, DialogState};
 
 use super::DatabaseError;
 
@@ -42,7 +42,7 @@ impl Database {
     pub async fn update_user_blacklist(
         &self,
         user_id: i64,
-        new_blacklist: Blacklist,
+        new_blacklist: StringVec,
     ) -> Result<(), DatabaseError> {
         let updated_rows = diesel::update(user::table.find(user_id))
             .set(user::blacklist.eq(new_blacklist))
@@ -65,7 +65,7 @@ impl Database {
     pub async fn create_user(
         &self,
         user_id: i64,
-        default_blacklist: Blacklist,
+        default_blacklist: StringVec,
     ) -> Result<User, DatabaseError> {
         Ok(insert_into(user::table)
             .values((user::id.eq(user_id), user::blacklist.eq(default_blacklist)))

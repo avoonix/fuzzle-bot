@@ -34,7 +34,7 @@ use crate::{
 };
 
 use super::{
-    command::{fix_underline_command_separator, AdminCommand, HiddenCommand, RegularCommand},
+    command::{fix_underline_command_separator_and_normalize, AdminCommand, HiddenCommand, RegularCommand},
     send_sticker_with_tag_input, Keyboard,
 };
 
@@ -147,10 +147,14 @@ async fn handle_text_message(
     request_context: RequestContext,
     msg: Message,
 ) -> Result<(), BotError> {
-    let text = &fix_underline_command_separator(text);
+    let text = &fix_underline_command_separator_and_normalize(text);
 
     if let Some(emoji) = emoji_search_command(text) {
         return emoji_search_command_execute(&msg, &request_context, &emoji).await;
+    }
+
+    if !text.starts_with("/") {
+        return Ok(())
     }
 
     match RegularCommand::parse(text, &request_context.config.telegram_bot_username) {
@@ -301,7 +305,7 @@ pub async fn message_handler(
         }
         handle_shared_users(&request_context, &msg, shared_users).await
     } else {
-        Err(UserError::UnhandledMessageType.into())
+        Ok(())
     }
 }
 
@@ -320,14 +324,11 @@ async fn handle_shared_chat(
         }
     };
 
-    let Some(channel) = shared_chat
-        .username
-        .as_ref()
-        .map(|username| (shared_chat.chat_id, username.clone()))
-    else {
+    let Some(ref username) = shared_chat.username else {
         return Err(UserError::ChannelWithoutUsername.into());
     };
-    state.linked_channel = Some(channel.clone());
+    state.linked_channel = Some(shared_chat.chat_id.0);
+    // TODO: ensure username is saved in database
     let state = state;
     request_context
         .database
@@ -342,7 +343,7 @@ async fn handle_shared_chat(
         .send_markdown(
             msg.chat.id,
             // TODO: better message
-            Markdown::escaped(format!("https://t.me/{}", channel.1)),
+            Markdown::escaped(format!("https://t.me/{}", username)),
         )
         .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
         .reply_markup(Keyboard::tag_creator(&state))
@@ -364,15 +365,12 @@ async fn handle_shared_users(
             return Err(UserError::InvalidMode.into());
         }
     };
-
-    let Some(user) = shared_chat.users.first().and_then(|user| {
-        user.username
-            .as_ref()
-            .map(|username| (user.user_id, username.clone()))
-    }) else {
-        return Err(UserError::UserWithoutUsername.into());
+    let user = shared_chat.users.first().required()?;
+    let Some(ref username) = user.username else {
+        return Err(UserError::ChannelWithoutUsername.into());
     };
-    state.linked_user = Some(user.clone());
+    state.linked_user = Some(user.user_id.0 as i64);
+    // TODO: ensure username is saved in database
     let state = state;
     request_context
         .database
@@ -387,7 +385,7 @@ async fn handle_shared_users(
         .send_markdown(
             msg.chat.id,
             // TODO: better message
-            Markdown::escaped(format!("https://t.me/{}", user.1)),
+            Markdown::escaped(format!("https://t.me/{}", username)),
         )
         .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
         .reply_markup(Keyboard::tag_creator(&state))
@@ -563,7 +561,7 @@ async fn handle_sticker_1(
             is_locked,
             is_continuous_tag,
         request_context.tag_manager.clone(),
-    ))
+    ).await?)
         .allow_sending_without_reply(true)
         .reply_to_message_id(msg.id)
         .into_future()

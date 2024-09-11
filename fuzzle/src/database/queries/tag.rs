@@ -16,8 +16,8 @@ use teloxide::types::ChatId;
 use teloxide::types::UserId;
 
 use crate::database::model::PopularTag;
+use crate::database::StringVec;
 use crate::database::Tag;
-use crate::database::TagData;
 use crate::database::UserStats;
 use crate::tags::Category;
 use crate::util::Emoji;
@@ -40,50 +40,58 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn all_approved_tags(&self, sticker_id: &str) -> Result<Vec<Tag>, DatabaseError> {
-        Ok(tag::table
-            .filter(tag::is_pending.eq(false))
-            .select(Tag::as_select())
-            .load(&mut self.pool.get()?)?)
+    pub async fn get_all_tags(&self) -> Result<Vec<Tag>, DatabaseError> {
+        Ok(tag::table.select(Tag::as_select()).load(&mut self.pool.get()?)?)
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn create_pending_tag(
+    pub async fn get_all_tags_by_linked_user_id(&self, user_id: i64) -> Result<Vec<Tag>, DatabaseError> {
+        Ok(tag::table
+            .filter(tag::linked_user_id.eq(user_id))
+            .select(Tag::as_select()).load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn delete_tag(&self, tag_id: &str) -> Result<(), DatabaseError> {
+        delete(tag::table.filter(tag::id.eq(tag_id))).execute(&mut self.pool.get()?)?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn upsert_tag(
         &self,
         tag_id: &str,
         category: Category,
-        linked_channel: &Option<(ChatId, String)>,
-        linked_user: &Option<(UserId, String)>,
-        example_sticker_ids: &[String],
-        aliases: &[String],
-        user_id: i64,
+        created_by_user_id: i64,
+        linked_channel_id: Option<i64>,
+        linked_user_id: Option<i64>,
+        aliases: Vec<String>,
+        implications: Vec<String>,
     ) -> Result<(), DatabaseError> {
+        let aliases = (!aliases.is_empty()).then(|| StringVec::from(aliases));
+        let implications = (!implications.is_empty()).then(|| StringVec::from(implications));
+
         insert_into(tag::table)
             .values((
                 tag::id.eq(tag_id),
                 tag::category.eq(category),
-                tag::is_pending.eq(true),
-                tag::created_by_user_id.eq(user_id),
-                tag::dynamic_data.eq(Some(TagData {
-                    aliases: aliases.into(),
-                    example_sticker_ids: example_sticker_ids.into(),
-                    linked_channel: linked_channel.clone(),
-                    linked_user: linked_user.clone(),
-                })),
+                tag::created_by_user_id.eq(created_by_user_id),
+                tag::linked_channel_id.eq(linked_channel_id),
+                tag::linked_user_id.eq(linked_user_id),
+                tag::aliases.eq(&aliases),
+                tag::implications.eq(&implications)
+            ))
+            .on_conflict(tag::id)
+            .do_update()
+            .set((
+                tag::category.eq(category),
+                tag::created_by_user_id.eq(created_by_user_id),
+                tag::linked_channel_id.eq(linked_channel_id),
+                tag::linked_user_id.eq(linked_user_id),
+                tag::aliases.eq(&aliases),
+                tag::implications.eq(&implications)
             ))
             .execute(&mut self.pool.get()?)?;
         Ok(())
     }
-
-    // TODO: (wizard) check if tag request already exists for current tag_id
-    // TODO: create tag
-    // TODO: delete tag (admin only)
-    // TODO: approve tag (remove )
-    // TODO: list tags
-
-    // #[tracing::instrument(skip(self), err(Debug))]
-    // pub async fn delete_sticker(&self, sticker_id: &str) -> Result<(), DatabaseError> {
-    //     delete(sticker::table.filter(sticker::id.eq(sticker_id))).execute(&mut self.pool.get()?)?;
-    //     Ok(())
-    // }
 }

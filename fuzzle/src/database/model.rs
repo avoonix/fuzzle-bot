@@ -22,7 +22,7 @@ use teloxide::{requests::Requester, types::InputSticker};
 
 use crate::{bot::Bot, tags::Category, util::Emoji};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PopularTag {
     pub name: String,
     pub count: i64,
@@ -71,16 +71,6 @@ pub struct AddedRemoved {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct UserSettings {
     pub order: Option<StickerOrder>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct TagData {
-    pub example_sticker_ids: Vec<String>,
-    pub aliases: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub linked_channel: Option<(ChatId, String)>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub linked_user: Option<(UserId, String)>,
 }
 
 impl UserSettings {
@@ -139,7 +129,7 @@ macro_rules! json_wrapper {
     };
 }
 
-json_wrapper!(Blacklist, Vec<String>);
+json_wrapper!(StringVec, Vec<String>);
 
 macro_rules! impl_json {
     ($type_name:ty) => {
@@ -157,22 +147,65 @@ macro_rules! impl_json {
             }
         }
 
-        impl<B: Backend> deserialize::FromSql<diesel::sql_types::Text, B> for $type_name
+        impl deserialize::FromSql<diesel::sql_types::Text, Sqlite> for $type_name
         where
-            String: deserialize::FromSql<diesel::sql_types::Text, B>,
+            String: deserialize::FromSql<diesel::sql_types::Text, Sqlite>,
         {
-            fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+            fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
                 let string_value =
-                    <String as deserialize::FromSql<diesel::sql_types::Text, B>>::from_sql(bytes)?;
+                    <String as deserialize::FromSql<diesel::sql_types::Text, Sqlite>>::from_sql(bytes)?;
                 Ok(serde_json::from_str(&string_value)?)
             }
         }
     };
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+pub enum ModerationTaskDetails {
+    CreateTag {
+        tag_id: String,
+        linked_channel: Option<i64>,
+        linked_user: Option<i64>,
+        category: Category,
+        example_sticker_id: Vec<String>,
+        aliases: Vec<String>,
+        implications: Vec<String>,
+    },
+    ReportStickerSet {
+        set_id: String,
+        reason: ReportReason,
+    },
+    ReviewNewSets {
+        set_ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Primitive)]
+pub enum ReportReason {
+    Other = 0,
+    NotFurry = 1,
+}
+
+impl ReportReason {
+    pub fn get_title(&self) -> &'static str {
+        match self {
+            Self::Other => "Other Reason",
+            Self::NotFurry => "Not Furry",
+        }
+    }
+    
+    pub fn get_description(&self) -> &'static str {
+        match self {
+            Self::Other => "My concern isn't listed",
+            Self::NotFurry => "Set does not (mostly) contain furry stickers",
+        }
+    }
+}
+
 impl_json!(UserSettings);
-impl_json!(TagData);
-impl_json!(Blacklist);
+impl_json!(ModerationTaskDetails);
+impl_json!(StringVec);
 impl_json!(DialogState);
 
 #[derive(PartialEq, Debug, Copy, Clone, Primitive, AsExpression)]
@@ -232,6 +265,8 @@ macro_rules! impl_enum {
 impl_enum!(MergeStatus);
 impl_enum!(StickerType);
 impl_enum!(Category);
+impl_enum!(ModerationTaskStatus);
+impl_enum!(UsernameKind);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub enum DialogState {
@@ -260,9 +295,9 @@ pub struct TagCreator {
     pub tag_id: String,
 
     #[serde(default)]
-    pub linked_channel: Option<(ChatId, String)>,
+    pub linked_channel: Option<i64>,
     #[serde(default)]
-    pub linked_user: Option<(UserId, String)>,
+    pub linked_user: Option<i64>,
 
     #[serde(default)]
     pub category: Option<Category>,
@@ -297,9 +332,19 @@ pub struct UserStickerStat {
     pub user_id: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub set_count: i64,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub username: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct AggregatedUserStats {
     pub unique_sticker_owners: i64,
+}
+
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Primitive, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::BigInt)]
+pub enum ModerationTaskStatus {
+    Pending = 0,
+    Completed = 1,
+    Cancelled = 2,
 }

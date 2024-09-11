@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use nom::bytes::streaming::tag;
-use nom::character::complete::alphanumeric1;
+use nom::character::complete::{alphanumeric1, i64};
 use nom::combinator::{eof, map};
 use nom::sequence::{preceded, terminated};
 use nom::{branch::alt, IResult};
@@ -14,6 +14,7 @@ pub(super) enum InlineQueryResultId {
     Tag(String),
     Set(String),
     Emoji(Emoji),
+    User(i64),
     Other(String),
 }
 
@@ -48,6 +49,10 @@ fn parse_result(input: &str) -> IResult<&str, InlineQueryResultId> {
             preceded(tag("o:"), alphanumeric1),
             |description: &str| InlineQueryResultId::Other(description.to_string()),
         ),
+        map(
+            preceded(tag("u:"), i64),
+            |user_id: i64| InlineQueryResultId::User(user_id),
+        ),
     )), eof)(input)
 }
 
@@ -58,6 +63,7 @@ impl Display for InlineQueryResultId {
             Self::Tag(tag) => write!(f, "t:{tag}"),
             Self::Set(set_id) => write!(f, "st:{set_id}"),
             Self::Emoji(emoji) => write!(f, "e:{}", emoji.to_string_without_variant()),
+            Self::User(user_id) => write!(f, "u:{user_id}"),
             Self::Other(description) => write!(f, "o:{description}"),
         }
     }

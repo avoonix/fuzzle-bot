@@ -3,10 +3,12 @@ use std::collections::HashMap;
 use crate::{
     callback::TagOperation,
     database::{
-        AddedRemoved, AdminStats, AggregatedUserStats, FullUserStats, PersonalStats, PopularTag, Stats, StickerChange, StickerSet, UserSettings, UserStats, UserStickerStat
+        AddedRemoved, AdminStats, AggregatedUserStats, FullUserStats, PersonalStats, PopularTag,
+        Stats, StickerChange, StickerSet, Tag, UserSettings, UserStats, UserStickerStat,
     },
     message::{
-        admin_command_description, escape_sticker_unique_id_for_command, user_command_description, PrivacyPolicy,
+        admin_command_description, escape_sticker_unique_id_for_command, user_command_description,
+        PrivacyPolicy,
     },
     tags::Category,
     util::{format_relative_time, Emoji},
@@ -92,7 +94,10 @@ Current Order: {order}
 
     #[must_use]
     pub fn personal_stats(stats: PersonalStats, set_count: i64) -> Markdown {
-        Markdown::new(format!("👤 *Personal Stats*\n\nFavorites: {}\nOwned Sets: {set_count}", stats.favorites))
+        Markdown::new(format!(
+            "👤 *Personal Stats*\n\nFavorites: {}\nOwned Sets: {set_count}",
+            stats.favorites
+        ))
     }
 
     #[must_use]
@@ -116,7 +121,10 @@ Current Order: {order}
     #[must_use]
     pub fn general_user_stats(stats: AggregatedUserStats) -> Markdown {
         // TODO: add aggregate stats (eg total number of unique users)
-        Markdown::new(format!("👥 *User Stats*\n\nUnique sticker owners: {}", stats.unique_sticker_owners))
+        Markdown::new(format!(
+            "👥 *User Stats*\n\nUnique sticker owners: {}",
+            stats.unique_sticker_owners
+        ))
     }
 
     #[must_use]
@@ -218,6 +226,41 @@ If you send me some stickers in this chat, I will add them to the database\\. He
     "Below are some things you can explore\\. You will also find some commands in the bot menu\\."
         .to_string()
     )
+    }
+
+    #[must_use]
+    pub fn create_tag_task(
+        tag_id: &str,
+        category: Category,
+        aliases: &[String],
+        implications: &[String],
+        db_tag: Option<Tag>,
+    ) -> Markdown {
+        Markdown::new(format!(
+            "*Create Tag*
+ID: {}
+Category: {}
+Aliases: {}
+Implications: {}
+
+DB: {}
+",
+            escape(tag_id),
+            escape(category.to_human_name()),
+            escape(&aliases.join(", ")),
+            escape(&implications.join(", ")),
+            db_tag_text(db_tag)
+        ))
+    }
+
+    #[must_use]
+    pub fn report_sticker_set_task() -> Markdown {
+        Markdown::new("*Sticker Set Reported*\n".to_string())
+    }
+
+    #[must_use]
+    pub fn review_new_sets_task() -> Markdown {
+        Markdown::new("*New Sets*\n".to_string())
     }
 
     #[must_use]
@@ -397,4 +440,16 @@ fn format_set_as_markdown_link(name: &str, title: &str) -> String {
 #[must_use]
 fn format_user_id_as_markdown_link(user_id: UserId) -> String {
     format!("[{user_id}](tg://user?id={user_id})")
+}
+
+fn db_tag_text(tag: Option<Tag>) -> String {
+    let Some(tag) = tag else {
+        return "not present".to_string();
+    };
+    format!(
+        "{}\ncreated {} \\(status updated {}\\)",
+        tag.category.to_human_name(),
+        escape(&format_relative_time(tag.created_at)),
+        escape(&chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
+    ) // TODO: more values
 }

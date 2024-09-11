@@ -1,6 +1,6 @@
 use nom::bytes::complete::tag;
 
-use nom::character::complete::u8;
+use nom::character::complete::{i64, u8};
 use nom::combinator::{eof, fail, map};
 
 use nom::sequence::{preceded, terminated, tuple};
@@ -12,7 +12,7 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-use crate::database::StickerOrder;
+use crate::database::{ModerationTaskStatus, StickerOrder};
 
 use crate::message::PrivacyPolicy;
 use crate::tags::Category;
@@ -43,6 +43,12 @@ impl Display for TagOperation {
             Self::Untag(tag) => write!(f, "u;{tag}"),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum TagListAction {
+    Add,
+    Remove,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -80,7 +86,7 @@ pub enum CallbackData {
     SetCategory(Option<Category>),
     Privacy(Option<PrivacyPolicy>),
 
-     OwnerPage {
+    OwnerPage {
         sticker_id: String,
     },
     StickerSetPage {
@@ -113,9 +119,18 @@ pub enum CallbackData {
         positive: bool,
     },
 
-    ChangeSetStatus {
+    ChangeSetBannedStatus {
         set_name: String,
         banned: bool,
+        moderation_task_id: i64,
+    },
+    TagListAction {
+        moderation_task_id: i64,
+        action: TagListAction,
+    },
+    ChangeModerationTaskStatus {
+        status: ModerationTaskStatus,
+        task_id: i64,
     },
 
     Merge {
@@ -138,10 +153,11 @@ impl CallbackData {
             operation: Some(TagOperation::Untag(tag.into())),
         }
     }
-    pub fn change_set_status(set_name: impl Into<String>, banned: bool) -> Self {
-        Self::ChangeSetStatus {
+    pub fn change_set_status(set_name: impl Into<String>, banned: bool, moderation_task_id: i64) -> Self {
+        Self::ChangeSetBannedStatus {
             banned,
             set_name: set_name.into(),
+            moderation_task_id,
         }
     }
 
@@ -170,6 +186,7 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
             parse_remove_continuous_tag,
             parse_sticker_data,
             parse_remove_set_data,
+            parse_moderation_task_tatus,
             parse_user_info_data,
             parse_order_data,
             parse_set_category,
@@ -183,6 +200,7 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
             parse_sticker_explore_page,
             parse_toggle_example_sticker,
             parse_favorite_sticker_data,
+            parse_tag_list_action,
             parse_merge_data,
         )),
         eof,
@@ -226,6 +244,24 @@ fn parse_merge_data(input: &str) -> IResult<&str, CallbackData> {
             sticker_id_a: sticker_id_a.to_string(),
             sticker_id_b: sticker_id_b.to_string(),
             merge,
+        },
+    )(input)
+}
+
+fn parse_tag_list_action(input: &str) -> IResult<&str, CallbackData> {
+    map(
+        tuple((
+            tag("tla;"),
+            i64,
+            tag(";"),
+            alt((
+                map(tag("add"), |_| TagListAction::Add),
+                map(tag("remove"), |_| TagListAction::Remove),
+            )),
+        )),
+        |(_, moderation_task_id, _, action)| CallbackData::TagListAction {
+            action,
+            moderation_task_id
         },
     )(input)
 }
@@ -377,12 +413,31 @@ fn parse_remove_set_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("chset;")(input)?;
     let (input, set_name) = tag_literal(input)?; // TODO: add separate set_name parser
     let (input, _) = tag(";")(input)?;
+    let (input, task_id) = i64(input)?;
+    let (input, _) = tag(";")(input)?;
     let (input, banned) = alt((map(tag("ban"), |_| true), map(tag("unban"), |_| false)))(input)?;
     Ok((
         input,
-        CallbackData::ChangeSetStatus {
+        CallbackData::ChangeSetBannedStatus {
             banned,
             set_name: set_name.to_string(),
+            moderation_task_id: task_id,
+        },
+    ))
+}
+
+fn parse_moderation_task_tatus(input: &str) -> IResult<&str, CallbackData> {
+    let (input, _) = tag("modtask;")(input)?;
+    let (input, task_id) = i64(input)?;
+    let (input, _) = tag(";")(input)?;
+    let (input, status) = i64(input)?;
+    let Some(status) = ModerationTaskStatus::from_i64(status) else {
+        return fail(input);
+    };
+    Ok((
+        input,
+        CallbackData::ChangeModerationTaskStatus {
+             status, task_id 
         },
     ))
 }
@@ -456,6 +511,13 @@ impl Display for CallbackData {
                 };
                 write!(f, "fav;{sticker_id};{operation}")
             }
+            Self::TagListAction { action, moderation_task_id } => {
+                let action = match action {
+                    &TagListAction::Add => "add",
+                    &TagListAction::Remove => "remove",
+                };
+                write!(f, "tla;{moderation_task_id};{action}")
+            }
             Self::Settings => write!(f, "settings"),
             Self::Start => write!(f, "start"),
             Self::Blacklist => write!(f, "blacklist"),
@@ -472,9 +534,12 @@ impl Display for CallbackData {
             Self::RemoveBlacklistedTag(tag) => write!(f, "removebl;{tag}"),
             Self::RemoveContinuousTag(tag) => write!(f, "removec;{tag}"),
             Self::RemoveAlias(tag) => write!(f, "ras;{tag}"),
-            Self::ChangeSetStatus { set_name, banned } => {
+            Self::ChangeSetBannedStatus { set_name, banned, moderation_task_id } => {
                 let action = if *banned { "ban" } else { "unban" };
-                write!(f, "chset;{set_name};{action}")
+                write!(f, "chset;{set_name};{moderation_task_id};{action}")
+            }
+            Self::ChangeModerationTaskStatus {status, task_id} => {
+                write!(f, "modtask;{task_id};{}", status.to_i64().unwrap_or_default())
             }
             Self::Info => write!(f, "info"),
             Self::UserInfo(user_id) => write!(f, "userinfo;{user_id}"),

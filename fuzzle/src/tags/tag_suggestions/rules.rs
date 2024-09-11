@@ -143,7 +143,7 @@ impl TagSuggestionRules {
         tags.into_iter()
             .chain(self.apply_string_rules(set_title, set_name))
             .sorted()
-            .group_by(std::clone::Clone::clone)
+            .chunk_by(std::clone::Clone::clone)
             .into_iter()
             .map(|(tag, group)| ScoredTagSuggestion {
                 tag,

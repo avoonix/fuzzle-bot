@@ -20,10 +20,10 @@ pub struct Tfidf {
 }
 
 impl Tfidf {
-    pub async fn generate(database: Database) -> Result<Self> {
+    #[tracing::instrument(skip(all_used_tags))]
+    pub fn generate(all_used_tags: Vec<(Emoji, String, i64)>) -> Self {
         type Document = Emoji;
         type Term = String;
-        let all_used_tags: Vec<(Document, Term, i64)> = database.get_all_tag_emoji_pairs().await?;
         let mut documents: HashMap<Document, HashMap<Term, u64>> = HashMap::new();
         let mut terms: Vec<Term> = Vec::new();
         for (document, term, count) in all_used_tags {
@@ -76,9 +76,10 @@ impl Tfidf {
                 }
             }
         }
-        Ok(Self { lookup })
+        Self { lookup }
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn suggest_tags(&self, query: Emoji) -> Vec<ScoredTagSuggestion> {
         let result = self
             .lookup

@@ -16,16 +16,20 @@ use crate::message::send_database_export_to_chat;
 use crate::qdrant::VectorDatabase;
 use crate::simple_bot_api;
 use crate::sticker::import_all_stickers_from_set;
-use crate::tags::TagManager;
 use crate::Config;
 
+use super::create_and_send_daily_moderation_tasks;
 use super::send_daily_report;
+use super::GetImplications;
+use super::GetTagsAndAliases;
+use super::TagManagerWorker;
+use super::TagsAndAliases;
 
 pub fn start_periodic_tasks(
     bot: Bot,
     database: Database,
     config: Arc<Config>,
-    tag_manager: Arc<TagManager>,
+    tag_manager: TagManagerWorker,
     vector_db: VectorDatabase,
 ) {
     let bot_clone = bot.clone();
@@ -74,7 +78,7 @@ pub fn start_periodic_tasks(
             let bot = bot.clone();
             let database = database.clone();
             async move {
-                let result = send_daily_report(database.clone(), bot.clone(), admin_id).await;
+                let result = create_and_send_daily_moderation_tasks(database.clone(), bot.clone(), admin_id).await;
                 report_periodic_task_error(result);
             }
             .instrument(span)
@@ -126,6 +130,7 @@ pub fn start_periodic_tasks(
     let config = config_clone.clone();
     tokio::spawn(async move {
         loop {
+            sleep(Duration::days(2).to_std().expect("no overflow")).await;
             let span = tracing::info_span!("periodic_tag_insertion");
             // TODO: do daily; also refetch e6 tags
             let vector_db = vector_db.clone();
@@ -137,7 +142,6 @@ pub fn start_periodic_tasks(
             }
             .instrument(span)
             .await;
-            sleep(Duration::hours(1).to_std().expect("no overflow")).await;
         }
     });
 }
@@ -145,10 +149,12 @@ pub fn start_periodic_tasks(
 #[tracing::instrument(skip(vector_db, tag_manager, config))]
 async fn insert_tags(
     vector_db: VectorDatabase,
-    tag_manager: Arc<TagManager>,
+    tag_manager: TagManagerWorker,
     config: Arc<Config>,
 ) -> Result<(), InternalError> {
-    for tag_or_alias in tag_manager.iter_all() {
+    tag_manager.maybe_recompute().await?; // TODO: this doesn't wait for completion
+    let TagsAndAliases {tags, aliases} = tag_manager.execute(GetTagsAndAliases::new()).await?;
+    for tag_or_alias in tags.into_iter().chain(aliases) {
         let embedding = text_to_clip_embedding(tag_or_alias.to_string(), config.inference_url.clone()).await?;
         vector_db
             .insert_tag(embedding, tag_or_alias.to_string())
@@ -162,11 +168,11 @@ async fn insert_tags(
 #[tracing::instrument(skip(database, tag_manager))]
 async fn fix_missing_tag_implications(
     database: Database,
-    tag_manager: Arc<TagManager>,
+    tag_manager: TagManagerWorker,
 ) -> Result<(), InternalError> {
     let used_tags = database.get_used_tags().await?;
     for tag in used_tags {
-        let Some(implications) = tag_manager.get_implications(&tag) else {
+        let Some(implications) = tag_manager.execute(GetImplications::new(tag.clone())).await? else {
             continue;
         };
         for implication in implications {

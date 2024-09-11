@@ -1,17 +1,17 @@
 use teloxide::types::UserId;
 
 use super::{Bot, BotError};
-use crate::{background_tasks::TaggingWorker, database::{Database, DialogState, User}, qdrant::VectorDatabase, tags::TagManager, util::Required, Config};
+use crate::{background_tasks::{TagManagerWorker, TfIdfWorker}, database::{Database, DialogState, User}, qdrant::VectorDatabase, util::Required, Config};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct RequestContext {
     pub config: Arc<Config>,
     pub database: Database,
-    pub tag_manager: Arc<TagManager>,
+    pub tag_manager: TagManagerWorker,
     pub bot: Bot,
     pub user: Arc<User>,
-    pub tagging_worker: TaggingWorker,
+    pub tagging_worker: TfIdfWorker,
     // pub tag_worker: TagWorker,
     pub vector_db: VectorDatabase,
 }

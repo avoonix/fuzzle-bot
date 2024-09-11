@@ -77,6 +77,7 @@ pub enum InlineQueryData {
     },
     ListMostDuplicatedStickers,
     ListMostUsedEmojis,
+    TopOwners,
     ListRecommendationModeRecommendations,
     SearchByEmbedding {
         query: String,
@@ -87,6 +88,9 @@ pub enum InlineQueryData {
     TagCreatorTagId {
         tag_id: String,
         kind: TagKind,
+    },
+    ReportSet {
+        set_id: String, 
     },
 }
 
@@ -405,6 +409,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                 InlineQueryData::ListMostDuplicatedStickers
             }),
             map(tag("(emo)"), |_| InlineQueryData::ListMostUsedEmojis),
+            map(tag("(owners)"), |_| InlineQueryData::TopOwners),
             map(tag("(rec)"), |_| {
                 InlineQueryData::ListRecommendationModeRecommendations
             }),
@@ -440,6 +445,12 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                 |unique_id| InlineQueryData::ListSimilarStickers {
                     aspect: SimilarityAspect::Embedding,
                     unique_id: unique_id.to_string(),
+                },
+            ),
+            map(
+                terminated(preceded(tag("(reportset:"), set_name_literal), tag(")")),
+                |set_id| InlineQueryData::ReportSet {
+                    set_id: set_id.to_string(),
                 },
             ),
             map(parse_tags_and_emojis, |(tags, emoji)| {
@@ -556,8 +567,10 @@ impl Display for InlineQueryData {
             InlineQueryData::SearchByEmbedding { query } => write!(f, "(embed) {query}"),
             InlineQueryData::ListMostDuplicatedStickers => write!(f, "(dup) "),
             InlineQueryData::ListMostUsedEmojis => write!(f, "(emo) "),
+            InlineQueryData::TopOwners => write!(f, "(owners) "),
             InlineQueryData::ListRecommendationModeRecommendations => write!(f, "(rec) "),
             InlineQueryData::SetsByUserId { user_id } => write!(f, "(usersets:{user_id}) "),
+            InlineQueryData::ReportSet { set_id } => write!(f, "(reportset:{set_id}) "),
         }
     }
 }

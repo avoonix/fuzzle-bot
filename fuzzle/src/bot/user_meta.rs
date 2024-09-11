@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use crate::background_tasks::TaggingWorker;
+use crate::background_tasks::{TagManagerWorker, TfIdfWorker};
 use crate::bot::config::Config;
 use crate::database::{Database, User};
 use crate::qdrant::VectorDatabase;
-use crate::tags::TagManager;
 use itertools::Itertools;
 use teloxide::prelude::*;
 use teloxide::types::ChatKind;
@@ -16,9 +15,9 @@ pub async fn inject_context(
     update: Update,
     config: Arc<Config>,
     database: Database,
-    tag_manager: Arc<TagManager>,
+    tag_manager: TagManagerWorker,
     bot: Bot,
-    tagging_worker: TaggingWorker,
+    tagging_worker: TfIdfWorker,
     vector_db: VectorDatabase,
 ) -> Option<RequestContext> {
     match get_user(

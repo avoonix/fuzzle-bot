@@ -4,9 +4,8 @@ use crate::database::Database;
 use crate::inline::{inline_query_handler_wrapper, inline_result_handler_wrapper};
 use crate::message::{list_visible_admin_commands, list_visible_user_commands, message_handler_wrapper};
 use crate::qdrant::VectorDatabase;
-use crate::tags::{get_default_tag_manager, TagManager};
 
-use crate::background_tasks::{start_periodic_tasks, TaggingWorker, Worker};
+use crate::background_tasks::{start_periodic_tasks, TagManagerDependencies, TagManagerWorker, TfIdfDependencies, TfIdfWorker, Worker};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,17 +22,17 @@ use super::user_meta::inject_context;
 use super::{Bot, InternalError};
 
 pub struct UpdateListener {
-    tags: Arc<TagManager>,
+    tags: TagManagerWorker,
     bot: Bot,
     config: Arc<Config>,
     database: Database,
     vector_db: VectorDatabase,
+    tagging_worker: TfIdfWorker,
 }
 
 impl UpdateListener {
     #[tracing::instrument(name="UpdateListener::new", skip(config), err(Debug))]
     pub async fn new(config: Config) -> Result<Self, anyhow::Error> {
-        let tags = get_default_tag_manager(config.tag_cache()).await?;
         let client = default_reqwest_settings()
             .timeout(Duration::from_secs(30))
             .build()?;
@@ -46,12 +45,22 @@ impl UpdateListener {
         let vector_db = VectorDatabase::new(&config.vector_db_url).await?;
         let config = Arc::new(config);
 
+        let tags = TagManagerWorker::start(TagManagerDependencies {
+            database: database.clone(),
+            config: config.clone(),
+        }); 
+        let tagging_worker = TfIdfWorker::start(TfIdfDependencies {
+            database: database.clone(),
+            tag_manager: tags.clone(),
+        });
+
         Ok(Self {
             tags,
             bot,
             config,
             database,
             vector_db,
+            tagging_worker,
         })
     }
 
@@ -75,7 +84,6 @@ impl UpdateListener {
     }
 
     pub async fn listen(&self) -> anyhow::Result<()> {
-        let tagging_worker = TaggingWorker::start(self.database.clone(), Arc::clone(&self.tags));
         // let tag_worker = TagWorker::start(self.database.clone(), Arc::clone(&self.tags));
         start_periodic_tasks(
             self.bot.clone(),
@@ -90,7 +98,7 @@ impl UpdateListener {
             self.database.clone(),
             self.tags.clone(),
             self.bot.clone(),
-            tagging_worker.clone(),
+            self.tagging_worker.clone(),
             // tag_worker.clone(),
             self.vector_db.clone(),
         );
@@ -121,7 +129,7 @@ impl UpdateListener {
                 self.config.clone(),
                 self.tags.clone(),
                 self.database.clone(),
-                tagging_worker,
+                self.tagging_worker.clone(),
                 // tag_worker,
                 self.vector_db.clone()
             ])

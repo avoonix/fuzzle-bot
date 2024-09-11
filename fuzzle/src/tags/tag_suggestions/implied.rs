@@ -1,26 +1,29 @@
 use std::sync::Arc;
 
+use futures::future::try_join_all;
 use itertools::Itertools;
 
-use crate::tags::TagManager;
+use crate::{background_tasks::{GetInverseImplications, TagManagerWorker}, bot::InternalError};
 
 use super::tag_suggestion::ScoredTagSuggestion;
 
 #[must_use]
 #[tracing::instrument(skip(tag_manager))]
-pub fn suggest_tags_by_reverse_implication(
+pub async fn suggest_tags_by_reverse_implication(
     known_good_tags: &[String],
-    tag_manager: Arc<TagManager>,
-) -> Vec<ScoredTagSuggestion> {
-    known_good_tags
+    tag_manager: TagManagerWorker,
+) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
+    Ok(try_join_all(known_good_tags
         .iter()
-        .flat_map(|tag| {
-            tag_manager
-                .get_inverse_implications(tag)
-                .unwrap_or_default()
-        })
+        .map(|tag| async {
+            Ok::<_, InternalError>(tag_manager
+            .execute(GetInverseImplications::new(tag.to_string())).await?
+                .unwrap_or_default())
+        })).await?
+        .into_iter()
+        .flatten()
         .sorted()
-        .group_by(std::clone::Clone::clone)
+        .chunk_by(std::clone::Clone::clone)
         .into_iter()
         .map(|(tag, group)| ScoredTagSuggestion {
             tag,
@@ -31,7 +34,7 @@ pub fn suggest_tags_by_reverse_implication(
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .collect_vec()
+        .collect_vec())
 }
 
 const fn compute_score_for_implication_count(count: usize) -> f64 {

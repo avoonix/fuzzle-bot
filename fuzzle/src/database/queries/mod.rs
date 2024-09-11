@@ -6,6 +6,7 @@ mod user;
 mod export;
 mod tag;
 mod username;
+mod moderation_task;
 
 use std::{path::PathBuf, time::Duration};
 

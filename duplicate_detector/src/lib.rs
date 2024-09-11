@@ -77,7 +77,7 @@ pub fn generate_merge_image(
                     let col = (diff.max_diff_neighborhood * 6.0).min(255.0) as u8;
                     Rgba([col, col, col, 255])
                 } else {
-                    let x = x - 3 * width;
+                    // let x = x - 3 * width;
                     Rgba([0, 0, 0, 255])
                 }
             } else {

@@ -35,10 +35,15 @@ impl Database {
     pub async fn get_stats(&self) -> Result<Stats, DatabaseError> {
         let conn = &mut self.pool.get()?;
         let sets: i64 = sticker_set::table.select(count_star()).first(conn)?;
-        let stickers: i64 = sticker_file::table.select(count_star()).first(conn)?;
+        let stickers: i64 = sticker::table.select(count_distinct(sticker::sticker_file_id)).first(conn)?;
         let taggings: i64 = sticker_file_tag::table.select(count_star()).first(conn)?;
         let tagged_stickers: i64 = sticker_file_tag::table
             .select(count_distinct(sticker_file_tag::sticker_file_id))
+            .filter(
+                diesel::dsl::exists(
+                    sticker::table.filter(sticker::sticker_file_id.eq(sticker_file_tag::sticker_file_id))
+                )
+            )
             .first(conn)?;
         Ok(Stats {
             sets,
@@ -221,9 +226,10 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_general_user_stats(&self, n: i64) -> Result<Vec<UserStickerStat>, DatabaseError> {
-        Ok(sql_query("select created_by_user_id as user_id, count(*) as set_count from sticker_set where user_id is not null group by created_by_user_id order by set_count desc limit ?1;")
-                                .bind::<BigInt, _>(n)
+    pub async fn get_general_user_stats(&self, limit: i64, offset: i64) -> Result<Vec<UserStickerStat>, DatabaseError> {
+        Ok(sql_query("select sticker_set.created_by_user_id as user_id, count(*) as set_count, username.tg_username as username from sticker_set left join username on username.tg_id = sticker_set.created_by_user_id where user_id is not null group by created_by_user_id order by set_count desc limit ?1 offset ?2;")
+                                .bind::<BigInt, _>(limit)
+                                .bind::<BigInt, _>(offset)
             .load(&mut self.pool.get()?)?)
     }
 

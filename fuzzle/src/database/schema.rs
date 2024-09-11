@@ -104,10 +104,12 @@ diesel::table! {
     tag (id) {
         id -> Text,
         category -> BigInt,
-        is_pending -> Bool,
-        dynamic_data -> Nullable<Text>,
         created_by_user_id -> Nullable<BigInt>,
         created_at -> Timestamp,
+        linked_channel_id -> Nullable<BigInt>,
+        linked_user_id -> Nullable<BigInt>,
+        aliases -> Nullable<Text>,
+        implications -> Nullable<Text>,
     }
 }
 
@@ -120,12 +122,23 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    moderation_task (id) {
+        id -> BigInt,
+        created_at -> Timestamp,
+        created_by_user_id -> BigInt,
+        details -> Text,
+        completion_status -> BigInt,
+    }
+}
+
 diesel::joinable!(sticker_file -> user (tags_locked_by_user_id));
 diesel::joinable!(sticker_file_tag -> sticker_file (sticker_file_id));
 diesel::joinable!(sticker_file_tag -> user (added_by_user_id));
 diesel::joinable!(sticker_file_tag_history -> sticker_file (sticker_file_id));
 diesel::joinable!(merged_sticker -> user (created_by_user_id));
 diesel::joinable!(tag -> user (created_by_user_id));
+diesel::joinable!(moderation_task -> user (created_by_user_id));
 diesel::joinable!(removed_set -> user (added_by_user_id));
 diesel::joinable!(sticker -> sticker_file (sticker_file_id));
 diesel::joinable!(sticker -> sticker_set (sticker_set_id));

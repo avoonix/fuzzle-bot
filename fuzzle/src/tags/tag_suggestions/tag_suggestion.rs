@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use itertools::Itertools;
 
-use crate::tags::TagManager;
+use crate::{background_tasks::{GetImplications, TagManagerWorker}, bot::InternalError};
 
 #[derive(Debug, Clone)]
 pub struct ScoredTagSuggestion {
@@ -23,7 +23,7 @@ impl ScoredTagSuggestion {
             .into_iter()
             .chain(suggestions_b)
             .sorted_by(|a, b| a.tag.cmp(&b.tag))
-            .group_by(|suggestion| suggestion.tag.clone())
+            .chunk_by(|suggestion| suggestion.tag.clone())
             .into_iter()
             .map(|(tag, group)| {
                 let score = group.map(|suggestion| suggestion.score).sum();
@@ -34,14 +34,14 @@ impl ScoredTagSuggestion {
     }
 
     #[must_use]
-    pub fn add_implications(suggestions: Vec<Self>, tag_manager: Arc<TagManager>) -> Vec<Self> {
+    pub async fn add_implications(suggestions: Vec<Self>, tag_manager: TagManagerWorker) -> Result<Vec<Self>, InternalError> {
         let mut map: HashMap<_, _> = suggestions
             .clone()
             .into_iter()
             .map(|s| (s.tag, s.score))
             .collect();
         for suggestion in suggestions {
-            let Some(implications) = tag_manager.get_implications(&suggestion.tag) else {
+            let Some(implications) = tag_manager.execute(GetImplications::new(suggestion.tag.clone())).await? else {
                 continue;
             };
             let implication_max_score = suggestion.score * 0.9;
@@ -51,6 +51,6 @@ impl ScoredTagSuggestion {
                     .or_insert(implication_max_score);
             }
         }
-        map.into_iter().map(|(tag, score)| ScoredTagSuggestion {score, tag}).collect_vec()
+        Ok(map.into_iter().map(|(tag, score)| ScoredTagSuggestion {score, tag}).collect_vec())
     }
 }

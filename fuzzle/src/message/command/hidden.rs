@@ -1,23 +1,27 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::background_tasks::BackgroundTaskExt;
+use crate::background_tasks::{BackgroundTaskExt, GetImplicationsIncludingSelf};
 use crate::bot::{BotError, BotExt, InternalError, RequestContext, UserError};
 use crate::callback::{exit_mode, sticker_explore_keyboard, TagOperation};
 
-use crate::database::{DialogState, TagCreator};
+use crate::database::{DialogState, ReportReason, TagCreator};
 use crate::inline::{SetOperation, TagKind};
 use crate::message::Keyboard;
 use crate::simple_bot_api;
 use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
-use crate::util::{create_sticker_set_id, create_tag_id, sticker_id_literal, Required};
+use crate::util::{
+    create_sticker_set_id, create_tag_id, set_name_literal, sticker_id_literal, Required,
+};
+use futures::future::try_join_all;
 use itertools::Itertools;
 use nom::bytes::complete::take_while1;
-use nom::character::complete::multispace1;
-use nom::combinator::{eof, map};
+use nom::character::complete::{i64, multispace1};
+use nom::combinator::{eof, map, map_res};
 use nom::sequence::tuple;
 use nom::Finish;
+use num_traits::FromPrimitive;
 use teloxide::dispatching::dialogue::GetChatId;
 use teloxide::types::{
     ButtonRequest, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, KeyboardButton,
@@ -78,7 +82,7 @@ pub enum HiddenCommand {
     SetTag { kind: TagKind, tag_id: String },
     #[command(
         description = "create a new sticker set (do not use manually)",
-        parse_with = custom_parser
+        parse_with = new_sticker_set_custom_parser
     )]
     CreateSet {
         sticker_id: String,
@@ -94,9 +98,38 @@ pub enum HiddenCommand {
         parse_with = "split"
     )]
     RemoveSticker { set_id: String, sticker_id: String },
+    #[command(description = "show information about an user", parse_with = "split")]
+    User { user_id: i64 },
+    #[command(
+        description = "report a sticker set (do not use manually)",
+        parse_with = report_set_custom_parser
+    )]
+    ReportSet {
+        reason: ReportReason,
+        set_id: String,
+    },
 }
 
-fn custom_parser(input: String) -> Result<(String, String), ParseError> {
+fn report_set_custom_parser(input: String) -> Result<(ReportReason, String), ParseError> {
+    Ok(Finish::finish(map_res(
+        tuple((i64, multispace1, set_name_literal)),
+        |(reason, _, set_id)| {
+            Ok::<_, anyhow::Error>((
+                ReportReason::from_i64(reason).ok_or_else(|| anyhow::anyhow!("invalid reason"))?,
+                set_id.to_string(),
+            ))
+        },
+    )(&input))
+    .map_err(|err| {
+        ParseError::Custom(Box::new(UserError::ParseError(
+            input.len() - err.input.len(),
+            err.input.to_string(),
+        )))
+    })?
+    .1)
+}
+
+fn new_sticker_set_custom_parser(input: String) -> Result<(String, String), ParseError> {
     Ok(Finish::finish(map(
         tuple((sticker_id_literal, multispace1, take_while1(|_| true), eof)),
         |(sticker_id, _, set_title, _)| (sticker_id.to_string(), set_title.to_string()),
@@ -145,6 +178,71 @@ impl HiddenCommand {
         request_context: RequestContext,
     ) -> Result<(), BotError> {
         match self {
+            Self::ReportSet { reason, set_id } => {
+                request_context
+                    .database
+                    .create_moderation_task(
+                        &crate::database::ModerationTaskDetails::ReportStickerSet {
+                            set_id,
+                            reason,
+                        },
+                        request_context.user.id,
+                    )
+                    .await?;
+
+                request_context
+                    .bot
+                    .send_markdown(
+                        request_context.user_id(),
+                        Markdown::escaped(
+                            "Success! An admin should review your report soon(ish) :3",
+                        ),
+                    )
+                    .await?;
+            }
+            Self::User { user_id } => {
+                let set_count = request_context
+                    .database
+                    .get_owned_sticker_set_count(user_id)
+                    .await?;
+                if set_count == 0 {
+                    return Err(anyhow::anyhow!("user is not a set owner").into());
+                    // TODO: user error?
+                }
+                let owner_username = request_context
+                    .database
+                    .get_username(crate::database::UsernameKind::User, user_id)
+                    .await?;
+                let owner_tags = request_context
+                    .database
+                    .get_all_tags_by_linked_user_id(user_id)
+                    .await?;
+                let channel_usernames = request_context
+                    .database
+                    .get_usernames(
+                        crate::database::UsernameKind::Channel,
+                        owner_tags
+                            .iter()
+                            .filter_map(|tag| tag.linked_channel_id)
+                            .collect_vec(),
+                    )
+                    .await?;
+                let keyboard = Keyboard::owner_standalone(
+                    user_id,
+                    set_count,
+                    owner_username,
+                    owner_tags,
+                    channel_usernames,
+                );
+
+                request_context
+                    .bot
+                    .send_markdown(msg.chat.id, Markdown::escaped("User Info"))
+                    .reply_markup(keyboard)
+                    .reply_to_message_id(msg.id)
+                    .allow_sending_without_reply(true)
+                    .await?;
+            }
             Self::RemoveSticker { set_id, sticker_id } => {
                 let sticker = request_context
                     .database
@@ -267,6 +365,11 @@ impl HiddenCommand {
                     .into_iter()
                     .take(20)
                     .collect_vec();
+                let sticker_file = request_context
+                    .database
+                    .get_sticker_file_by_sticker_id(&sticker_id)
+                    .await?
+                    .required()?;
 
                 simple_bot_api::create_new_sticker_set(
                     &request_context.config.telegram_bot_api_url,
@@ -275,16 +378,24 @@ impl HiddenCommand {
                     &set_id,
                     &set_title,
                     &sticker.telegram_file_identifier,
-                    "static", // TODO: store format?
+                    match sticker_file.sticker_type {
+                        crate::database::StickerType::Animated => "animated",
+                        crate::database::StickerType::Video => "video",
+                        crate::database::StickerType::Static => "static",
+                    },
                     &[sticker.emoji.unwrap_or("😊".to_string())],
                     &tags,
                 )
                 .await?;
-                // todo! also handle animated stickers!
 
                 request_context
                     .database
-                    .upsert_sticker_set_with_title_and_creator(&set_id, &set_title, request_context.user.id, Some(request_context.user.id))
+                    .upsert_sticker_set_with_title_and_creator(
+                        &set_id,
+                        &set_title,
+                        request_context.user.id,
+                        Some(request_context.user.id),
+                    )
                     .await?;
 
                 request_context
@@ -342,7 +453,7 @@ impl HiddenCommand {
                     .await?;
                 if let Some(sticker) = sticker {
                     if let Some(tags) =
-                        get_tag_implications_including_self(&tag.0, request_context.clone())
+                        get_tag_implications_including_self(&tag.0, request_context.clone()).await?
                     {
                         request_context
                             .database
@@ -382,14 +493,17 @@ impl HiddenCommand {
                         // file id
                         // from
                         // database
-                        .reply_markup(Keyboard::tagging(
-                            &tags,
-                            &sticker_unique_id,
-                            &suggested_tags,
-                            is_locked,
-                            request_context.is_continuous_tag_state(),
-        request_context.tag_manager.clone(),
-    ))
+                        .reply_markup(
+                            Keyboard::tagging(
+                                &tags,
+                                &sticker_unique_id,
+                                &suggested_tags,
+                                is_locked,
+                                request_context.is_continuous_tag_state(),
+                                request_context.tag_manager.clone(),
+                            )
+                            .await?,
+                        )
                         .await?;
                 } else {
                     request_context
@@ -449,26 +563,24 @@ impl HiddenCommand {
     }
 }
 
-fn get_tag_implications_including_self(
+async fn get_tag_implications_including_self(
     tags: &[String],
     request_context: RequestContext,
-) -> Option<Vec<String>> {
-    let tags = tags
-        .into_iter()
-        .flat_map(|tag| {
-            request_context
-                .tag_manager
-                .get_implications_including_self(tag)
-        })
-        .flatten()
-        .sorted()
-        .dedup()
-        .collect_vec();
-    if tags.is_empty() {
-        None
-    } else {
-        Some(tags)
-    }
+) -> Result<Option<Vec<String>>, InternalError> {
+    // TODO: change return type?
+    let tags = try_join_all(tags.into_iter().map(|tag| {
+        request_context
+            .tag_manager
+            .execute(GetImplicationsIncludingSelf::new(tag.to_string()))
+    }))
+    .await?
+    .into_iter()
+    .flatten()
+    .flatten()
+    .sorted()
+    .dedup()
+    .collect_vec();
+    Ok(if tags.is_empty() { None } else { Some(tags) })
 }
 
 fn add_new_tags_to_continuous_tag(
@@ -491,24 +603,28 @@ async fn modify_continuous_tag(
     request_context: RequestContext,
     msg: Message,
 ) -> Result<(), BotError> {
-    let new_add_tags = new_add_tags
-        .into_iter()
-        .filter_map(|tag| {
-            request_context
-                .tag_manager
-                .get_implications_including_self(&tag)
-        })
-        .flatten()
-        .collect_vec();
-    let new_remove_tags = new_remove_tags
-        .into_iter()
-        .filter_map(|tag| {
-            request_context
-                .tag_manager
-                .get_implications_including_self(&tag)
-        })
-        .flatten()
-        .collect_vec();
+    let new_add_tags = try_join_all(new_add_tags.into_iter().map(|tag| async {
+        let a = request_context
+            .tag_manager
+            .execute(GetImplicationsIncludingSelf::new(tag))
+            .await?;
+        Ok::<_, InternalError>(a.unwrap_or_default())
+    }))
+    .await?
+    .into_iter()
+    .flatten()
+    .collect_vec();
+    let new_remove_tags = try_join_all(new_remove_tags.into_iter().map(|tag| async {
+        let a = request_context
+            .tag_manager
+            .execute(GetImplicationsIncludingSelf::new(tag))
+            .await?;
+        Ok::<_, InternalError>(a.unwrap_or_default())
+    }))
+    .await?
+    .into_iter()
+    .flatten()
+    .collect_vec();
     let (state_changed, (add_tags, remove_tags)) = match request_context.dialog_state() {
         DialogState::ContinuousTag {
             add_tags,
@@ -576,7 +692,8 @@ async fn set_tag_operation(
     }
     let message = match operation {
         SetOperation::Tag => {
-            if let Some(tags) = get_tag_implications_including_self(&tags, request_context.clone())
+            if let Some(tags) =
+                get_tag_implications_including_self(&tags, request_context.clone()).await?
             {
                 let taggings_changed = request_context
                     .database

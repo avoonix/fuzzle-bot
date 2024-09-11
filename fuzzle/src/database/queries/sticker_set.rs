@@ -238,4 +238,16 @@ impl Database {
             .first(&mut self.pool.get()?)
             .optional()?)
     }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    /// only returns the known set ids
+    pub async fn get_set_ids_by_set_ids(
+        &self,
+        set_ids: &[String],
+    ) -> Result<Vec<String>, DatabaseError> {
+        Ok(sticker_set::table
+            .filter(sticker_set::id.eq_any(set_ids))
+            .select(sticker_set::id)
+            .load(&mut self.pool.get()?)?)
+    }
 }

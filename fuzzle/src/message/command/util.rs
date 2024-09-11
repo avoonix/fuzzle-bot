@@ -1,9 +1,9 @@
 use regex::Regex;
 
 #[must_use]
-pub fn fix_underline_command_separator(text: &str) -> String {
+pub fn fix_underline_command_separator_and_normalize(text: &str) -> String {
     let re = Regex::new(r"^/([A-Za-z]+)_").expect("static regex to compile");
-    re.replace(text, "/$1 ").to_string()
+    re.replace(text, "/$1 ").trim().to_string()
 }
 
 /// "-" is not recognized as part of a command
