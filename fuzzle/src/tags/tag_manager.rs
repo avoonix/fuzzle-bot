@@ -60,7 +60,7 @@ impl DatabaseTags {
     pub fn get_aliases(&self) -> HashMap<String, String> {
         self.tags
             .iter()
-            .flat_map(|tag| match tag.implications {
+            .flat_map(|tag| match tag.aliases {
                 Some(ref tags) => tags
                     .clone()
                     .into_inner()
@@ -123,15 +123,11 @@ impl TagManager2 {
             tag_manager.tags.extend(repository.get_tags());
             for (tag, implications) in repository.get_implications() {
                 for implication in implications {
-                    tag_manager
-                        .implications
-                        .entry(tag.clone())
-                        .and_modify(|tag_manager_implications| {
-                            if !tag_manager_implications.contains(&implication) {
-                                tag_manager_implications.push(implication);
-                            }
-                        })
-                        .or_default();
+                    let tag_manager_implications =
+                        tag_manager.implications.entry(tag.clone()).or_default();
+                    if !tag_manager_implications.contains(&implication) {
+                        tag_manager_implications.push(implication);
+                    }
                 }
             }
         }
