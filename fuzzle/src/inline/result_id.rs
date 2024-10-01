@@ -12,7 +12,6 @@ use crate::util::{parse_emoji, set_name_literal, sticker_id_literal, tag_literal
 pub(super) enum InlineQueryResultId {
     Sticker(String),
     Tag(String),
-    Set(String),
     Emoji(Emoji),
     User(i64),
     Other(String),
@@ -38,10 +37,6 @@ fn parse_result(input: &str) -> IResult<&str, InlineQueryResultId> {
             InlineQueryResultId::Tag(tag.to_string())
         }),
         map(
-            preceded(tag("st:"), set_name_literal),
-            |set_id| InlineQueryResultId::Set(set_id.to_string()),
-        ),
-        map(
             preceded(tag("e:"), parse_emoji),
             |emoji| InlineQueryResultId::Emoji(emoji),
         ),
@@ -61,7 +56,6 @@ impl Display for InlineQueryResultId {
         match self {
             Self::Sticker(id) => write!(f, "s:{id}"),
             Self::Tag(tag) => write!(f, "t:{tag}"),
-            Self::Set(set_id) => write!(f, "st:{set_id}"),
             Self::Emoji(emoji) => write!(f, "e:{}", emoji.to_string_without_variant()),
             Self::User(user_id) => write!(f, "u:{user_id}"),
             Self::Other(description) => write!(f, "o:{description}"),

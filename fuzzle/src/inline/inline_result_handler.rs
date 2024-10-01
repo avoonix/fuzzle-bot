@@ -36,7 +36,6 @@ pub async fn inline_result_handler(
                 .await?;
         }
         InlineQueryResultId::Tag(tag) => {}
-        InlineQueryResultId::Set(set_id) => {}
         InlineQueryResultId::Emoji(emoji) => {}
         InlineQueryResultId::User(user_id) => {}
         InlineQueryResultId::Other(description) => {}

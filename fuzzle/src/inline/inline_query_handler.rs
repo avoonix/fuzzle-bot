@@ -16,6 +16,7 @@ use crate::util::{create_sticker_set_id, create_tag_id, format_relative_time, Em
 use futures::future::try_join_all;
 use itertools::Itertools;
 use num_traits::ToPrimitive;
+use rand::Rng;
 use std::convert::TryFrom;
 use std::future::IntoFuture;
 use std::sync::Arc;
@@ -53,8 +54,9 @@ fn create_query_set(
         Text::get_set_article_link(&set.id, &set_title),
     ));
 
+    let mut rng = rand::thread_rng();
     let mut article = InlineQueryResultArticle::new(
-        InlineQueryResultId::Set(set.id.clone()).to_string(),
+        InlineQueryResultId::Other(rng.gen::<u32>().to_string()).to_string(),
         set_title,
         content,
     )
@@ -1248,8 +1250,9 @@ async fn handle_user_sets(
             },
         )));
 
+        let mut rng = rand::thread_rng();
         let mut article = InlineQueryResultArticle::new(
-            InlineQueryResultId::Set(set.id.clone()).to_string(),
+            InlineQueryResultId::Other(rng.gen::<u32>().to_string()).to_string(),
             set_title,
             content,
         )
