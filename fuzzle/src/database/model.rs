@@ -272,12 +272,7 @@ impl_enum!(UsernameKind);
 pub enum DialogState {
     #[default]
     Normal,
-    ContinuousTag {
-        #[serde(default)]
-        add_tags: Vec<String>,
-        #[serde(default)]
-        remove_tags: Vec<String>,
-    },
+    ContinuousTag(ContinuousTag),
     StickerRecommender {
         #[serde(default)]
         positive_sticker_id: Vec<String>,
@@ -288,6 +283,16 @@ pub enum DialogState {
     // TODO: use
     //     bot.set_sticker_set_thumb(name, user_id); // as soon as the sticker pack has 4 stickers -> thumnail: first 3 stickers + fuzzle bot icon
     //     // not existing yet: setStickerEmojiList, setStickerKeywords
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ContinuousTag {
+    #[serde(default)]
+    pub add_tags: Vec<String>,
+    #[serde(default)]
+    pub remove_tags: Vec<String>,
+    #[serde(default)]
+    pub already_recommended_sticker_file_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

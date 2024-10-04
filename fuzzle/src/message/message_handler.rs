@@ -423,10 +423,7 @@ async fn handle_sticker_message(
 
     match request_context.dialog_state() {
         DialogState::Normal => handle_sticker_1(msg, sticker, request_context, false).await?,
-        DialogState::ContinuousTag {
-            add_tags,
-            remove_tags,
-        } => {
+        DialogState::ContinuousTag (continuous_tag) => {
             let file = request_context
                 .database
                 .get_sticker_file_by_sticker_id(&sticker.file.unique_id)
@@ -434,12 +431,12 @@ async fn handle_sticker_message(
                 .required()?;
             request_context
                 .database
-                .tag_file(&file.id, &add_tags, Some(request_context.user.id))
+                .tag_file(&file.id, &continuous_tag.add_tags, Some(request_context.user.id))
                 .await?;
 
             request_context
                 .database
-                .untag_file(&file.id, &remove_tags, request_context.user.id)
+                .untag_file(&file.id, &continuous_tag.remove_tags, request_context.user.id)
                 .await?;
             request_context.tagging_worker.maybe_recompute().await?;
             handle_sticker_1(msg, sticker, request_context, true).await?;

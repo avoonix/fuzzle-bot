@@ -1049,6 +1049,19 @@ impl Keyboard {
     pub fn privacy(section: PrivacyPolicy) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(privacy_tabs(section))
     }
+    
+    pub fn continuous_tag_confirm(sticker_id: &str) -> InlineKeyboardMarkup {
+        InlineKeyboardMarkup::new(
+            [[
+                InlineKeyboardButton::callback(
+                    format!("Apply selected tags"),
+                    CallbackData::ApplyTags {
+                        sticker_id: sticker_id.to_string(),
+                    },
+                ),
+            ]]
+        )
+    }
 }
 
 #[derive(PartialEq)]

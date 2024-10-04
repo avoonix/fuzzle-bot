@@ -105,6 +105,9 @@ pub enum UserError {
 
     #[error("unique constraint violation")]
     AlreadyExists(String),
+
+    #[error("no suitable sticker found")]
+    NoSuitableStickerFound,
 }
 
 impl InternalError {
@@ -132,6 +135,7 @@ impl UserError {
             UserError::ValidationError(description) => (format!("Invalid data: {description}"), UserErrorSeverity::Error),
             UserError::VectorNotFound => (format!("Come back later, looks like I'm not done processing this one"), UserErrorSeverity::Error),
             UserError::AlreadyExists(name) => (format!("This {name} already exists"),UserErrorSeverity::Error),
+            UserError::NoSuitableStickerFound => (format!("Couldn't find a suitable sticker."), UserErrorSeverity::Info),
         }
     }
 }

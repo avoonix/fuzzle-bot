@@ -174,6 +174,15 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_sticker_tags_by_file_id(&self, sticker_file_id: &str) -> Result<Vec<String>, DatabaseError> {
+        Ok(sticker_file_tag::table
+            .filter(sticker_file_tag::sticker_file_id.eq(sticker_file_id))
+            .select((sticker_file_tag::tag))
+            .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    #[deprecated(note = "use get_sticker_tags_by_file_id instead")]
     pub async fn get_sticker_tags(&self, sticker_id: &str) -> Result<Vec<String>, DatabaseError> {
         // TODO: pass file_id instead
         Ok(sticker_file_tag::table

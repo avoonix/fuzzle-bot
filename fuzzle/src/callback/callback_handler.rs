@@ -24,7 +24,7 @@ use crate::bot::{
 };
 use crate::callback::TagOperation;
 
-use crate::database::{Database, MergeStatus};
+use crate::database::{ContinuousTag, Database, MergeStatus};
 use crate::database::{DialogState, TagCreator};
 use crate::message::{send_merge_queue, Keyboard};
 use crate::sticker::{
@@ -345,7 +345,6 @@ pub async fn callback_handler(
                     &DialogState::TagCreator(state.clone()),
                 )
                 .await?;
-
             answer_callback_query(
                 request_context.clone(),
                 q,
@@ -354,6 +353,33 @@ pub async fn callback_handler(
                 None,
             )
             .await
+        }
+        CallbackData::ApplyTags { sticker_id } => {
+            let continuous_tag = match request_context.dialog_state() {
+                DialogState::ContinuousTag (ct) => ct,
+                DialogState::TagCreator (..)
+                | DialogState::Normal
+                | DialogState::StickerRecommender { .. } => {
+                    return Err(UserError::InvalidMode.into());
+                }
+            };
+            let file = request_context
+                .database
+                .get_sticker_file_by_sticker_id(&sticker_id)
+                .await?
+                .required()?;
+            request_context
+                .database
+                .tag_file(&file.id, &continuous_tag.add_tags, Some(request_context.user.id))
+                .await?;
+
+            request_context
+                .database
+                .untag_file(&file.id, &continuous_tag.remove_tags, request_context.user.id)
+                .await?;
+            request_context.tagging_worker.maybe_recompute().await?;
+
+            send_tagging_keyboard(request_context.clone(), None, &sticker_id, q).await
         }
         CallbackData::ToggleRecommendSticker {
             positive,
@@ -1154,42 +1180,41 @@ async fn remove_continuous_tag(
     tag: String,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
-    let (add_tags, remove_tags) = match request_context.dialog_state() {
-        DialogState::ContinuousTag {
-            add_tags,
-            remove_tags,
-        } => {
+    let (add_tags, remove_tags, already_recommended_sticker_file_ids) = match request_context.dialog_state() {
+        DialogState::ContinuousTag (continuous_tag) => {
             let to_add = tags_that_should_be_removed(
                 tag.clone(),
-                add_tags.clone(),
+                continuous_tag.add_tags.clone(),
                 request_context.tag_manager.clone(),
             )
             .await?;
             let to_remove = tags_that_should_be_removed(
                 tag.clone(),
-                remove_tags.clone(),
+                continuous_tag.remove_tags.clone(),
                 request_context.tag_manager.clone(),
             )
             .await?;
             (
-                add_tags
+                continuous_tag.add_tags
                     .into_iter()
                     .filter(|t| !to_add.contains(t))
                     .collect_vec(),
-                remove_tags
+                continuous_tag.remove_tags
                     .into_iter()
                     .filter(|t| !to_remove.contains(t))
                     .collect_vec(),
+                    continuous_tag.already_recommended_sticker_file_ids,
             )
         }
         _ => {
             return Err(UserError::InvalidMode.into());
         }
     };
-    let new_dialog_state = DialogState::ContinuousTag {
+    let new_dialog_state = DialogState::ContinuousTag (ContinuousTag {
         add_tags: add_tags.clone(),
         remove_tags: remove_tags.clone(),
-    };
+        already_recommended_sticker_file_ids,
+    });
     request_context
         .database
         .update_dialog_state(request_context.user.id, &new_dialog_state)

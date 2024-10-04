@@ -5,9 +5,12 @@ use crate::background_tasks::{BackgroundTaskExt, GetImplicationsIncludingSelf};
 use crate::bot::{BotError, BotExt, InternalError, RequestContext, UserError};
 use crate::callback::{exit_mode, sticker_explore_keyboard, TagOperation};
 
-use crate::database::{DialogState, ReportReason, TagCreator};
+use crate::database::{
+    ContinuousTag, Database, DialogState, Order, ReportReason, Sticker, TagCreator,
+};
 use crate::inline::{SetOperation, TagKind};
 use crate::message::Keyboard;
+use crate::qdrant::{StickerMatch, VectorDatabase};
 use crate::simple_bot_api;
 use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
@@ -22,6 +25,7 @@ use nom::combinator::{eof, map, map_res};
 use nom::sequence::tuple;
 use nom::Finish;
 use num_traits::FromPrimitive;
+use rand::Rng;
 use teloxide::dispatching::dialogue::GetChatId;
 use teloxide::types::{
     ButtonRequest, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, KeyboardButton,
@@ -75,6 +79,10 @@ pub enum HiddenCommand {
     Cancel,
     #[command(description = "get a random sticker")]
     Random,
+    #[command(
+        description = "suggest a sticker in continuous tag mode to be tagged (do not use outside continuous tag mode)"
+    )]
+    AutoSuggest,
     #[command(
         description = "set the id of the tag to be created (do not use manually)",
         parse_with = "split"
@@ -438,6 +446,46 @@ impl HiddenCommand {
                 send_sticker_with_tag_input(sticker, request_context.clone(), msg.chat.id, msg.id)
                     .await?;
             }
+            Self::AutoSuggest => {
+                let continuoust_tag = match request_context.dialog_state() {
+                    DialogState::ContinuousTag(ct) => ct,
+                    DialogState::Normal
+                    | DialogState::StickerRecommender { .. }
+                    | DialogState::TagCreator(..) => return Err(UserError::InvalidMode.into()),
+                };
+                let sticker = suggest_sticker(
+                    request_context.user.id,
+                    &continuoust_tag,
+                    request_context.database.clone(),
+                    request_context.vector_db.clone(),
+                )
+                .await?;
+
+                let new_dialog_state = DialogState::ContinuousTag(ContinuousTag {
+                    add_tags: continuoust_tag.add_tags,
+                    remove_tags: continuoust_tag.remove_tags,
+                    already_recommended_sticker_file_ids: continuoust_tag
+                        .already_recommended_sticker_file_ids
+                        .into_iter()
+                        .chain(std::iter::once(sticker.sticker_file_id))
+                        .collect_vec(),
+                });
+                request_context
+                    .database
+                    .update_dialog_state(request_context.user.id, &new_dialog_state)
+                    .await?;
+
+                request_context
+                    .bot
+                    .send_sticker(
+                        msg.chat.id,
+                        InputFile::file_id(sticker.telegram_file_identifier),
+                    )
+                    .reply_markup(Keyboard::continuous_tag_confirm(&sticker.id))
+                    .reply_to_message_id(msg.id)
+                    .allow_sending_without_reply(true)
+                    .await?;
+            }
             Self::TagSticker {
                 sticker_unique_id,
                 tag,
@@ -563,6 +611,85 @@ impl HiddenCommand {
     }
 }
 
+async fn suggest_sticker(
+    user_id: i64,
+    tag_state: &ContinuousTag,
+    database: Database,
+    vector_db: VectorDatabase,
+) -> Result<Sticker, BotError> {
+    // TODO: also use selected_tags + excluded_tags in a vector_db query directly
+    let seed = { rand::thread_rng().gen() };
+
+    // TODO: limit stickers to only ones tagged by the current user?
+    // TODO: also use excluded tags to find stickers and exclude those
+    let stickers_already_tagged = database
+        .get_stickers_for_tag_query(
+            tag_state.add_tags.clone(),
+            tag_state.remove_tags.clone(),
+            vec![],
+            50,
+            0,
+            Order::Random { seed },
+        )
+        .await?;
+    if stickers_already_tagged.is_empty() {
+        return Err(UserError::NoSuitableStickerFound.into());
+    }
+    let sticker_file_ids = stickers_already_tagged
+        .into_iter()
+        .map(|sticker| sticker.sticker_file_id)
+        .collect_vec();
+    let stickers_similar_to_already_tagged = vector_db
+        .find_similar_stickers(
+            &sticker_file_ids,
+            &vec![],
+            crate::inline::SimilarityAspect::Embedding,
+            0.0,
+            100,
+            0,
+        )
+        .await?;
+    let stickers_similar_to_already_tagged = stickers_similar_to_already_tagged.unwrap_or_default();
+
+    let sticker = pick_sticker(
+        database.clone(),
+        &stickers_similar_to_already_tagged,
+        &tag_state.add_tags,
+        &tag_state.already_recommended_sticker_file_ids,
+    )
+    .await?;
+
+    let Some(sticker) = sticker else {
+        return Err(UserError::NoSuitableStickerFound.into());
+    };
+
+    Ok(sticker)
+}
+
+async fn pick_sticker(
+    database: Database,
+    stickers_similar_to_already_tagged: &[StickerMatch],
+    selected_tags: &[String],
+    already_recommended_file_ids: &[String],
+) -> Result<Option<Sticker>, InternalError> {
+    for StickerMatch { file_hash, .. } in stickers_similar_to_already_tagged {
+        if already_recommended_file_ids.contains(file_hash) {
+            continue;
+        }
+        let tags = database.get_sticker_tags_by_file_id(&file_hash).await?;
+        // returns the sticker if at least one selected tag is not present
+        for selected_tag in selected_tags {
+            if !tags.contains(selected_tag) {
+                let sticker = database.get_some_sticker_by_file_id(&file_hash).await?;
+                if let Some(sticker) = sticker {
+                    return Ok(Some(sticker));
+                }
+            }
+        }
+    }
+    return Ok(None);
+}
+
 async fn get_tag_implications_including_self(
     tags: &[String],
     request_context: RequestContext,
@@ -625,21 +752,21 @@ async fn modify_continuous_tag(
     .into_iter()
     .flatten()
     .collect_vec();
-    let (state_changed, (add_tags, remove_tags)) = match request_context.dialog_state() {
-        DialogState::ContinuousTag {
-            add_tags,
-            remove_tags,
-        } => (false, (add_tags, remove_tags)),
-        _ => (true, (vec![], vec![])),
+    let (state_changed, continuous_tag) = match request_context.dialog_state() {
+        DialogState::ContinuousTag(ct) => (false, ct),
+        _ => (true, Default::default()),
     };
 
-    let remove_tags = add_new_tags_to_continuous_tag(remove_tags, new_remove_tags, &new_add_tags);
-    let add_tags = add_new_tags_to_continuous_tag(add_tags, new_add_tags, &remove_tags);
+    let remove_tags =
+        add_new_tags_to_continuous_tag(continuous_tag.remove_tags, new_remove_tags, &new_add_tags);
+    let add_tags =
+        add_new_tags_to_continuous_tag(continuous_tag.add_tags, new_add_tags, &remove_tags);
 
-    let new_dialog_state = DialogState::ContinuousTag {
+    let new_dialog_state = DialogState::ContinuousTag(crate::database::ContinuousTag {
         add_tags: add_tags.clone(),
         remove_tags: remove_tags.clone(),
-    };
+        already_recommended_sticker_file_ids: continuous_tag.already_recommended_sticker_file_ids,
+    });
     request_context
         .database
         .update_dialog_state(request_context.user.id, &new_dialog_state)
@@ -653,6 +780,9 @@ async fn modify_continuous_tag(
                     ReplyMarkup::Keyboard(KeyboardMarkup::new(vec![
                         vec![
                            KeyboardButton::new("/continuoustagmode"),
+                        ],
+                        vec![
+                           KeyboardButton::new("/autosuggest"),
                         ],
                         vec![
                            KeyboardButton::new("/cancel"),

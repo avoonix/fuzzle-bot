@@ -101,6 +101,9 @@ pub enum CallbackData {
     ToggleExampleSticker {
         sticker_id: String,
     },
+    ApplyTags {
+        sticker_id: String,
+    },
 
     Sticker {
         sticker_id: String,
@@ -181,27 +184,32 @@ impl CallbackData {
 fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
     terminated(
         alt((
-            parse_simple,
-            parse_remove_blacklist_data,
-            parse_remove_continuous_tag,
-            parse_sticker_data,
-            parse_remove_set_data,
-            parse_moderation_task_tatus,
-            parse_user_info_data,
-            parse_order_data,
-            parse_set_category,
-            parse_privacy_policy,
-            parse_remove_alias,
-            parse_lock_data,
-            parse_recommend_sticker,
-            parse_sticker_set_page,
-            parse_owner_page,
-            parse_download_sticker,
-            parse_sticker_explore_page,
-            parse_toggle_example_sticker,
-            parse_favorite_sticker_data,
-            parse_tag_list_action,
-            parse_merge_data,
+            alt((
+                parse_simple,
+                parse_remove_blacklist_data,
+                parse_remove_continuous_tag,
+                parse_sticker_data,
+                parse_remove_set_data,
+                parse_moderation_task_tatus,
+                parse_user_info_data,
+                parse_order_data,
+                parse_set_category,
+                parse_privacy_policy,
+                parse_remove_alias,
+                parse_lock_data,
+            )),
+            alt((
+                parse_recommend_sticker,
+                parse_sticker_set_page,
+                parse_owner_page,
+                parse_download_sticker,
+                parse_sticker_explore_page,
+                parse_toggle_example_sticker,
+                parse_apply_tags,
+                parse_favorite_sticker_data,
+                parse_tag_list_action,
+                parse_merge_data,
+            )),
         )),
         eof,
     )(input)
@@ -334,6 +342,17 @@ fn parse_toggle_example_sticker(input: &str) -> IResult<&str, CallbackData> {
     Ok((
         input,
         CallbackData::ToggleExampleSticker {
+            sticker_id: sticker_id.to_string(),
+        },
+    ))
+}
+
+fn parse_apply_tags(input: &str) -> IResult<&str, CallbackData> {
+    let (input, _) = tag("apptags;")(input)?;
+    let (input, sticker_id) = sticker_id_literal(input)?;
+    Ok((
+        input,
+        CallbackData::ApplyTags {
             sticker_id: sticker_id.to_string(),
         },
     ))
@@ -531,6 +550,7 @@ impl Display for CallbackData {
             Self::DownloadSticker { sticker_id } => write!(f, "dls;{sticker_id}"),
             Self::StickerExplorePage { sticker_id } => write!(f, "sep;{sticker_id}"),
             Self::ToggleExampleSticker { sticker_id } => write!(f, "tex;{sticker_id}"),
+            Self::ApplyTags { sticker_id } => write!(f, "apptags;{sticker_id}"),
             Self::RemoveBlacklistedTag(tag) => write!(f, "removebl;{tag}"),
             Self::RemoveContinuousTag(tag) => write!(f, "removec;{tag}"),
             Self::RemoveAlias(tag) => write!(f, "ras;{tag}"),

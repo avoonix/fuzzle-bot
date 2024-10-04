@@ -191,23 +191,20 @@ impl RegularCommand {
                         .reply_markup(Keyboard::make_continuous_tag_keyboard(false, &[], &[]))
                         .await?;
                 }
-                DialogState::ContinuousTag {
-                    add_tags,
-                    remove_tags,
-                } => {
+                DialogState::ContinuousTag (continuous_tag) => {
                     request_context
                         .bot
                         .send_markdown(
                             msg.chat.id,
                             Text::get_continuous_tag_mode_text(
-                                add_tags.as_slice(),
-                                remove_tags.as_slice(),
+                                continuous_tag.add_tags.as_slice(),
+                                continuous_tag.remove_tags.as_slice(),
                             ),
                         )
                         .reply_markup(Keyboard::make_continuous_tag_keyboard(
                             true,
-                            add_tags.as_slice(),
-                            remove_tags.as_slice(),
+                            continuous_tag.add_tags.as_slice(),
+                            continuous_tag.remove_tags.as_slice(),
                         ))
                         .await?;
                 }

@@ -376,7 +376,8 @@ Taggings per set \\(24 hours\\):
 Tags that will be added:
 {add_tags}
 Tags that will be removed: 
-{remove_tags}"
+{remove_tags}
+Send stickers to apply these changes to them\\."
         ))
     }
 
