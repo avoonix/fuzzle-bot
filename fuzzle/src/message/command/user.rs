@@ -267,7 +267,7 @@ impl RegularCommand {
                         KeyboardMarkup::new(vec![
                             // TODO: move to keyboard struct
                             vec![KeyboardButton::new("/stickerrecommendermode")],
-                            vec![KeyboardButton::new("/random")],
+                            vec![KeyboardButton::new("/random"), KeyboardButton::new("/autosuggest")],
                             vec![KeyboardButton::new("/cancel")],
                         ])
                         .resize_keyboard()

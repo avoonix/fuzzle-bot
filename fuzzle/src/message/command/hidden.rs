@@ -8,10 +8,11 @@ use crate::callback::{exit_mode, sticker_explore_keyboard, TagOperation};
 use crate::database::{
     ContinuousTag, Database, DialogState, Order, ReportReason, Sticker, TagCreator,
 };
-use crate::inline::{SetOperation, TagKind};
+use crate::inline::{SetOperation, SimilarityAspect, TagKind};
 use crate::message::Keyboard;
 use crate::qdrant::{StickerMatch, VectorDatabase};
 use crate::simple_bot_api;
+use crate::sticker::with_sticker_id;
 use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
 use crate::util::{
@@ -446,46 +447,26 @@ impl HiddenCommand {
                 send_sticker_with_tag_input(sticker, request_context.clone(), msg.chat.id, msg.id)
                     .await?;
             }
-            Self::AutoSuggest => {
-                let continuoust_tag = match request_context.dialog_state() {
-                    DialogState::ContinuousTag(ct) => ct,
-                    DialogState::Normal
-                    | DialogState::StickerRecommender { .. }
-                    | DialogState::TagCreator(..) => return Err(UserError::InvalidMode.into()),
-                };
-                let sticker = suggest_sticker(
-                    request_context.user.id,
-                    &continuoust_tag,
-                    request_context.database.clone(),
-                    request_context.vector_db.clone(),
-                )
-                .await?;
-
-                let new_dialog_state = DialogState::ContinuousTag(ContinuousTag {
-                    add_tags: continuoust_tag.add_tags,
-                    remove_tags: continuoust_tag.remove_tags,
-                    already_recommended_sticker_file_ids: continuoust_tag
-                        .already_recommended_sticker_file_ids
-                        .into_iter()
-                        .chain(std::iter::once(sticker.sticker_file_id))
-                        .collect_vec(),
-                });
-                request_context
-                    .database
-                    .update_dialog_state(request_context.user.id, &new_dialog_state)
-                    .await?;
-
-                request_context
-                    .bot
-                    .send_sticker(
-                        msg.chat.id,
-                        InputFile::file_id(sticker.telegram_file_identifier),
+            Self::AutoSuggest => match request_context.dialog_state() {
+                DialogState::ContinuousTag(ct) => {
+                    suggest_sticker_continuous_tag(ct, &request_context, &msg).await?
+                }
+                DialogState::StickerRecommender {
+                    positive_sticker_id,
+                    negative_sticker_id,
+                } => {
+                    suggest_sticker_recommender(
+                        positive_sticker_id,
+                        negative_sticker_id,
+                        &request_context,
+                        &msg,
                     )
-                    .reply_markup(Keyboard::continuous_tag_confirm(&sticker.id))
-                    .reply_to_message_id(msg.id)
-                    .allow_sending_without_reply(true)
-                    .await?;
-            }
+                    .await?
+                }
+                DialogState::Normal | DialogState::TagCreator(..) => {
+                    return Err(UserError::InvalidMode.into())
+                }
+            },
             Self::TagSticker {
                 sticker_unique_id,
                 tag,
@@ -928,4 +909,85 @@ async fn set_tag_id(
         .reply_markup(Keyboard::tag_creator(&tag_creator))
         .await?;
     Ok(())
+}
+
+async fn suggest_sticker_continuous_tag(
+    continuous_tag: ContinuousTag,
+    request_context: &RequestContext,
+    msg: &Message,
+) -> Result<(), BotError> {
+    let sticker = suggest_sticker(
+        request_context.user.id,
+        &continuous_tag,
+        request_context.database.clone(),
+        request_context.vector_db.clone(),
+    )
+    .await?;
+
+    let new_dialog_state = DialogState::ContinuousTag(ContinuousTag {
+        add_tags: continuous_tag.add_tags,
+        remove_tags: continuous_tag.remove_tags,
+        already_recommended_sticker_file_ids: continuous_tag
+            .already_recommended_sticker_file_ids
+            .into_iter()
+            .chain(std::iter::once(sticker.sticker_file_id))
+            .collect_vec(),
+    });
+    request_context
+        .database
+        .update_dialog_state(request_context.user.id, &new_dialog_state)
+        .await?;
+
+    request_context
+        .bot
+        .send_sticker(
+            msg.chat.id,
+            InputFile::file_id(sticker.telegram_file_identifier),
+        )
+        .reply_markup(Keyboard::continuous_tag_confirm(&sticker.id))
+        .reply_to_message_id(msg.id)
+        .allow_sending_without_reply(true)
+        .await?;
+    Ok(())
+}
+
+async fn suggest_sticker_recommender(
+    positive: Vec<String>,
+    negative: Vec<String>,
+    request_context: &RequestContext,
+    msg: &Message,
+) -> Result<(), BotError> {
+    let positive_file_ids = request_context
+        .database
+        .get_sticker_file_ids_by_sticker_id(&positive)
+        .await?;
+    let mut negative_file_ids = request_context
+        .database
+        .get_sticker_file_ids_by_sticker_id(&negative)
+        .await?;
+    let recommended_file_hashes = request_context
+        .vector_db
+        .find_similar_stickers(
+            &positive_file_ids,
+            &negative_file_ids,
+            SimilarityAspect::Embedding,
+            0.0,
+            50,
+            0,
+        )
+        .await?
+        .required()?;
+    let recommended =
+        with_sticker_id(request_context.database.clone(), recommended_file_hashes).await?;
+
+    let sticker_ids = recommended.into_iter().map(|m| m.sticker_id).collect_vec();
+    for id in sticker_ids {
+        if let Some(sticker) = request_context.database.get_sticker_by_id(&id).await? {
+            send_sticker_with_tag_input(sticker, request_context.clone(), msg.chat.id, msg.id)
+                .await?;
+            return Ok(());
+        }
+    }
+
+    return Err(UserError::NoSuitableStickerFound.into());
 }
