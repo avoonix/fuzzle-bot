@@ -620,10 +620,37 @@ async fn suggest_sticker(
         .into_iter()
         .map(|sticker| sticker.sticker_file_id)
         .collect_vec();
+    // last 30 elements as negative examples, only if they are not tagged with all add_tags tags
+    let negative_examples = try_join_all(
+        tag_state
+            .already_recommended_sticker_file_ids
+            .clone()
+            .into_iter()
+            .rev()
+            .take(30)
+            .map(|file_id| {
+                let database = &database;
+                let tag_state = &tag_state;
+                async move {
+                    let sticker_tags = database.get_sticker_tags_by_file_id(&file_id).await?;
+                    for add_tag in &tag_state.add_tags {
+                        if !sticker_tags.contains(add_tag) {
+                            return Ok::<_, InternalError>(Some(file_id));
+                        }
+                    }
+                    Ok::<_, InternalError>(None)
+                }
+            }),
+    )
+    .await?
+    .into_iter()
+    .filter_map(|tag| tag)
+    .collect_vec();
+dbg!(&negative_examples, &tag_state.already_recommended_sticker_file_ids);
     let stickers_similar_to_already_tagged = vector_db
         .find_similar_stickers(
             &sticker_file_ids,
-            &vec![],
+            &negative_examples,
             crate::inline::SimilarityAspect::Embedding,
             0.0,
             100,
