@@ -8,10 +8,8 @@
 🧦 🦵 => thigh_highs;
 🤗 🙆‍♀️ 🙆‍♂️ 🫂 => hug duo ych_(character);
 any_str("friends") title(" and ") title(" & ") => duo;
-name_suffix("NL") name_suffix("NaL") => nowandlater;
 any_str("nsfw") => questionable explicit;
 any_str("yuniwusky") any_str("byyuni") => yuniwusky;
-any_str("bypulex") => pulex;
 any_str("nsfw") any_str("lewd") any_str("yiff") any_str("horny") => explicit;
 any_str("sfw") any_str("clean") => safe;
 any_str("cuddle") any_str("cuddly") => safe;

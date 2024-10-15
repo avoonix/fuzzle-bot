@@ -227,7 +227,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_general_user_stats(&self, limit: i64, offset: i64) -> Result<Vec<UserStickerStat>, DatabaseError> {
-        Ok(sql_query("select sticker_set.created_by_user_id as user_id, count(*) as set_count, username.tg_username as username from sticker_set left join username on username.tg_id = sticker_set.created_by_user_id where user_id is not null group by created_by_user_id order by set_count desc limit ?1 offset ?2;")
+        Ok(sql_query("select sticker_set.created_by_user_id as user_id, count(*) as set_count, username.tg_username as username, tag.id as linked_tag from sticker_set left join username on username.tg_id = sticker_set.created_by_user_id left join tag on tag.linked_user_id = sticker_set.created_by_user_id where user_id is not null group by sticker_set.created_by_user_id order by set_count desc limit ?1 offset ?2;")
                                 .bind::<BigInt, _>(limit)
                                 .bind::<BigInt, _>(offset)
             .load(&mut self.pool.get()?)?)

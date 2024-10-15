@@ -1428,7 +1428,7 @@ async fn handle_top_owners(
         .into_iter()
         .enumerate()
         .map(|(index, stat)| {
-            let username = stat.username.map_or_else(|| format!("Unknown User {}", stat.user_id), |username| format!("@{username}"));
+            let username = stat.username.map_or_else(|| stat.linked_tag.map_or_else(|| format!("Unknown User {}", stat.user_id), |linked_tag| format!("~{}", linked_tag)) , |username| format!("@{username}"));
             Ok::<InlineQueryResult, BotError>(
                 InlineQueryResultArticle::new(
                     InlineQueryResultId::User(stat.user_id).to_string(),

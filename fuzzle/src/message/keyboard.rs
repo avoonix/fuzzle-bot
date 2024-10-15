@@ -647,7 +647,7 @@ impl Keyboard {
         for stat in stats.chunks(2) {
             markup = markup.append_row(stat.into_iter().map(|stat| {
                 let username = stat.username.clone().map_or_else(
-                    || "Unknown User".to_string(),
+|| stat.linked_tag.clone().map_or_else(|| format!("Unknown User"), |linked_tag| format!("~{}", linked_tag)),
                     |username| format!("@{username}"),
                 );
                 InlineKeyboardButton::switch_inline_query_current_chat(

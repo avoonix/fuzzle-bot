@@ -339,6 +339,8 @@ pub struct UserStickerStat {
     pub set_count: i64,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub username: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub linked_tag: Option<String>,
 }
 
 #[derive(Debug)]
