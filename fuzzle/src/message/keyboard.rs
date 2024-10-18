@@ -240,7 +240,10 @@ impl Keyboard {
                     CallbackData::ChangeModerationTaskStatus { status, task_id },
                 )
             })
-            .chain(vec![user_button(UserId(creator_id as u64))])
+            .chain(vec![InlineKeyboardButton::callback(
+                format!("User {creator_id}"),
+                CallbackData::user_info(creator_id as u64),
+            )])
             .collect_vec()
     }
 
@@ -337,6 +340,7 @@ impl Keyboard {
         for set_name in added_sets {
             markup = markup.append_row(vec![
                 set_button(set_name)?,
+                if set_name.len() < 50 {
                 if indexed_sets.contains(set_name) {
                     InlineKeyboardButton::callback(
                         format!("Ban {}", set_name),
@@ -347,7 +351,11 @@ impl Keyboard {
                         format!("Unban {}", set_name),
                         CallbackData::change_set_status(set_name, false, task_id),
                     )
-                },
+                }
+                } else {
+                    set_button(set_name)? // TODO: set name too long, use ids?
+                }
+                ,
             ]);
         }
 

@@ -437,12 +437,10 @@ fn parse_user_info_data(input: &str) -> IResult<&str, CallbackData> {
 }
 
 fn parse_remove_set_data(input: &str) -> IResult<&str, CallbackData> {
-    let (input, _) = tag("chset;")(input)?;
-    let (input, set_name) = tag_literal(input)?; // TODO: add separate set_name parser
-    let (input, _) = tag(";")(input)?;
+    let (input, _) = tag("b")(input)?;
     let (input, task_id) = i64(input)?;
-    let (input, _) = tag(";")(input)?;
-    let (input, banned) = alt((map(tag("ban"), |_| true), map(tag("unban"), |_| false)))(input)?;
+    let (input, banned) = alt((map(tag("b"), |_| true), map(tag("u"), |_| false)))(input)?;
+    let (input, set_name) = tag_literal(input)?; // TODO: add separate set_name parser
     Ok((
         input,
         CallbackData::ChangeSetBannedStatus {
@@ -564,8 +562,8 @@ impl Display for CallbackData {
             Self::RemoveContinuousTag(tag) => write!(f, "removec;{tag}"),
             Self::RemoveAlias(tag) => write!(f, "ras;{tag}"),
             Self::ChangeSetBannedStatus { set_name, banned, moderation_task_id } => {
-                let action = if *banned { "ban" } else { "unban" };
-                write!(f, "chset;{set_name};{moderation_task_id};{action}")
+                let action = if *banned { "b" } else { "u" };
+                write!(f, "b{moderation_task_id}{action}{set_name}")
             }
             Self::ChangeModerationTaskStatus {status, task_id} => {
                 write!(f, "modtask;{task_id};{}", status.to_i64().unwrap_or_default())
