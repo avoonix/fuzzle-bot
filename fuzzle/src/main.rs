@@ -69,6 +69,7 @@ pub async fn init() -> Result<()> {
                 "meta_sticker".to_string(),
                 "gore".to_string(),
                 "scat".to_string(),
+                "irrelevant_content".to_string(),
             ],
         )?
         .set_default("telegram_bot_api_url", "https://api.telegram.org")?
