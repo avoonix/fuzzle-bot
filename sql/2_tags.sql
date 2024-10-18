@@ -16,3 +16,12 @@ INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('mlw',
 INSERT INTO tag (id, category, linked_user_id) VALUES ('ookami_kemono', 1, 235044733);
 INSERT INTO tag (id, category, linked_user_id) VALUES ('iztli', 1, 221764245);
 INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('violet_cross', 1, -1001159004782, 505581926);
+INSERT INTO tag (id, category, linked_user_id) VALUES ('kuppy', 1, 209445432);
+INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('dracky', 1, -1001353771923, 129675059);
+INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('ccart', 1, -1001433421086, 330839721);
+INSERT INTO tag (id, category, linked_user_id) VALUES ('carowouine', 1, 363143980);
+INSERT INTO tag (id, category, aliases, linked_channel_id, linked_user_id) VALUES ('angiewolf', 1, '["ameotoko"]', -1001271733588, 160743665);
+INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('crazysnep', 1, -1001163011189, 102377030);
+INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('nikraccoon', 1, -1001208505070, 339605847);
+INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('jvrex', 1, -1001297253010, 1202127094);
+INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('whiteklaw', 1, -1001803082681, 1435369674);

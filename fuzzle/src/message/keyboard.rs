@@ -256,7 +256,6 @@ impl Keyboard {
         InlineKeyboardMarkup::new(
             vec![
                 vec![Self::moderation_task_common(status, creator_id, task_id)],
-
                 if let Some(user_username) = user_username {
                     vec![vec![InlineKeyboardButton::url(
                         format!("@{user_username}"),
@@ -275,24 +274,22 @@ impl Keyboard {
                 } else {
                     vec![]
                 },
-                vec![
-                    vec![
-                        InlineKeyboardButton::callback(
-                            "Approve Tag",
-                            CallbackData::TagListAction {
-                                moderation_task_id: task_id,
-                                action: crate::callback::TagListAction::Add,
-                            },
-                        ),
-                        InlineKeyboardButton::callback(
-                            "Delete Tag",
-                            CallbackData::TagListAction {
-                                moderation_task_id: task_id,
-                                action: crate::callback::TagListAction::Remove,
-                            },
-                        )
-                    ]
-                ]
+                vec![vec![
+                    InlineKeyboardButton::callback(
+                        "Approve Tag",
+                        CallbackData::TagListAction {
+                            moderation_task_id: task_id,
+                            action: crate::callback::TagListAction::Add,
+                        },
+                    ),
+                    InlineKeyboardButton::callback(
+                        "Delete Tag",
+                        CallbackData::TagListAction {
+                            moderation_task_id: task_id,
+                            action: crate::callback::TagListAction::Remove,
+                        },
+                    ),
+                ]],
             ]
             .concat(),
         )
@@ -647,7 +644,12 @@ impl Keyboard {
         for stat in stats.chunks(2) {
             markup = markup.append_row(stat.into_iter().map(|stat| {
                 let username = stat.username.clone().map_or_else(
-|| stat.linked_tag.clone().map_or_else(|| format!("Unknown User"), |linked_tag| format!("~{}", linked_tag)),
+                    || {
+                        stat.linked_tag.clone().map_or_else(
+                            || format!("Unknown User"),
+                            |linked_tag| format!("~{}", linked_tag),
+                        )
+                    },
                     |username| format!("@{username}"),
                 );
                 InlineKeyboardButton::switch_inline_query_current_chat(
@@ -891,11 +893,17 @@ impl Keyboard {
             .collect_vec();
 
         let open_owner_button = if let Some(owner_username) = owner_username {
-            vec![InlineKeyboardButton::url(
-                format!("@{owner_username}"),
-                Url::parse(format!("https://t.me/{}", owner_username).as_str())
-                    .expect("url to be valid"),
-            )]
+            vec![
+                InlineKeyboardButton::url(
+                    format!("@{owner_username}"),
+                    Url::parse(format!("https://t.me/{}", owner_username).as_str())
+                        .expect("url to be valid"),
+                ),
+                InlineKeyboardButton::callback(
+                    "🏷️ Create Tag",
+                    CallbackData::CreateTagForUser { user_id },
+                ),
+            ]
         } else {
             vec![
                 InlineKeyboardButton::url(
@@ -1049,18 +1057,14 @@ impl Keyboard {
     pub fn privacy(section: PrivacyPolicy) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(privacy_tabs(section))
     }
-    
+
     pub fn continuous_tag_confirm(sticker_id: &str) -> InlineKeyboardMarkup {
-        InlineKeyboardMarkup::new(
-            [[
-                InlineKeyboardButton::callback(
-                    format!("Apply selected tags"),
-                    CallbackData::ApplyTags {
-                        sticker_id: sticker_id.to_string(),
-                    },
-                ),
-            ]]
-        )
+        InlineKeyboardMarkup::new([[InlineKeyboardButton::callback(
+            format!("Apply selected tags"),
+            CallbackData::ApplyTags {
+                sticker_id: sticker_id.to_string(),
+            },
+        )]])
     }
 }
 

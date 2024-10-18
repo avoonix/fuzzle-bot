@@ -8,6 +8,7 @@ use flate2::{Compression, GzBuilder};
 use futures::future::try_join_all;
 use itertools::Itertools;
 
+use teloxide::dispatching::dialogue::GetChatId;
 use teloxide::payloads::AnswerCallbackQuerySetters;
 use teloxide::prelude::*;
 use teloxide::types::{
@@ -26,14 +27,14 @@ use crate::callback::TagOperation;
 
 use crate::database::{ContinuousTag, Database, MergeStatus};
 use crate::database::{DialogState, TagCreator};
-use crate::message::{send_merge_queue, Keyboard};
+use crate::message::{send_merge_queue, set_tag_id, Keyboard};
 use crate::sticker::{
     determine_canonical_sticker_and_merge, fetch_sticker_file, import_all_stickers_from_set,
     FileKind,
 };
 use crate::tags::{suggest_tags, Category};
 use crate::text::{Markdown, Text};
-use crate::util::{teloxide_error_can_safely_be_ignored, Emoji, Required};
+use crate::util::{create_tag_id, teloxide_error_can_safely_be_ignored, Emoji, Required};
 
 use crate::callback::CallbackData;
 
@@ -287,6 +288,13 @@ pub async fn callback_handler(
 
             let request_context = exit_mode(request_context.clone(), false).await?;
 
+            Ok(())
+        }
+        CallbackData::CreateTagForUser {user_id} => {
+            let username = request_context.database.get_username(crate::database::UsernameKind::User, user_id).await?.required()?;
+            let tag_id = create_tag_id(&username).to_lowercase();
+            set_tag_id(request_context.clone(), q.chat_id().required()?, tag_id, crate::inline::TagKind::Main, Some(user_id)).await?;
+            _ = request_context.bot.answer_callback_query(&q.id).await; // TODO: should i just ignore the error?
             Ok(())
         }
         CallbackData::RemoveAlias(alias) => {
@@ -1377,7 +1385,7 @@ async fn answer_callback_query(
     }
 }
 
-const EXAMPLES_REQUIRED: usize = 5;
+const EXAMPLES_REQUIRED: usize = 2;
 
 async fn create_tag(state: &TagCreator, request_context: &RequestContext) -> Result<(), BotError> {
     // TODO: check if valid

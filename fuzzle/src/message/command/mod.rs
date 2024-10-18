@@ -8,7 +8,7 @@ mod privacy;
 pub use start_parameter::StartParameter;
 
 pub use admin::{send_database_export_to_chat, AdminCommand, send_merge_queue};
-pub use hidden::HiddenCommand;
+pub use hidden::{HiddenCommand, set_tag_id};
 use teloxide::{types::BotCommand, utils::command::BotCommands};
 pub use user::{RegularCommand, send_sticker_with_tag_input};
 pub use util::*;

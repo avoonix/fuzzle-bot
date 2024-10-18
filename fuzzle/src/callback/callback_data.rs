@@ -135,6 +135,9 @@ pub enum CallbackData {
         status: ModerationTaskStatus,
         task_id: i64,
     },
+    CreateTagForUser {
+        user_id: i64,
+    },
 
     Merge {
         sticker_id_a: String,
@@ -209,6 +212,7 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
                 parse_favorite_sticker_data,
                 parse_tag_list_action,
                 parse_merge_data,
+                parse_create_tag_for_user,
             )),
         )),
         eof,
@@ -254,6 +258,10 @@ fn parse_merge_data(input: &str) -> IResult<&str, CallbackData> {
             merge,
         },
     )(input)
+}
+
+fn parse_create_tag_for_user(input: &str) -> IResult<&str, CallbackData> {
+    map( tuple(( tag("ctfu;"), i64,)), |(_, user_id)| CallbackData::CreateTagForUser { user_id },)(input)
 }
 
 fn parse_tag_list_action(input: &str) -> IResult<&str, CallbackData> {
@@ -537,6 +545,7 @@ impl Display for CallbackData {
                 };
                 write!(f, "tla;{moderation_task_id};{action}")
             }
+            Self::CreateTagForUser {user_id} => write!(f, "ctfu;{user_id}"),
             Self::Settings => write!(f, "settings"),
             Self::Start => write!(f, "start"),
             Self::Blacklist => write!(f, "blacklist"),

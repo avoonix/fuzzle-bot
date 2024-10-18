@@ -581,7 +581,7 @@ impl HiddenCommand {
                 modify_continuous_tag(vec![], tag.0, request_context, msg).await?;
             }
             Self::SetTag { tag_id, kind } => {
-                set_tag_id(request_context, msg, tag_id, kind).await?;
+                set_tag_id(request_context, msg.chat.id, tag_id, kind, None).await?;
             }
             Self::Cancel => {
                 exit_mode(request_context.clone(), true).await?;
@@ -864,11 +864,12 @@ async fn set_tag_operation(
     Ok(())
 }
 
-async fn set_tag_id(
+pub async fn set_tag_id(
     request_context: RequestContext,
-    msg: Message,
+    chat_id: ChatId,
     tag_id: String,
     kind: TagKind,
+    linked_user_id: Option<i64>,
 ) -> Result<(), BotError> {
     let tag_id = create_tag_id(&tag_id);
     // TODO: validate with parser (and trim whitespace before)
@@ -891,6 +892,14 @@ async fn set_tag_id(
         }
         TagKind::Main => tag_creator.tag_id = tag_id,
     }
+    
+    if let Some(linked_user_id) = linked_user_id {
+        let username = request_context.database.get_username(crate::database::UsernameKind::User, linked_user_id).await?;
+        if let Some(username) = username {
+            tag_creator.linked_user = Some(linked_user_id);
+        }
+        // TODO: error if no username found?
+    }
 
     let new_dialog_state = DialogState::TagCreator(tag_creator.clone());
     request_context
@@ -901,7 +910,7 @@ async fn set_tag_id(
         let message = request_context
             .bot
             .send_markdown(
-                msg.chat.id,
+                chat_id,
                 Markdown::escaped("You are now in the tag creator."),
             )
             .reply_markup(ReplyMarkup::Keyboard(
@@ -930,7 +939,7 @@ async fn set_tag_id(
     let message = request_context
         .bot
         .send_markdown(
-            msg.chat.id,
+            chat_id,
             Markdown::escaped("tag creator text"), // TODO: better text, from Text struct
         )
         .reply_markup(Keyboard::tag_creator(&tag_creator))
