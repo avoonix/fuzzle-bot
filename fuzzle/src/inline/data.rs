@@ -77,6 +77,7 @@ pub enum InlineQueryData {
     },
     ListMostDuplicatedStickers,
     ListMostUsedEmojis,
+    ListAllSets,
     TopOwners,
     ListRecommendationModeRecommendations,
     SearchByEmbedding {
@@ -90,7 +91,7 @@ pub enum InlineQueryData {
         kind: TagKind,
     },
     ReportSet {
-        set_id: String, 
+        set_id: String,
     },
 }
 
@@ -245,7 +246,7 @@ fn parse_tags(input: &str) -> IResult<&str, Vec<String>> {
     )(input)
 }
 
-fn parse_comma_separated_tags(input: &str) -> IResult<&str, Vec<Vec<String>>> {
+pub fn parse_comma_separated_tags(input: &str) -> IResult<&str, Vec<Vec<String>>> {
     map(
         delimited(
             multispace0,
@@ -307,155 +308,161 @@ fn parse_tags_and_emojis(input: &str) -> IResult<&str, (Vec<String>, Vec<Emoji>)
 fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
     terminated(
         alt((
-            map(
-                tuple((
-                    terminated(preceded(tag("(s:"), sticker_id_literal), tag(")")),
-                    parse_comma_separated_tags,
-                )),
-                |(unique_id, tags)| InlineQueryData::SearchTagsForSticker {
-                    unique_id: unique_id.to_string(),
-                    tags,
-                },
-            ),
-            map(
-                tuple((
-                    alt((
-                        map(tag("(se:"), |_| SetOperation::Tag),
-                        map(tag("(su:"), |_| SetOperation::Untag),
+            alt((
+                map(
+                    tuple((
+                        terminated(preceded(tag("(s:"), sticker_id_literal), tag(")")),
+                        parse_comma_separated_tags,
                     )),
-                    set_name_literal,
-                    tag(")"),
-                    parse_comma_separated_tags,
-                )),
-                |(operation, set_name, _, tags)| InlineQueryData::SearchTagsForStickerSet {
-                    set_name: set_name.to_string(),
-                    operation,
-                    tags,
-                },
-            ),
-            map(
-                terminated(preceded(tag("(contains:"), sticker_id_literal), tag(")")),
-                |sticker_id| InlineQueryData::ListAllSetsThatContainSticker {
-                    sticker_id: sticker_id.to_string(),
-                },
-            ),
-            map(
-                terminated(preceded(tag("(overlap:"), sticker_id_literal), tag(")")),
-                |sticker_id| InlineQueryData::ListOverlappingSets {
-                    sticker_id: sticker_id.to_string(),
-                },
-            ),
-            map(
-                terminated(preceded(tag("(dates:"), sticker_id_literal), tag(")")),
-                |sticker_id| InlineQueryData::ListSetStickersByDate {
-                    sticker_id: sticker_id.to_string(),
-                },
-            ),
-            map(
-                terminated(preceded(tag("(usersets:"), map_res(digit1, str::parse)), tag(")")),
-                |user_id: i64| InlineQueryData::SetsByUserId {
-                    user_id: user_id,
-                },
-            ),
-            map(
-                terminated(preceded(tag("(settags:"), sticker_id_literal), tag(")")),
-                |sticker_id| InlineQueryData::ListAllTagsFromSet {
-                    sticker_id: sticker_id.to_string(),
-                },
-            ),
-            map(
-                tuple((
-                    tag("(add:"),
-                    sticker_id_literal,
-                    tag(")"),
-                    take_while(|c| true),
-                )),
-                |(_, sticker_id, _, set_title)| InlineQueryData::AddToUserSet {
-                    sticker_id: sticker_id.to_string(),
-                    set_title: {
-                        let title = set_title.trim();
-                        if title.is_empty() {
-                            None
-                        } else {
-                            Some(title.to_string())
-                        }
+                    |(unique_id, tags)| InlineQueryData::SearchTagsForSticker {
+                        unique_id: unique_id.to_string(),
+                        tags,
                     },
-                },
-            ),
-            map(preceded(tag("(blacklist)"), parse_tags), |tags| {
-                InlineQueryData::SearchTagsForBlacklist { tags }
-            }),
-            map(
-                preceded(tag("(tag)"), take_while(|c| true)),
-                |tag_id: &str| InlineQueryData::TagCreatorTagId {
-                    tag_id: tag_id.to_string(),
-                    kind: TagKind::Main,
-                },
-            ),
-            map(
-                preceded(tag("(alias)"), take_while(|c| true)),
-                |tag_id: &str| InlineQueryData::TagCreatorTagId {
-                    tag_id: tag_id.to_string(),
-                    kind: TagKind::Alias,
-                },
-            ),
-            map(
-                preceded(tag("(embed)"), take_while(|c| true)),
-                |query: &str| InlineQueryData::SearchByEmbedding {
-                    query: query.to_string(),
-                },
-            ),
-            map(tag("(dup)"), |_| {
-                InlineQueryData::ListMostDuplicatedStickers
-            }),
-            map(tag("(emo)"), |_| InlineQueryData::ListMostUsedEmojis),
-            map(tag("(owners)"), |_| InlineQueryData::TopOwners),
-            map(tag("(rec)"), |_| {
-                InlineQueryData::ListRecommendationModeRecommendations
-            }),
-            map(
-                tuple((
-                    alt((
-                        map(tag("(cont)"), |_| SetOperation::Tag),
-                        map(tag("(-cont)"), |_| SetOperation::Untag),
+                ),
+                map(
+                    tuple((
+                        alt((
+                            map(tag("(se:"), |_| SetOperation::Tag),
+                            map(tag("(su:"), |_| SetOperation::Untag),
+                        )),
+                        set_name_literal,
+                        tag(")"),
+                        parse_comma_separated_tags,
                     )),
-                    parse_comma_separated_tags,
-                )),
-                |(operation, tags)| InlineQueryData::SearchTagsForContinuousTagMode {
-                    operation,
-                    tags,
-                },
-            ),
-            map(
-                terminated(preceded(tag("(color:"), sticker_id_literal), tag(")")),
-                |unique_id| InlineQueryData::ListSimilarStickers {
-                    aspect: SimilarityAspect::Color,
-                    unique_id: unique_id.to_string(),
-                },
-            ),
-            // map(
-            //     terminated(preceded(tag("(shape:"), sticker_id_literal), tag(")")),
-            //     |unique_id| InlineQueryData::Similar {
-            //         aspect: SimilarityAspect::Shape,
-            //         unique_id: unique_id.to_string(),
-            //     },
-            // ),
-            map(
-                terminated(preceded(tag("(embed:"), sticker_id_literal), tag(")")),
-                |unique_id| InlineQueryData::ListSimilarStickers {
-                    aspect: SimilarityAspect::Embedding,
-                    unique_id: unique_id.to_string(),
-                },
-            ),
-            map(
-                terminated(preceded(tag("(reportset:"), set_name_literal), tag(")")),
-                |set_id| InlineQueryData::ReportSet {
-                    set_id: set_id.to_string(),
-                },
-            ),
-            map(parse_tags_and_emojis, |(tags, emoji)| {
-                InlineQueryData::SearchStickers { emoji, tags }
-            }),
+                    |(operation, set_name, _, tags)| InlineQueryData::SearchTagsForStickerSet {
+                        set_name: set_name.to_string(),
+                        operation,
+                        tags,
+                    },
+                ),
+                map(
+                    terminated(preceded(tag("(contains:"), sticker_id_literal), tag(")")),
+                    |sticker_id| InlineQueryData::ListAllSetsThatContainSticker {
+                        sticker_id: sticker_id.to_string(),
+                    },
+                ),
+                map(
+                    terminated(preceded(tag("(overlap:"), sticker_id_literal), tag(")")),
+                    |sticker_id| InlineQueryData::ListOverlappingSets {
+                        sticker_id: sticker_id.to_string(),
+                    },
+                ),
+                map(
+                    terminated(preceded(tag("(dates:"), sticker_id_literal), tag(")")),
+                    |sticker_id| InlineQueryData::ListSetStickersByDate {
+                        sticker_id: sticker_id.to_string(),
+                    },
+                ),
+                map(
+                    terminated(
+                        preceded(tag("(usersets:"), map_res(digit1, str::parse)),
+                        tag(")"),
+                    ),
+                    |user_id: i64| InlineQueryData::SetsByUserId { user_id: user_id },
+                ),
+                map(
+                    terminated(preceded(tag("(settags:"), sticker_id_literal), tag(")")),
+                    |sticker_id| InlineQueryData::ListAllTagsFromSet {
+                        sticker_id: sticker_id.to_string(),
+                    },
+                ),
+                map(
+                    tuple((
+                        tag("(add:"),
+                        sticker_id_literal,
+                        tag(")"),
+                        take_while(|c| true),
+                    )),
+                    |(_, sticker_id, _, set_title)| InlineQueryData::AddToUserSet {
+                        sticker_id: sticker_id.to_string(),
+                        set_title: {
+                            let title = set_title.trim();
+                            if title.is_empty() {
+                                None
+                            } else {
+                                Some(title.to_string())
+                            }
+                        },
+                    },
+                ),
+            )),
+            alt((
+                map(preceded(tag("(blacklist)"), parse_tags), |tags| {
+                    InlineQueryData::SearchTagsForBlacklist { tags }
+                }),
+                map(
+                    preceded(tag("(tag)"), take_while(|c| true)),
+                    |tag_id: &str| InlineQueryData::TagCreatorTagId {
+                        tag_id: tag_id.to_string(),
+                        kind: TagKind::Main,
+                    },
+                ),
+                map(
+                    preceded(tag("(alias)"), take_while(|c| true)),
+                    |tag_id: &str| InlineQueryData::TagCreatorTagId {
+                        tag_id: tag_id.to_string(),
+                        kind: TagKind::Alias,
+                    },
+                ),
+                map(
+                    preceded(tag("(embed)"), take_while(|c| true)),
+                    |query: &str| InlineQueryData::SearchByEmbedding {
+                        query: query.to_string(),
+                    },
+                ),
+                map(tag("(dup)"), |_| {
+                    InlineQueryData::ListMostDuplicatedStickers
+                }),
+                map(tag("(emo)"), |_| InlineQueryData::ListMostUsedEmojis),
+                map(tag("(sets)"), |_| InlineQueryData::ListAllSets),
+                map(tag("(owners)"), |_| InlineQueryData::TopOwners),
+                map(tag("(rec)"), |_| {
+                    InlineQueryData::ListRecommendationModeRecommendations
+                }),
+                map(
+                    tuple((
+                        alt((
+                            map(tag("(cont)"), |_| SetOperation::Tag),
+                            map(tag("(-cont)"), |_| SetOperation::Untag),
+                        )),
+                        parse_comma_separated_tags,
+                    )),
+                    |(operation, tags)| InlineQueryData::SearchTagsForContinuousTagMode {
+                        operation,
+                        tags,
+                    },
+                ),
+                map(
+                    terminated(preceded(tag("(color:"), sticker_id_literal), tag(")")),
+                    |unique_id| InlineQueryData::ListSimilarStickers {
+                        aspect: SimilarityAspect::Color,
+                        unique_id: unique_id.to_string(),
+                    },
+                ),
+                // map(
+                //     terminated(preceded(tag("(shape:"), sticker_id_literal), tag(")")),
+                //     |unique_id| InlineQueryData::Similar {
+                //         aspect: SimilarityAspect::Shape,
+                //         unique_id: unique_id.to_string(),
+                //     },
+                // ),
+                map(
+                    terminated(preceded(tag("(embed:"), sticker_id_literal), tag(")")),
+                    |unique_id| InlineQueryData::ListSimilarStickers {
+                        aspect: SimilarityAspect::Embedding,
+                        unique_id: unique_id.to_string(),
+                    },
+                ),
+                map(
+                    terminated(preceded(tag("(reportset:"), set_name_literal), tag(")")),
+                    |set_id| InlineQueryData::ReportSet {
+                        set_id: set_id.to_string(),
+                    },
+                ),
+                map(parse_tags_and_emojis, |(tags, emoji)| {
+                    InlineQueryData::SearchStickers { emoji, tags }
+                }),
+            )),
         )),
         tuple((multispace0, eof)),
     )(input)
@@ -503,7 +510,10 @@ impl Display for InlineQueryData {
             }
             InlineQueryData::SearchStickers { emoji, tags } => {
                 let tags = tags.join(" ");
-                let emoji = emoji.into_iter().map(|e| e.to_string_with_variant()).join(" ");
+                let emoji = emoji
+                    .into_iter()
+                    .map(|e| e.to_string_with_variant())
+                    .join(" ");
                 write!(f, "{emoji}")?;
                 if emoji.len() > 0 {
                     write!(f, " ")?;
@@ -567,6 +577,7 @@ impl Display for InlineQueryData {
             InlineQueryData::SearchByEmbedding { query } => write!(f, "(embed) {query}"),
             InlineQueryData::ListMostDuplicatedStickers => write!(f, "(dup) "),
             InlineQueryData::ListMostUsedEmojis => write!(f, "(emo) "),
+            InlineQueryData::ListAllSets => write!(f, "(sets) "),
             InlineQueryData::TopOwners => write!(f, "(owners) "),
             InlineQueryData::ListRecommendationModeRecommendations => write!(f, "(rec) "),
             InlineQueryData::SetsByUserId { user_id } => write!(f, "(usersets:{user_id}) "),

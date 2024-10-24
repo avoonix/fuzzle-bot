@@ -214,6 +214,20 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_sticker_sets(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<StickerSet>, DatabaseError> {
+        Ok(sticker_set::table
+            .select(StickerSet::as_select())
+            .order_by(sticker_set::id)
+            .limit(limit)
+            .offset(offset)
+            .load(&mut self.pool.get()?)?)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_owned_sticker_set_count(
         &self,
         user_id: i64

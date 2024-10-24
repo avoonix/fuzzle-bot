@@ -1,0 +1,123 @@
+:root {
+    --background: #000000;
+    --foreground: #007F0E;
+}
+
+html, body {
+    background-color: var(--background);
+    color: var(--foreground);
+    scrollbar-color: var(--foreground) var(--background);
+    font-family: system-ui, sans-serif;
+}
+
+.grid {
+    display: grid;
+    grid-auto-rows: 128px;
+    grid-gap: 10px;
+	grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+}
+
+.sticker-thumbnail {
+    width: 100%;
+    height: 100%;
+}
+
+.set-thumbnail {
+    flex: 1 1;
+    overflow: hidden;
+}
+
+.set-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit:contain;
+}
+
+.set-grid {
+    display: grid;
+    grid-auto-rows: 128px;
+    grid-gap: 12px;
+	grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+}
+
+.set-name {
+    display:flex;
+    flex-direction: column;
+    flex: 0 0;
+}
+
+.set-name * {
+    margin: 0;
+}
+
+a {
+    color: var(--foreground);
+    text-decoration: none;
+}
+
+.set-grid-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.sticker-container {
+    width: 500px;
+    /* TODO: also support smaller devices */
+    margin: auto;
+    display: flex;
+}
+
+.big-sticker {
+
+}
+
+.sticker-information {
+
+}
+
+.full-width {
+    width: 100%;
+}
+
+.tag-container {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 8px;
+}
+
+.tag {
+    outline: 2px solid var(--foreground);
+    border-radius: 64px;
+    padding: 4px 8px 4px 8px;
+    font-size: .8em;
+    display: flex;
+    align-items: center;
+}
+
+.tag-counter {
+    background-color: var(--foreground);
+    color: var(--background);
+    border-radius: 100%;
+    width: 1.3em;
+    height: 1.3em;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-left: 4px;
+    margin-right: -2px;
+}
+
+input {
+    margin-left: 4px;
+    margin-right: 4px;
+    background-color: var(--background);
+    border-radius: 8px;
+    border: 1px solid var(--foreground);
+    color: var(--foreground);
+    padding: 8px;
+}
+
+input:focus {
+    outline: 3px solid var(--foreground);    
+}

@@ -24,7 +24,7 @@ pub struct StickerFile {
     pub sticker_type: StickerType,
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = schema::sticker_set)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct StickerSet {

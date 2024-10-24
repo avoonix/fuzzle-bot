@@ -26,24 +26,27 @@ use crate::web::server::{AppState, AuthData, AuthenticatedUser};
 
 // TODO: serve static files like robots.txt and favicon.ico
 
-// #[actix_web::get("/files/stickers/{sticker_id}")]
+#[actix_web::get("/files/stickers/{sticker_id}/thumbnail.png")]
 // #[tracing::instrument(skip(data, user))]
-// async fn sticker_files(
-//     Path(sticker_id): Path<String>,
-//     data: Data<AppState>,
-//     user: AuthenticatedUser,
-// ) -> actix_web::Result<impl Responder> {
-//     let file = data
-//         .database
-//         .get_sticker_file_by_sticker_id(&sticker_id)
-//         .await?
-//         .required()?;
-//     let file_id = file
-//         .thumbnail_file_id
-//         .required()?;
-//     let (buf, _) = fetch_sticker_file(file_id, data.bot.clone()) .await?;
-//     Ok(HttpResponse::Ok().body(buf))
-// }
+async fn sticker_files(
+    Path(sticker_id): Path<String>,
+    data: Data<AppState>,
+    // user: AuthenticatedUser,
+) -> actix_web::Result<impl Responder> {
+    let file = data
+        .database
+        .get_sticker_file_by_sticker_id(&sticker_id)
+        .await?
+        .required()?;
+    let file_id = file
+        .thumbnail_file_id
+        .required()?;
+    let (buf, _) = fetch_sticker_file(file_id, data.bot.clone()) .await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(thumbnail_cache_control_header())
+        .insert_header(header::ContentType::png())
+        .body(buf))
+}
 
 // #[actix_web::get("/files/merge/{sticker_id_a}/{sticker_id_b}")]
 // #[tracing::instrument(skip(data, user))]
@@ -68,6 +71,10 @@ async fn sticker_set_thumbnail(
     Path(set_id): Path<String>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
+    let set = data.database.get_sticker_set_by_id(&set_id).await?.required()?;
+    if set.last_fetched.is_none() {
+        return Ok(HttpResponse::InternalServerError().finish());
+    }
     let stickers = data.database.get_all_stickers_in_set(&set_id).await?;
     let files = data
         .database
@@ -113,12 +120,32 @@ const HOUR: u32 = MINUTE * 60;
 const DAY: u32 = HOUR * 24;
 
 fn thumbnail_cache_control_header() -> CacheControl {
-    CacheControl(vec![
+    CacheControl(if cfg!(debug_assertions) {
+        vec![
+            CacheDirective::Public,
+            CacheDirective::StaleWhileRevalidate,
+            CacheDirective::StaleIfError,
+            CacheDirective::MaxAge(10 * MINUTE),
+        ]
+    } else { vec![
         CacheDirective::Public,
         CacheDirective::StaleWhileRevalidate,
         CacheDirective::StaleIfError,
         CacheDirective::MaxAge(10 * HOUR),
-    ])
+    ]})
+}
+
+fn assets_cache_control_header() -> CacheControl {
+    CacheControl(if cfg!(debug_assertions) {
+        vec![
+            CacheDirective::NoStore,
+        ]
+    } else { vec![
+        CacheDirective::Public,
+        CacheDirective::StaleWhileRevalidate,
+        CacheDirective::StaleIfError,
+        CacheDirective::MaxAge(1 * HOUR),
+    ]})
 }
 
 #[get("logout")]
@@ -165,7 +192,7 @@ fn handle_embedded_file(path: &str) -> HttpResponse {
     match Asset::get(path) {
         Some(content) => HttpResponse::Ok()
             .content_type(from_path(path).first_or_octet_stream().as_ref())
-            .insert_header(thumbnail_cache_control_header())
+            .insert_header(assets_cache_control_header())
             .body(content.data.into_owned()),
         None => HttpResponse::NotFound().body("404 Not Found"),
     }

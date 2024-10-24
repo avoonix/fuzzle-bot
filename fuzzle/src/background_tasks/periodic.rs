@@ -144,6 +144,33 @@ pub fn start_periodic_tasks(
             .await;
         }
     });
+
+    let database = database_clone.clone();
+    let vector_db = vector_db_clone.clone();
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::seconds(10).to_std().expect("no overflow")).await;
+            let span = tracing::info_span!("periodic_sticker_file_cleanup");
+            let database = database.clone();
+            let vector_db = vector_db.clone();
+            async move {
+                let result = clean_up_sticker_files(database.clone(), vector_db.clone()).await;
+                report_periodic_task_error(result);
+            }
+            .instrument(span)
+            .await;
+            sleep(Duration::hours(23).to_std().expect("no overflow")).await;
+        }
+    });
+}
+
+#[tracing::instrument(skip(database))]
+async fn clean_up_sticker_files(database: Database, vector_db: VectorDatabase) -> Result<(), InternalError> {
+    let deleted_file_ids = database.clean_up_sticker_files_without_stickers_and_without_tags().await?;
+    if !deleted_file_ids.is_empty() {
+        vector_db.delete_stickers(deleted_file_ids).await?;
+    }
+    Ok(())
 }
 
 #[tracing::instrument(skip(vector_db, tag_manager, config))]

@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use actix_files::Files;
-use actix_web::{middleware, web, App, HttpServer};
+use actix_web::{web::route, middleware, web, App, HttpServer};
 
 use crate::{
-    background_tasks::{TagManagerWorker, TfIdfWorker}, bot::Bot, database::Database, qdrant::VectorDatabase, Config
+    background_tasks::{TagManagerWorker, TfIdfWorker}, bot::Bot, database::Database, qdrant::VectorDatabase, web::server::page, Config
 };
 
 use super::service;
@@ -50,10 +50,16 @@ pub fn setup(
                 .service(service::logout)
                 .service(service::favicon)
                 .service(service::asset_folder)
-                // .service(service::sticker_files)
+                .service(service::sticker_files)
                 // .service(service::merge_files)
                 .service(service::sticker_set_thumbnail)
                 .service(service::sticker_comparison_thumbnail)
+                .service(page::index)
+                .service(page::search_tags)
+                .service(page::sticker_set)
+                .service(page::sticker_page)
+                .service(page::tag_page)
+                .default_service(route().to(page::not_found))
                 .wrap(middleware::Compress::default())
         })
         .bind(addr)

@@ -11,8 +11,8 @@ use qdrant_client::prelude::*;
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
     Condition, CreateCollection, Datatype, Filter, LookupLocation, PayloadIncludeSelector,
-    RecommendPoints, RecommendResponse, RecommendStrategy, ScoredPoint, SearchPoints, VectorParams,
-    VectorParamsMap, VectorsConfig, WithPayloadSelector,
+    PointsIdsList, RecommendPoints, RecommendResponse, RecommendStrategy, ScoredPoint,
+    ScrollPoints, SearchPoints, VectorParams, VectorParamsMap, VectorsConfig, WithPayloadSelector,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -53,7 +53,7 @@ impl Debug for VectorDatabase {
 }
 
 impl VectorDatabase {
-    #[tracing::instrument(name="VectorDatabase::new", err(Debug))]
+    #[tracing::instrument(name = "VectorDatabase::new", err(Debug))]
     pub async fn new(url: &str) -> Result<Self, VectorDatabaseError> {
         let client = QdrantClient::from_url(url).build()?;
         let client = Self {
@@ -198,6 +198,28 @@ impl VectorDatabase {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn delete_stickers(&self, file_ids: Vec<String>) -> Result<(), VectorDatabaseError> {
+        let ids = file_ids
+            .into_iter()
+            .map(|id| file_hash_to_uuid(&id).into())
+            .collect_vec();
+        let points = PointsIdsList { ids };
+        self.client
+            .delete_points(
+                STICKER_COLLECTION_NAME,
+                None,
+                &qdrant_client::qdrant::PointsSelector {
+                    points_selector_one_of: Some(
+                        qdrant_client::qdrant::points_selector::PointsSelectorOneOf::Points(points),
+                    ),
+                },
+                None,
+            )
+            .await?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn recommend_tags(
         &self,
         file_hash: &str,
@@ -322,8 +344,14 @@ impl VectorDatabase {
             .client
             .recommend(&RecommendPoints {
                 collection_name: STICKER_COLLECTION_NAME.into(),
-                positive: positive_file_ids.into_iter().map(|id| file_hash_to_uuid(id).into()).collect_vec(),
-                negative: negative_file_ids.into_iter().map(|id| file_hash_to_uuid(id).into()).collect_vec(),
+                positive: positive_file_ids
+                    .into_iter()
+                    .map(|id| file_hash_to_uuid(id).into())
+                    .collect_vec(),
+                negative: negative_file_ids
+                    .into_iter()
+                    .map(|id| file_hash_to_uuid(id).into())
+                    .collect_vec(),
                 using: Some(vector_name), // TODO: allow to switch between clip and historgram
                 // filter: Some(Filter::all([Condition::matches("bar", 12)])),
                 limit,
@@ -336,7 +364,8 @@ impl VectorDatabase {
             })
             .await
             .convert_to_sensible_error()?;
-        Ok(search_result.map(|search_result| convert_sticker_recommend_response(search_result.result)))
+        Ok(search_result
+            .map(|search_result| convert_sticker_recommend_response(search_result.result)))
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -453,9 +482,7 @@ pub struct StickerMatch {
     pub score: f32,
 }
 
-fn convert_tag_recommend_response(
-    scored_points: Vec<ScoredPoint>,
-) -> Vec<String> {
+fn convert_tag_recommend_response(scored_points: Vec<ScoredPoint>) -> Vec<String> {
     scored_points
         .into_iter()
         .map(|scored_point| {
@@ -469,9 +496,7 @@ fn convert_tag_recommend_response(
         .collect_vec()
 }
 
-fn convert_sticker_recommend_response(
-    scored_points: Vec<ScoredPoint>,
-) -> Vec<StickerMatch> {
+fn convert_sticker_recommend_response(scored_points: Vec<ScoredPoint>) -> Vec<StickerMatch> {
     scored_points
         .into_iter()
         .map(|scored_point| {

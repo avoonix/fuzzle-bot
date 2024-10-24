@@ -3,10 +3,20 @@ mod measures;
 mod util;
 
 pub use histogram::{calculate_color_histogram, create_historgram_image};
+use itertools::Either;
 pub use measures::{Match, Measures};
+use qdrant_client::qdrant::Vector;
 
 use crate::{
-    background_tasks::BackgroundTaskExt, bot::{report_bot_error, report_internal_error_result, report_periodic_task_error, Bot, BotError, InternalError, RequestContext, UserError}, database::{Database, StickerType}, inference::{image_to_clip_embedding, text_to_clip_embedding}, util::Required, Config
+    background_tasks::BackgroundTaskExt,
+    bot::{
+        report_bot_error, report_internal_error_result, report_periodic_task_error, Bot, BotError,
+        InternalError, RequestContext, UserError,
+    },
+    database::{Database, StickerType},
+    inference::{image_to_clip_embedding, text_to_clip_embedding},
+    util::Required,
+    Config,
 };
 
 use crate::inline::SimilarityAspect;
@@ -34,12 +44,17 @@ pub async fn find_with_text_embedding(
         .find_stickers_given_vector(query_embedding.into(), limit as u64, offset as u64)
         .await?;
     let len = file_hashes.len();
-    Ok((with_sticker_id(database, file_hashes).await?, len))
+    Ok((
+        resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(database, vector_db, file_hashes)
+            .await?,
+        len,
+    ))
 }
 
 #[tracing::instrument(skip(database))]
-pub async fn with_sticker_id(
+pub async fn resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
     database: Database,
+    vector_db: VectorDatabase,
     file_hashes: Vec<StickerMatch>,
 ) -> Result<Vec<Match>, BotError> {
     let file_hashes_ = file_hashes
@@ -53,19 +68,28 @@ pub async fn with_sticker_id(
     let result = database
         .get_some_sticker_ids_for_sticker_file_ids(file_hashes_.clone())
         .await?;
-    let result = file_hashes
-        .into_iter()
-        .filter_map(|file_id| {
+    let (result, unreferenced_file_ids): (Vec<_>, Vec<_>) =
+        file_hashes.into_iter().partition_map(|file_id| {
             result
                 .iter()
                 .find(|r| r.sticker_file_id == file_id.file_hash)
-                .map(|r| Match {
-                    distance: file_id.score,
-                    sticker_id: r.sticker_id.clone(),
+                .map(|r| {
+                    Either::Left(Match {
+                        distance: file_id.score,
+                        sticker_id: r.sticker_id.clone(),
+                    })
                 })
-        })
-        .collect_vec();
-    // TODO: if there are file hashes that don't have any stickers -> delete the file hashes
+                .unwrap_or_else(|| Either::Right(file_id.file_hash))
+        });
+    if !unreferenced_file_ids.is_empty() {
+        tokio::spawn(async move {
+            let result = vector_db.delete_stickers(unreferenced_file_ids).await;
+            match result {
+                Ok(_) => {}
+                Err(err) => tracing::error!("unreferenced file cleanup error: {err:?}"),
+            }
+        });
+    }
 
     Ok(result)
 }
@@ -78,22 +102,45 @@ pub async fn compute_similar(
     limit: u64,
     offset: u64,
 ) -> Result<(Vec<Match>, usize), BotError> {
-    let sticker = request_context.database.get_sticker_by_id(&sticker_id).await?.required()?;
+    let sticker = request_context
+        .database
+        .get_sticker_by_id(&sticker_id)
+        .await?
+        .required()?;
     let score_threshold = 0.0;
 
     // let result = vector_db.find_similar_stickers(query_embedding.clone().into()).await?;
-    let file_hashes = request_context.vector_db
-        .find_similar_stickers(&[sticker.sticker_file_id.clone()], &[], aspect, score_threshold, limit, offset)
+    let file_hashes = request_context
+        .vector_db
+        .find_similar_stickers(
+            &[sticker.sticker_file_id.clone()],
+            &[],
+            aspect,
+            score_threshold,
+            limit,
+            offset,
+        )
         .await?;
     let file_hashes = match file_hashes {
-    Some(hashes) => hashes,
-    None => {
-        request_context.process_sticker_set(sticker.sticker_set_id, false).await; // dispatch in background - otherwise the query would take too long if the set is large
-        return Err(UserError::VectorNotFound.into());
-    }};
+        Some(hashes) => hashes,
+        None => {
+            request_context
+                .process_sticker_set(sticker.sticker_set_id, false)
+                .await; // dispatch in background - otherwise the query would take too long if the set is large
+            return Err(UserError::VectorNotFound.into());
+        }
+    };
 
     let len = file_hashes.len();
-    Ok((with_sticker_id(request_context.database.clone(), file_hashes).await?, len))
+    Ok((
+        resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
+            request_context.database.clone(),
+            request_context.vector_db.clone(),
+            file_hashes,
+        )
+        .await?,
+        len,
+    ))
 }
 
 #[tracing::instrument(skip(database, bot, config, vector_db), err(Debug))]

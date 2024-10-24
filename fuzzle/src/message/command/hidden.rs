@@ -12,7 +12,7 @@ use crate::inline::{SetOperation, SimilarityAspect, TagKind};
 use crate::message::Keyboard;
 use crate::qdrant::{StickerMatch, VectorDatabase};
 use crate::simple_bot_api;
-use crate::sticker::with_sticker_id;
+use crate::sticker::resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files;
 use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
 use crate::util::{
@@ -1014,7 +1014,7 @@ async fn suggest_sticker_recommender(
         .await?
         .required()?;
     let recommended =
-        with_sticker_id(request_context.database.clone(), recommended_file_hashes).await?;
+        resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(request_context.database.clone(), request_context.vector_db.clone(), recommended_file_hashes).await?;
 
     let sticker_ids = recommended.into_iter().map(|m| m.sticker_id).collect_vec();
     for id in sticker_ids {

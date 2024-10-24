@@ -600,11 +600,15 @@ impl Keyboard {
         InlineKeyboardMarkup::new(vec![
             stat_tabs(StatTab::General),
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                format!("All Sets"),
+                InlineQueryData::ListAllSets,
+            )],
+            vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("Stickers with most duplicates"),
                 InlineQueryData::most_duplicated_stickers(),
             )],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
-                format!("Most popular emojis"),
+                format!("Most used emojis"),
                 InlineQueryData::most_used_emojis(),
             )],
         ])

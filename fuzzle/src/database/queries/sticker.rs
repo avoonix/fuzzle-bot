@@ -236,6 +236,27 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_sticker_sets_for_tag_query(
+        &self,
+        tags: Vec<String>, // tags are anded (solo AND mammal)
+        blacklist: Vec<String>,
+        // emoji: Vec<String>, // emojis are ored (<smile emoji> OR <paw emoji>)
+        limit: i64,
+        offset: i64,
+        // order: Order,
+    ) -> Result<Vec<StickerSet>, DatabaseError> {
+        let query = StickerTagQuery::new(tags, blacklist)
+            // .emoji(emoji)
+            .limit(limit)
+            .offset(offset)
+            .sets();
+            // .order(order);
+
+        let sets: Vec<StickerSet> = query.generate().load(&mut self.pool.get()?)?;
+        Ok(sets)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_random_sticker_to_tag(&self) -> Result<Option<Sticker>, DatabaseError> {
         Ok(sticker::table
             .filter(
@@ -394,6 +415,21 @@ impl Database {
         delete(sticker::table.filter(sticker::id.eq(sticker_id))).execute(&mut self.pool.get()?)?;
         Ok(())
     }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn clean_up_sticker_files_without_stickers_and_without_tags(&self) -> Result<Vec<String>, DatabaseError> {
+        let current_time = chrono::Utc::now().naive_utc(); // TODO: pass time as parameter?
+        Ok(delete(
+            sticker_file::table
+                .filter(sticker_file::id.ne_all(sticker::table.select(sticker::sticker_file_id)))
+                .filter(sticker_file::id.ne_all(sticker_file_tag::table.select(sticker_file_tag::sticker_file_id)))
+                .filter(sticker_file::created_at.lt(current_time - chrono::Duration::hours(24)))
+        ).returning(sticker_file::id) 
+        .load(&mut self.pool.get()?)?)
+    }
+
+// select * from sticker_file where id not in (select sticker_file_id from sticker) and id not in (select sticker_file_id from sticker_file_tag) and created_at < '2024-10-22 05:47:51';
+
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_user(

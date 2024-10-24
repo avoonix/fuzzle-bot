@@ -19,6 +19,7 @@ pub(super) struct StickerTagQuery {
     offset: Option<i64>,
     order: Option<Order>,
     emoji: Vec<String>,
+    sets: bool,
 }
 
 impl StickerTagQuery {
@@ -31,7 +32,14 @@ impl StickerTagQuery {
             offset: None,
             order: None,
             emoji: vec![],
+            sets: false,
         }
+    }
+
+    #[must_use]
+    pub(super) const fn sets(mut self) -> Self {
+        self.sets = true;
+        self
     }
 
     #[must_use]
@@ -74,9 +82,19 @@ impl StickerTagQuery {
         //      separated.push_bind_unseparated(tag);
         //      separated.push_unseparated(")");
         //  }
+        let main_select = if self.sets {
+            "SELECT * FROM sticker_set INNER JOIN (SELECT * FROM sticker "
+        } else {
+            "SELECT * FROM sticker "
+        };
+        let main_select_end = if self.sets {
+            ") s on s.sticker_set_id = sticker_set.id GROUP BY sticker_set.id ORDER BY count(*) desc"
+        } else {
+            ""
+        };
 
         let mut q = sql_query("").into_boxed::<Sqlite>()
-            .sql("SELECT * FROM sticker ")
+            .sql(main_select)
             .sql("WHERE sticker.sticker_file_id IN (SELECT sticker_file_id FROM sticker_file_tag GROUP BY sticker_file_id ");
 
         // https://stackoverflow.com/a/69911488
@@ -125,7 +143,8 @@ impl StickerTagQuery {
             .sql("LIMIT ? ")
             .bind::<BigInt, _>(self.limit.unwrap_or(10))
             .sql("OFFSET ?")
-            .bind::<BigInt, _>(self.offset.unwrap_or_default());
+            .bind::<BigInt, _>(self.offset.unwrap_or_default())
+            .sql(main_select_end);
         q
     }
 }

@@ -10,7 +10,7 @@ use crate::database::{self, min_max, DialogState, ReportReason, User};
 use crate::database::{Database, Sticker, StickerSet};
 use crate::inline::{InlineQueryData, SetOperation};
 use crate::message::{Keyboard, StartParameter};
-use crate::sticker::{compute_similar, find_with_text_embedding, with_sticker_id, Match};
+use crate::sticker::{compute_similar, find_with_text_embedding, resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files, Match};
 use crate::text::{Markdown, Text};
 use crate::util::{create_sticker_set_id, create_tag_id, format_relative_time, Emoji, Required};
 use futures::future::try_join_all;
@@ -129,7 +129,7 @@ fn treat_missing_tags_as_errors(
     }
 }
 
-async fn get_last_input_match_list_and_other_input_closest_matches(
+pub async fn get_last_input_match_list_and_other_input_closest_matches(
     tags: Vec<Vec<String>>,
     tag_manager: TagManagerWorker,
 ) -> Result<(Vec<String>, Vec<String>), BotError> {
@@ -734,6 +734,9 @@ pub async fn inline_query_handler(
             set_title,
         } => handle_user_sets(current_offset, sticker_id, set_title, q, request_context).await,
         InlineQueryData::ReportSet { set_id } => handle_report(current_offset, set_id, q, request_context).await,
+        InlineQueryData::ListAllSets => {
+            list_all_sets(current_offset, q, request_context).await
+        }
     }
 }
 
@@ -1084,7 +1087,7 @@ async fn get_recommended_stickers_in_recommender_mode(
     let original_result_len = recommended_file_hashes.len();
 
     let recommended =
-        with_sticker_id(request_context.database.clone(), recommended_file_hashes).await?;
+        resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(request_context.database.clone(), request_context.vector_db.clone(), recommended_file_hashes).await?;
 
     let sticker_ids = recommended.into_iter().map(|m| m.sticker_id).collect_vec();
     let mut stickers = Vec::new();
@@ -1490,6 +1493,43 @@ async fn handle_report(
         .answer_inline_query(q.id, reasons)
         .next_offset("")
         .cache_time(0)
+        .await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(skip(q, request_context))]
+async fn list_all_sets(
+    current_offset: QueryPage,
+    q: InlineQuery,
+    request_context: RequestContext,
+) -> Result<(), BotError> {
+    let sets = request_context
+        .database
+        .get_sticker_sets(
+            current_offset.page_size() as i64,
+            current_offset.skip() as i64,
+        )
+        .await?;
+
+    let mut r = Vec::new();
+    for set in sets {
+        r.push(create_query_set(
+            &set,
+            None,
+            format!(
+                "https://fuzzle-bot.avoonix.com/thumbnails/sticker-set/{}/image.png",
+                &set.id
+            ),
+        )?);
+    }
+
+    require_some_results("sets", current_offset, r.len())?;
+    request_context
+        .bot
+        .answer_inline_query(q.id, r.clone())
+        .next_offset(current_offset.next_query_offset(r.len()))
+        .cache_time(60) // in seconds // TODO: constant?
         .await?;
 
     Ok(())
