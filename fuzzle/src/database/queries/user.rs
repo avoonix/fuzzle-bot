@@ -1,7 +1,7 @@
 use diesel::dsl::now;
 use diesel::{delete, insert_into, prelude::*, update};
 
-use crate::database::{UserSettings, UserStats, StringVec, User, DialogState};
+use crate::database::{DialogState, StringVec, User, UserSettings, UserStats};
 
 use super::DatabaseError;
 
@@ -16,12 +16,17 @@ impl Database {
         user_id: i64,
         dialog_state: &DialogState,
     ) -> Result<(), DatabaseError> {
-        let updated_rows = update(user::table.find(user_id))
-            .set(user::dialog_state.eq(Some(dialog_state)))
-            .execute(&mut self.pool.get()?)?;
-        #[cfg(debug_assertions)]
-        assert_eq!(updated_rows, 1);
-        Ok(())
+        let dialog_state = dialog_state.clone();
+        self.pool
+            .exec(move |conn| {
+                let updated_rows = update(user::table.find(user_id))
+                    .set(user::dialog_state.eq(Some(dialog_state)))
+                    .execute(conn)?;
+                #[cfg(debug_assertions)]
+                assert_eq!(updated_rows, 1);
+                Ok(())
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -30,12 +35,17 @@ impl Database {
         user_id: i64,
         user_settings: &UserSettings,
     ) -> Result<(), DatabaseError> {
-        let updated_rows = update(user::table.find(user_id))
-            .set(user::settings.eq(Some(user_settings)))
-            .execute(&mut self.pool.get()?)?;
-        #[cfg(debug_assertions)]
-        assert_eq!(updated_rows, 1);
-        Ok(())
+        let user_settings = user_settings.clone();
+        self.pool
+            .exec(move |conn| {
+                let updated_rows = update(user::table.find(user_id))
+                    .set(user::settings.eq(Some(user_settings)))
+                    .execute(conn)?;
+                #[cfg(debug_assertions)]
+                assert_eq!(updated_rows, 1);
+                Ok(())
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -44,21 +54,29 @@ impl Database {
         user_id: i64,
         new_blacklist: StringVec,
     ) -> Result<(), DatabaseError> {
-        let updated_rows = diesel::update(user::table.find(user_id))
-            .set(user::blacklist.eq(new_blacklist))
-            .execute(&mut self.pool.get()?)?;
-        #[cfg(debug_assertions)]
-        assert_eq!(updated_rows, 1);
-        Ok(())
+        self.pool
+            .exec(move |conn| {
+                let updated_rows = diesel::update(user::table.find(user_id))
+                    .set(user::blacklist.eq(new_blacklist))
+                    .execute(conn)?;
+                #[cfg(debug_assertions)]
+                assert_eq!(updated_rows, 1);
+                Ok(())
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_user_by_id(&self, user_id: i64) -> Result<Option<User>, DatabaseError> {
-        Ok(user::table
-            .filter(user::id.eq(user_id))
-            .select(User::as_select())
-            .first(&mut self.pool.get()?)
-            .optional()?)
+        self.pool
+            .exec(move |conn| {
+                Ok(user::table
+                    .filter(user::id.eq(user_id))
+                    .select(User::as_select())
+                    .first(conn)
+                    .optional()?)
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -67,9 +85,13 @@ impl Database {
         user_id: i64,
         default_blacklist: StringVec,
     ) -> Result<User, DatabaseError> {
-        Ok(insert_into(user::table)
-            .values((user::id.eq(user_id), user::blacklist.eq(default_blacklist)))
-            .get_result(&mut self.pool.get()?)?)
+        self.pool
+            .exec(move |conn| {
+                Ok(insert_into(user::table)
+                    .values((user::id.eq(user_id), user::blacklist.eq(default_blacklist)))
+                    .get_result(conn)?)
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -79,20 +101,25 @@ impl Database {
         sticker_id: &str,
         is_favorite: bool,
     ) -> Result<(), DatabaseError> {
-        insert_into(sticker_user::table)
-            .values((
-                sticker_user::sticker_id.eq(sticker_id),
-                sticker_user::user_id.eq(user_id),
-                sticker_user::is_favorite.eq(is_favorite),
-            ))
-            .on_conflict((sticker_user::sticker_id, sticker_user::user_id))
-            .do_update()
-            .set((
-                sticker_user::last_used.eq(now),
-                sticker_user::is_favorite.eq(is_favorite),
-            ))
-            .execute(&mut self.pool.get()?)?;
-        Ok(())
+        let sticker_id = sticker_id.to_string();
+        self.pool
+            .exec(move |conn| {
+                insert_into(sticker_user::table)
+                    .values((
+                        sticker_user::sticker_id.eq(sticker_id),
+                        sticker_user::user_id.eq(user_id),
+                        sticker_user::is_favorite.eq(is_favorite),
+                    ))
+                    .on_conflict((sticker_user::sticker_id, sticker_user::user_id))
+                    .do_update()
+                    .set((
+                        sticker_user::last_used.eq(now),
+                        sticker_user::is_favorite.eq(is_favorite),
+                    ))
+                    .execute(conn)?;
+                Ok(())
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -101,26 +128,35 @@ impl Database {
         user_id: i64,
         sticker_id: &str,
     ) -> Result<(), DatabaseError> {
-        insert_into(sticker_user::table)
-            .values((
-                sticker_user::sticker_id.eq(sticker_id),
-                sticker_user::user_id.eq(user_id),
-            ))
-            .on_conflict((sticker_user::sticker_id, sticker_user::user_id))
-            .do_update()
-            .set(sticker_user::last_used.eq(now))
-            .execute(&mut self.pool.get()?)?;
-        Ok(())
+        let sticker_id = sticker_id.to_string();
+        self.pool
+            .exec(move |conn| {
+                insert_into(sticker_user::table)
+                    .values((
+                        sticker_user::sticker_id.eq(sticker_id),
+                        sticker_user::user_id.eq(user_id),
+                    ))
+                    .on_conflict((sticker_user::sticker_id, sticker_user::user_id))
+                    .do_update()
+                    .set(sticker_user::last_used.eq(now))
+                    .execute(conn)?;
+                Ok(())
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn clear_recently_used_stickers(&self, user_id: i64) -> Result<(), DatabaseError> {
-        delete(
-            sticker_user::table
-                .filter(sticker_user::user_id.eq(user_id))
-                .filter(sticker_user::is_favorite.eq(false)),
-        )
-        .execute(&mut self.pool.get()?)?;
-        Ok(())
+        self.pool
+            .exec(move |conn| {
+                delete(
+                    sticker_user::table
+                        .filter(sticker_user::user_id.eq(user_id))
+                        .filter(sticker_user::is_favorite.eq(false)),
+                )
+                .execute(conn)?;
+                Ok(())
+            })
+            .await
     }
 }

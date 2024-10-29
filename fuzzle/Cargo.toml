@@ -85,6 +85,7 @@ panic = "deny"
 
 [dependencies]
 
+# teloxide = { version = "0.12", features = ["macros", "ctrlc_handler", "rustls", "throttle"], default-features = false, path = "../../teloxide/crates/teloxide" }
 teloxide = { version = "0.12", features = ["macros", "ctrlc_handler", "rustls", "throttle"], default-features = false, git = "https://github.com/avoonix/teloxide.git", branch = "future-bot-api" }
 
 actix-files = { version = "0.6" }
@@ -109,7 +110,7 @@ unicode-segmentation = { version = "1.10.1" }
 rand = { version = "0.8.5" }
 regex = { version = "1.10.2" }
 strsim = { version = "0.11.0" }
-diesel = { version = "2.1.0", default-features = false, features = ["sqlite", "r2d2", "chrono", "returning_clauses_for_sqlite_3_35"] }
+diesel = { version = "2.1.0", default-features = false, features = ["sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
 emojis = { version = "0.6.1" }
 thiserror = { version = "1.0.59" }
 cached = { version = "0.51.3" }
@@ -131,7 +132,6 @@ qdrant-client = { version = "1.9.0" }
 uuid = { version = "1.8.0", features = ["v5"] }
 duplicate_detector = { path = "../duplicate_detector" }
 prost = "0.12.6"
-r2d2 = "0.8.10"
 config = { version = "0.14.0", default-features = false, features = ["json"] }
 enum-primitive-derive = "0.3.0"
 num-traits = "0.2.19"
@@ -139,6 +139,7 @@ diesel_migrations = "2.2.0"
 rust-embed = "8.4.0"
 mime_guess = "2.0.4"
 maud = { version = "0.26.0", features = ["actix-web"] }
+flume = "0.11.1"
 
 [build-dependencies]
 tonic-build = "0.11.0"

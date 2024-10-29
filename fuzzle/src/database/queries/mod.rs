@@ -1,25 +1,28 @@
+mod export;
+mod moderation_task;
 mod stats;
 mod sticker;
 mod sticker_set;
 mod sticker_tagging;
-mod user;
-mod export;
 mod tag;
+mod user;
 mod username;
-mod moderation_task;
 
+use std::any::Any;
 use std::{path::PathBuf, time::Duration};
 
 use diesel::connection::SimpleConnection;
+use flume::Sender;
+use futures::future::join_all;
 use tracing::{error, log::LevelFilter};
 
 use super::DatabaseError;
+use super::User;
 
 use diesel::prelude::*;
-use diesel::r2d2::ConnectionManager;
-use diesel::r2d2::Pool;
 use diesel::result::Error;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use flume;
 
 const KB: usize = 1024;
 const MB: usize = KB * 1024;
@@ -27,98 +30,153 @@ const GB: usize = MB * 1024;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Database {
-    pool: Pool<ConnectionManager<SqliteConnection>>,
+    pool: DbWorker,
 }
 
-#[derive(Debug)]
-pub struct ConnectionOptions;
+struct Query {
+    operation: Box<dyn FnOnce(&mut SqliteConnection) -> Box<dyn Response> + Send>,
+    response: Sender<Box<dyn Response>>,
+}
 
-impl diesel::r2d2::CustomizeConnection<SqliteConnection, diesel::r2d2::Error>
-    for ConnectionOptions
+trait Response: Send + Any {
+    fn unwrap_box(self: Box<Self>) -> Box<dyn Any>;
+}
+
+impl<T, E> Response for Result<T, E>
+where
+    T: Send + 'static,
+    E: Send + 'static,
 {
-    fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
-        (|| {
-            conn.batch_execute(&format!("PRAGMA busy_timeout = {};", Duration::from_secs(60).as_millis()))?;
-            conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA wal_autocheckpoint = 1000; PRAGMA wal_checkpoint(TRUNCATE);")?;
-            conn.batch_execute("PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;")?;
-            conn.batch_execute(&format!("PRAGMA cache_size = {};", format_cache_size(2 * GB)))?;
-            conn.batch_execute(&format!("PRAGMA mmap_size = {};", (4 * GB).to_string()))?;
-            // TODO: need to run optimize before close as well
-            conn.batch_execute("PRAGMA optimize=0x10002;")?;
-            Ok(())
-        })()
-        .map_err(diesel::r2d2::Error::QueryError)
+    fn unwrap_box(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+}
+
+#[derive(Clone)]
+pub struct DbWorker {
+    sender: Sender<Query>,
+}
+
+impl DbWorker {
+    pub fn new(path: PathBuf) -> Self {
+        let (tx, rx) = flume::bounded(100);
+
+        for _ in 0..4 { // TODO: add config parameter for number of threads
+            // TODO: get rid of unwrap
+
+            let rx = rx.clone();
+            let mut conn = SqliteConnection::establish(path.to_str().unwrap())
+                .unwrap_or_else(|_| panic!("Error connecting to {}", path.to_str().unwrap()));
+
+            conn.batch_execute(&format!(
+                "PRAGMA busy_timeout = {};",
+                Duration::from_secs(60).as_millis()
+            ))
+            .unwrap();
+            conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA wal_autocheckpoint = 1000; PRAGMA wal_checkpoint(TRUNCATE);").unwrap();
+            conn.batch_execute("PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;")
+                .unwrap();
+            conn.batch_execute(&format!(
+                "PRAGMA cache_size = {};",
+                format_cache_size(2 * GB)
+            ))
+            .unwrap();
+            conn.batch_execute(&format!("PRAGMA mmap_size = {};", (4 * GB).to_string()))
+                .unwrap();
+            conn.batch_execute("PRAGMA optimize=0x10002;").unwrap();
+            std::thread::spawn(move || {
+                let mut operations_count = 0;
+                while let Ok(Query {
+                    operation,
+                    response,
+                }) = rx.recv()
+                {
+                    // TODO: log if operation takes more than 100ms
+                    let result = operation(&mut conn);
+                    let _ = response.send(result);
+                    operations_count += 1;
+                    if operations_count % 10_000 == 0 {
+                        conn.batch_execute("PRAGMA optimize;"); // TODO: log errors
+                    }
+                }
+            });
+        }
+
+        DbWorker { sender: tx }
+    }
+
+    pub async fn exec<F, T, E>(&self, operation: F) -> Result<T, E>
+    where
+        F: FnOnce(&mut SqliteConnection) -> Result<T, E> + Send + 'static,
+        T: Send + 'static,
+        E: From<Error> + Send + 'static,
+    {
+        let (response_tx, response_rx) = flume::bounded(1);
+
+        self.sender
+            .send_async(Query {
+                operation: Box::new(move |conn| Box::new(operation(conn)) as Box<dyn Response>),
+                response: response_tx,
+            })
+            .await
+            .expect("channel must be open");
+
+        let response = response_rx
+            .recv_async()
+            .await
+            .expect("response channel must be open");
+
+        *Box::<dyn Any>::downcast::<Result<T, E>>(response.unwrap_box()).unwrap()
     }
 }
 
 impl Database {
-    #[tracing::instrument(name="Database::new", err(Debug))]
+    #[tracing::instrument(name = "Database::new", err(Debug))]
     pub async fn new(path: PathBuf) -> anyhow::Result<Self> {
-        let manager = ConnectionManager::<SqliteConnection>::new(path.to_string_lossy());
-        let pool = Pool::builder()
-            .connection_customizer(Box::new(ConnectionOptions))
-            .connection_timeout(Duration::from_secs(30))
-            .test_on_check_out(true)
-            .max_size(69)
-            .min_idle(Some(10))
-            .build(manager)?;
-        // let pool = SqlitePoolOptions::default()
-        //     .max_connections(1000)
-        //     .min_connections(2)
-        //     .max_lifetime(Duration::from_secs(3600))
-        //     .connect_with(
-        //         sqlx::sqlite::SqliteConnectOptions::new()
-        //             .statement_cache_capacity(500)
-        //             .pragma("cache_size", format_cache_size(2 * GB))
-        //             .pragma("temp_store", "memory")
-        //             .pragma("mmap_size", (4 * GB).to_string())
-        //             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-        //             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
-        //             .optimize_on_close(true, 1000)
-        //             .busy_timeout(Duration::from_secs(20))
-        //             .filename(path)
-        //             .log_statements(LevelFilter::Debug)
-        //             .log_slow_statements(LevelFilter::Warn, Duration::from_secs(2))
-        //             .create_if_missing(true),
-        //     )
-        //     .await?;
-
-        // if let Err(err) = sqlx::migrate!("./migrations").run(&pool).await {
-        //     error!("error running migrations: {err}");
-        // }
+        let pool: DbWorker = DbWorker::new(path);
 
         let database = Self { pool };
 
-        database.health_check()?;
-        database.run_migrations()?;
-        database.vacuum()?;
+        database.health_check().await?;
+        database.run_migrations().await?;
+        database.vacuum().await?;
 
         Ok(database)
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    fn health_check(&self) -> Result<(), DatabaseError> {
-        // ensures that the math extensions are activated
-        let result = diesel::sql_query("SELECT sin(0)").execute(&mut self.pool.get()?)?;
-        Ok(())
+    async fn health_check(&self) -> Result<(), DatabaseError> {
+        self.pool
+            .exec(|conn| {
+                // ensures that the math extensions are activated
+                let result = diesel::sql_query("SELECT sin(0)").execute(conn)?;
+                Ok(())
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    fn vacuum(&self) -> Result<(), DatabaseError> {
-        let result = diesel::sql_query("VACUUM").execute(&mut self.pool.get()?)?;
-        Ok(())
+    async fn vacuum(&self) -> Result<(), DatabaseError> {
+        self.pool
+            .exec(|conn| {
+                let result = diesel::sql_query("VACUUM").execute(conn)?;
+                Ok(())
+            })
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    fn run_migrations(&self) -> Result<(), DatabaseError>  {
-        let conn = &mut self.pool.get()?;
-        conn.run_pending_migrations(MIGRATIONS).map_err(|err| {
-            anyhow::anyhow!(err.to_string())
-        })?;
+    async fn run_migrations(&self) -> Result<(), DatabaseError> {
+        self.pool
+            .exec(|conn| {
+                conn.run_pending_migrations(MIGRATIONS)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        Ok(())
+                Ok(())
+            })
+            .await
     }
 }
 

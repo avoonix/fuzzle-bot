@@ -14,8 +14,6 @@ pub enum DatabaseError {
     Serde(serde_json::Error),
     #[error("diesel")]
     Diesel(diesel::result::Error),
-    #[error("r2d2")]
-    R2d2(r2d2::Error),
 }
 
 impl From<diesel::result::Error> for DatabaseError {
@@ -27,12 +25,6 @@ impl From<diesel::result::Error> for DatabaseError {
             ) => Self::UniqueConstraintViolated(error.message().to_string()),
             _ => Self::Diesel(error),
         }
-    }
-}
-
-impl From<r2d2::Error> for DatabaseError {
-    fn from(value: r2d2::Error) -> Self {
-        Self::R2d2(value)
     }
 }
 
