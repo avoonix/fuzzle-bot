@@ -1,11 +1,10 @@
-use crate::background_tasks::{GetCategory, SuggestTags, TagManagerWorker, TfIdfWorker};
+use crate::background_tasks::{TagManagerService, TfIdfService};
 use crate::bot::{Bot, BotError, InternalError};
 use crate::database::Database;
 
 use crate::qdrant::VectorDatabase;
 use crate::tags::Category;
 use crate::util::{Emoji, Required};
-use futures::future::try_join_all;
 use itertools::Itertools;
 use teloxide::requests::Requester;
 use tracing::Instrument;
@@ -29,13 +28,13 @@ use super::ScoredTagSuggestion;
 // - `TagSuggestions` should be a map
 // - each `Vec<ScoredTagSuggestion>` should also be a map
 
-#[tracing::instrument(skip(bot, tag_manager, database, tagging_worker, vector_db))]
+#[tracing::instrument(skip(bot, tag_manager, database, tfidf_service, vector_db))]
 pub async fn suggest_tags(
     sticker_id: &str,
     bot: Bot,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
     database: Database,
-    tagging_worker: TfIdfWorker,
+    tfidf_service: TfIdfService,
     vector_db: VectorDatabase,
 ) -> Result<Vec<String>, BotError> {
     let sticker = database.get_sticker_by_id(sticker_id).await?.required()?;
@@ -53,7 +52,7 @@ pub async fn suggest_tags(
         suggest_tags_from_sets_with_same_sticker_file(&database, &sticker.sticker_file_id),
         suggest_tags_from_sets_with_same_owner(&database, set.created_by_user_id),
         // worker_based_tf_idf:
-        tagging_worker.execute(SuggestTags::new(sticker_id.to_string())),
+        tfidf_service.suggest_tags_for_sticker(&sticker.id),
         // clip_and_db_based_tags_from_similar_stickers:
         suggest_tags_from_similar_stickers(
             &database,
@@ -104,14 +103,14 @@ pub async fn suggest_tags(
         suggestions.9,
         suggestions.10,
     ];
-    Ok(combine_suggestions_alt_1(suggestions, sticker_tags, tag_manager).await?)
+    Ok(combine_suggestions_alt_1(suggestions, sticker_tags, tag_manager)?)
 }
 
 // #[tracing::instrument(skip(tag_manager))]
 // fn combine_suggestions(
 //     suggestions: TagSuggestions,
 //     sticker_tags: Vec<String>,
-//     tag_manager: TagManagerWorker,
+//     tag_manager: TagManagerService,
 // ) -> Vec<String> {
 //     // TODO: weighting, etc:
 //     let suggested_tags = suggestions
@@ -155,7 +154,7 @@ pub async fn suggest_tags(
 // fn combine_suggestions_alt_1(
 //     suggestions: Vec<Vec<ScoredTagSuggestion>>,
 //     sticker_tags: Vec<String>,
-//     tag_manager: TagManagerWorker,
+//     tag_manager: TagManagerService,
 // ) -> Vec<String> {
 //     let suggestion_vec = suggestions
 //         .into_iter()
@@ -212,26 +211,24 @@ pub async fn suggest_tags(
 // }
 
 #[tracing::instrument(skip(tag_manager))]
-async fn combine_suggestions_alt_1(
+fn combine_suggestions_alt_1(
     suggestions: Vec<Vec<ScoredTagSuggestion>>,
     sticker_tags: Vec<String>,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
 ) -> Result<Vec<String>, InternalError> {
-    let suggestion_vec = try_join_all(suggestions.into_iter().map(|s| async {
-        Ok::<_, InternalError>(
+    let suggestion_vec = suggestions
+        .into_iter()
+        .map(|s| {
             ScoredTagSuggestion::merge(
-                ScoredTagSuggestion::add_implications(s, tag_manager.clone()).await?,
+                ScoredTagSuggestion::add_implications(s, tag_manager.clone()),
                 vec![],
             )
             .into_iter()
             .take(30)
-            .collect_vec(),
-        )
-    }))
-    .await?
-    .into_iter()
-    .filter(|s| s.len() > 0)
-    .collect_vec();
+            .collect_vec()
+        })
+        .filter(|s| s.len() > 0)
+        .collect_vec();
 
     let mut all_tags: HashMap<_, _> = suggestion_vec
         .iter()
@@ -251,33 +248,23 @@ async fn combine_suggestions_alt_1(
     limits.insert(Category::Species, 5);
     limits.insert(Category::Meta, 5);
 
-    let result = try_join_all(
-        all_tags
-            .into_iter()
-            .sorted_unstable_by_key(|it| -it.1)
-            .map(|it| it.0)
-            .filter(|suggestion| !sticker_tags.contains(&suggestion))
-            .map(|suggestion| async {
-                let category = tag_manager
-                    .execute(GetCategory::new(suggestion.to_string()))
-                    .await?;
-                Ok::<_, InternalError>((suggestion, category))
-            }),
-    )
-    .await?
-    .into_iter()
-    .filter(|(suggestion, category)| {
-        category
-            .map(|category| {
-                let entry = limits.entry(category).or_insert(2);
-                *entry -= 1;
-                *entry >= 0
-            })
-            .unwrap_or_default()
-    })
-    .take(20)
-    .map(|(suggestion, _)| suggestion)
-    .collect_vec();
+    let result = all_tags
+        .into_iter()
+        .sorted_unstable_by_key(|it| -it.1)
+        .map(|it| it.0)
+        .filter(|suggestion| !sticker_tags.contains(&suggestion))
+        .filter(|suggestion| {
+            let category = tag_manager.get_category(&suggestion);
+            category
+                .map(|category| {
+                    let entry = limits.entry(category).or_insert(2);
+                    *entry -= 1;
+                    *entry >= 0
+                })
+                .unwrap_or_default()
+        })
+        .take(20)
+        .collect_vec();
     Ok(result)
 }
 

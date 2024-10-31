@@ -1,6 +1,4 @@
-use crate::background_tasks::{
-    BackgroundTaskExt, ClosestMatchingTag, ClosestMatchingTags, FindTags, GetCategory, TagManagerWorker
-};
+use crate::background_tasks::{BackgroundTaskExt, TagManagerService};
 use crate::bot::{
     report_bot_error, report_internal_error, report_internal_error_result, BotError, InternalError,
     UserError,
@@ -10,10 +8,12 @@ use crate::database::{self, min_max, DialogState, ReportReason, User};
 use crate::database::{Database, Sticker, StickerSet};
 use crate::inline::{InlineQueryData, SetOperation};
 use crate::message::{Keyboard, StartParameter};
-use crate::sticker::{compute_similar, find_with_text_embedding, resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files, Match};
+use crate::sticker::{
+    compute_similar, find_with_text_embedding,
+    resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files, Match,
+};
 use crate::text::{Markdown, Text};
 use crate::util::{create_sticker_set_id, create_tag_id, format_relative_time, Emoji, Required};
-use futures::future::try_join_all;
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use rand::Rng;
@@ -74,16 +74,13 @@ fn create_query_set(
 }
 
 #[tracing::instrument(skip(tag_manager))]
-async fn create_query_article(
-    tag_manager: TagManagerWorker,
+fn create_query_article(
+    tag_manager: TagManagerService,
     tag: &str,
     command_str: &str,
     description: &str,
 ) -> Result<InlineQueryResult, BotError> {
-    let category = tag_manager
-        .execute(GetCategory::new(tag.to_string()))
-        .await?
-        .unwrap_or_default();
+    let category = tag_manager.get_category(tag).unwrap_or_default();
     let color = category.to_color_name();
     let name = category.to_human_name();
     // TODO: do not rely on this service for images (base64 does not work)
@@ -131,10 +128,10 @@ fn treat_missing_tags_as_errors(
 
 pub async fn get_last_input_match_list_and_other_input_closest_matches(
     tags: Vec<Vec<String>>,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
 ) -> Result<(Vec<String>, Vec<String>), BotError> {
     if tags.is_empty() {
-        return Ok((vec![], tag_manager.execute(FindTags::new(vec![])).await?));
+        return Ok((vec![], tag_manager.find_tags(&vec![]).await));
     }
     let last_input = tags.last().cloned().unwrap_or_default();
     let other_len = tags.len() - 1;
@@ -143,13 +140,10 @@ pub async fn get_last_input_match_list_and_other_input_closest_matches(
         .take(other_len)
         .map(|parts| parts.join("_"))
         .collect_vec();
-    let other_input = treat_missing_tags_as_errors(
-        tag_manager
-            .execute(ClosestMatchingTags::new(other_input))
-            .await?,
-    )?;
+    let other_input =
+        treat_missing_tags_as_errors(tag_manager.closest_matching_tags(&other_input).await)?;
 
-    let suggested_tags = tag_manager.execute(FindTags::new(last_input)).await?;
+    let suggested_tags = tag_manager.find_tags(&last_input).await;
 
     Ok((other_input, suggested_tags))
 }
@@ -170,40 +164,30 @@ async fn search_tags_for_sticker_set(
     )
     .await?;
     // TODO: if tags empty -> recommend tags from emojis/set name + fetch set
-    let results = try_join_all(
-        suggested_tags
-            .into_iter()
-            .skip(current_offset.skip())
-            .take(current_offset.page_size())
-            .map(|tag| async {
-                let other_tags = &other_tags;
-                let request_context = &request_context;
-                let set_name = &set_name;
-
-                async move {
-                    let all_tags_list = other_tags.iter().chain(std::iter::once(&tag)).join(",");
-                    let (command, description) = match operation {
-                        SetOperation::Tag => (
-                            format!("/tagset {set_name} {all_tags_list}"),
-                            format!("❗all stickers in set❗ add {all_tags_list}"),
-                        ),
-                        SetOperation::Untag => (
-                            format!("/untagset {set_name} {all_tags_list}"),
-                            format!("❗all stickers in set❗ remove {all_tags_list}"),
-                        ),
-                    };
-                    create_query_article(
-                        request_context.tag_manager.clone(),
-                        &tag,
-                        &command,
-                        &description,
-                    )
-                    .await
-                }
-                .await
-            }),
-    )
-    .await?;
+    let results = suggested_tags
+        .into_iter()
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
+        .map(|tag| {
+            let all_tags_list = other_tags.iter().chain(std::iter::once(&tag)).join(",");
+            let (command, description) = match operation {
+                SetOperation::Tag => (
+                    format!("/tagset {set_name} {all_tags_list}"),
+                    format!("❗all stickers in set❗ add {all_tags_list}"),
+                ),
+                SetOperation::Untag => (
+                    format!("/untagset {set_name} {all_tags_list}"),
+                    format!("❗all stickers in set❗ remove {all_tags_list}"),
+                ),
+            };
+            create_query_article(
+                request_context.tag_manager.clone(),
+                &tag,
+                &command,
+                &description,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     // .collect::<Result<Vec<_>, _>>()?;
     require_some_results("tags", current_offset, results.len())?;
     request_context
@@ -252,31 +236,20 @@ async fn search_tags_for_sticker(
     let suggested_tags = suggested_tags
         .into_iter()
         .filter(|tag| !sticker_tags.contains(tag));
-    let results = try_join_all(
-        suggested_tags
-            .into_iter()
-            .skip(current_offset.skip())
-            .take(current_offset.page_size())
-            .map(|tag| async {
-                // TODO: find a way to make this less ugly
-                let other_tags = &other_tags;
-                let request_context = &request_context;
-                let unique_id = &unique_id;
-                async move {
-                    let all_tags_list = other_tags.iter().chain(std::iter::once(&tag)).join(",");
-                    create_query_article(
-                        request_context.tag_manager.clone(),
-                        &tag,
-                        &format!("/tagsticker {unique_id} {all_tags_list}"),
-                        &format!("Tag this sticker: {all_tags_list}"),
-                    )
-                    .await
-                }
-                .await
-            }),
-    )
-    .await?;
-    // .collect::<Result<Vec<_>, _>>()?;
+    let results = suggested_tags
+        .into_iter()
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
+        .map(|tag| {
+            let all_tags_list = other_tags.iter().chain(std::iter::once(&tag)).join(",");
+            create_query_article(
+                request_context.tag_manager.clone(),
+                &tag,
+                &format!("/tagsticker {unique_id} {all_tags_list}"),
+                &format!("Tag this sticker: {all_tags_list}"),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     require_some_results("tags", current_offset, results.len())?;
     request_context
         .bot
@@ -293,7 +266,7 @@ pub async fn query_stickers(
     database: Database,
     emoji: Vec<Emoji>,
     user: Arc<User>,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
     limit: usize,
     offset: usize,
     seed: i32,
@@ -346,14 +319,8 @@ pub async fn query_stickers(
             .map(|tag| tag.strip_prefix('-').unwrap_or(&tag).to_string())
             .collect(); // TODO: this should probably be done during parsing
         let (tags, query_blacklist) = (
-            treat_missing_tags_as_errors(
-                tag_manager.execute(ClosestMatchingTags::new(tags)).await?,
-            )?,
-            treat_missing_tags_as_errors(
-                tag_manager
-                    .execute(ClosestMatchingTags::new(query_blacklist))
-                    .await?,
-            )?,
+            treat_missing_tags_as_errors(tag_manager.closest_matching_tags(&tags).await)?,
+            treat_missing_tags_as_errors(tag_manager.closest_matching_tags(&query_blacklist).await)?,
         );
 
         let tags_empty = tags.is_empty();
@@ -497,30 +464,23 @@ async fn search_tags_for_blacklist(
     request_context: RequestContext,
 ) -> Result<(), BotError> {
     let blacklist = &request_context.user.blacklist;
-    let suggested_tags = request_context.tag_manager.execute(FindTags::new(tags)).await?;
+    let suggested_tags = request_context.tag_manager.find_tags(&tags).await;
     let suggested_tags = suggested_tags
         .into_iter()
         .filter(|tag| !blacklist.contains(tag));
-    let results = try_join_all(
-        suggested_tags
-            .into_iter()
-            .skip(current_offset.skip())
-            .take(current_offset.page_size())
-            .map(|tag| async {
-                let request_context = &request_context;
-                async move {
-                    create_query_article(
-                        request_context.tag_manager.clone(),
-                        &tag,
-                        &format!("/blacklisttag {tag}"),
-                        "Blacklist this tag",
-                    )
-                    .await
-                }
-                .await
-            }),
-    )
-    .await?;
+    let results = suggested_tags
+        .into_iter()
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
+        .map(|tag| {
+            create_query_article(
+                request_context.tag_manager.clone(),
+                &tag,
+                &format!("/blacklisttag {tag}"),
+                "Blacklist this tag",
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     require_some_results("tags", current_offset, results.len())?;
     request_context
@@ -546,37 +506,30 @@ async fn handle_continuous_tag_query(
         request_context.tag_manager.clone(),
     )
     .await?;
-    let results = try_join_all(
-        suggested_tags
-            .into_iter()
-            .skip(current_offset.skip())
-            .take(current_offset.page_size())
-            .map(|tag| async {
-                let all_tags_list = other_tags.iter().chain(std::iter::once(&tag)).join(",");
-                let (command, description) = match operation {
-                    SetOperation::Tag => (
-                        format!("/tagcontinuous {all_tags_list}"),
-                        format!("Add tags: {all_tags_list}"),
-                    ),
-                    SetOperation::Untag => (
-                        format!("/untagcontinuous {all_tags_list}"),
-                        format!("Remove tags: {all_tags_list}"),
-                    ),
-                };
-                let request_context = &request_context;
-                async move {
-                    create_query_article(
-                        request_context.tag_manager.clone(),
-                        &tag,
-                        &command,
-                        &description,
-                    )
-                    .await
-                }
-                .await
-            }),
-    )
-    .await?;
+    let results = suggested_tags
+        .into_iter()
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
+        .map(|tag| {
+            let all_tags_list = other_tags.iter().chain(std::iter::once(&tag)).join(",");
+            let (command, description) = match operation {
+                SetOperation::Tag => (
+                    format!("/tagcontinuous {all_tags_list}"),
+                    format!("Add tags: {all_tags_list}"),
+                ),
+                SetOperation::Untag => (
+                    format!("/untagcontinuous {all_tags_list}"),
+                    format!("Remove tags: {all_tags_list}"),
+                ),
+            };
+            create_query_article(
+                request_context.tag_manager.clone(),
+                &tag,
+                &command,
+                &description,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     require_some_results("tags", current_offset, results.len())?;
     request_context
@@ -708,9 +661,7 @@ pub async fn inline_query_handler(
         InlineQueryData::ListMostUsedEmojis => {
             handle_most_used_emojis(current_offset, q, request_context).await
         }
-        InlineQueryData::TopOwners => {
-            handle_top_owners(current_offset, q, request_context).await
-        }
+        InlineQueryData::TopOwners => handle_top_owners(current_offset, q, request_context).await,
         InlineQueryData::ListRecommendationModeRecommendations => {
             get_recommended_stickers_in_recommender_mode(current_offset, q, request_context).await
         }
@@ -733,10 +684,10 @@ pub async fn inline_query_handler(
             sticker_id,
             set_title,
         } => handle_user_sets(current_offset, sticker_id, set_title, q, request_context).await,
-        InlineQueryData::ReportSet { set_id } => handle_report(current_offset, set_id, q, request_context).await,
-        InlineQueryData::ListAllSets => {
-            list_all_sets(current_offset, q, request_context).await
+        InlineQueryData::ReportSet { set_id } => {
+            handle_report(current_offset, set_id, q, request_context).await
         }
+        InlineQueryData::ListAllSets => list_all_sets(current_offset, q, request_context).await,
     }
 }
 
@@ -801,26 +752,19 @@ async fn handle_all_set_tags(
         .get_all_sticker_set_tag_counts(&set.id)
         .await?;
 
-    let r = try_join_all(
-        tags.into_iter()
-            .skip(current_offset.skip())
-            .take(current_offset.page_size())
-            .map(|tag| async {
-                let request_context = &request_context;
-                let tag = tag;
-                async move {
-                    create_query_article(
-                        request_context.tag_manager.clone(),
-                        &tag.0,
-                        &tag.0, // TODO: proper command string
-                        &format!("{} stickers in this set have this tag", tag.1),
-                    )
-                    .await
-                }
-                .await
-            }),
-    )
-    .await?;
+    let r = tags
+        .into_iter()
+        .skip(current_offset.skip())
+        .take(current_offset.page_size())
+        .map(|tag| {
+            create_query_article(
+                request_context.tag_manager.clone(),
+                &tag.0,
+                &tag.0, // TODO: proper command string
+                &format!("{} stickers in this set have this tag", tag.1),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     require_some_results("tags", current_offset, r.len())?;
     request_context
@@ -976,9 +920,7 @@ async fn handle_most_used_emojis(
             let thumbnail_url =
                 format!("https://placehold.co/{THUMBNAIL_SIZE}/007f0e/black.png?text={rank}");
             let thumbnail_url = Url::parse(&thumbnail_url)?;
-            let emo = emojis::get(&emoji.to_string_with_variant())
-                .or_else(|| emojis::get(&emoji.to_string_without_variant()));
-            let description = emo.map_or("".to_string(), |emo| emo.name().to_string());
+            let description = emoji.name().unwrap_or_default();
             Ok::<InlineQueryResult, BotError>(
                 InlineQueryResultArticle::new(
                     InlineQueryResultId::Emoji(emoji.clone()).to_string(),
@@ -1086,8 +1028,12 @@ async fn get_recommended_stickers_in_recommender_mode(
         .required()?;
     let original_result_len = recommended_file_hashes.len();
 
-    let recommended =
-        resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(request_context.database.clone(), request_context.vector_db.clone(), recommended_file_hashes).await?;
+    let recommended = resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
+        request_context.database.clone(),
+        request_context.vector_db.clone(),
+        recommended_file_hashes,
+    )
+    .await?;
 
     let sticker_ids = recommended.into_iter().map(|m| m.sticker_id).collect_vec();
     let mut stickers = Vec::new();
@@ -1137,7 +1083,7 @@ pub async fn handle_tag_creator(
         format!("/settag {} {tag_id}", kind.to_u8().unwrap_or_default()),
     )));
 
-    let most_similar_tag = request_context.tag_manager.execute(ClosestMatchingTag::new(tag_id.clone())).await?;
+    let most_similar_tag = request_context.tag_manager.closest_matching_tag(&tag_id).await;
     let existing_tag = request_context.database.get_tag_by_id(&tag_id).await?;
     if let Some(tag) = existing_tag {
         return Err(
@@ -1230,9 +1176,9 @@ async fn handle_user_sets(
 
     let mut articles = vec![];
     for set in sets {
-        request_context
-            .process_sticker_set(set.id.clone(), false)
-            .await;
+        if !request_context.importer.is_busy() {
+            request_context.importer.queue_sticker_set_import(&set.id, false, Some(request_context.user_id())).await;
+        }
         // TODO: use futuresunordered
         let url = format!(
             "https://fuzzle-bot.avoonix.com/thumbnails/sticker-set/{}/image.png",
@@ -1419,25 +1365,33 @@ async fn handle_top_owners(
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
-            let stats = request_context
-                .database
-                .get_general_user_stats(
+    let stats = request_context
+        .database
+        .get_general_user_stats(
             current_offset.page_size() as i64,
             current_offset.skip() as i64,
-                )
-                .await?;
+        )
+        .await?;
 
     let articles = stats
         .into_iter()
         .enumerate()
         .map(|(index, stat)| {
-            let username = stat.username.map_or_else(|| stat.linked_tag.map_or_else(|| format!("Unknown User {}", stat.user_id), |linked_tag| format!("~{}", linked_tag)) , |username| format!("@{username}"));
+            let username = stat.username.map_or_else(
+                || {
+                    stat.linked_tag.map_or_else(
+                        || format!("Unknown User {}", stat.user_id),
+                        |linked_tag| format!("~{}", linked_tag),
+                    )
+                },
+                |username| format!("@{username}"),
+            );
             Ok::<InlineQueryResult, BotError>(
                 InlineQueryResultArticle::new(
                     InlineQueryResultId::User(stat.user_id).to_string(),
                     username,
                     InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
-                        format!("/user {}", stat.user_id)
+                        format!("/user {}", stat.user_id),
                     ))),
                 )
                 .description(Markdown::escaped(format!("Owns {} sets", stat.set_count)))
@@ -1463,7 +1417,6 @@ async fn handle_top_owners(
     Ok(())
 }
 
-
 #[tracing::instrument(skip(q, request_context))]
 async fn handle_report(
     current_offset: QueryPage,
@@ -1472,21 +1425,23 @@ async fn handle_report(
     request_context: RequestContext,
 ) -> Result<(), BotError> {
     let reasons = [ReportReason::NotFurry, ReportReason::Other];
-    let reasons = reasons.into_iter().map(|reason| {
+    let reasons = reasons
+        .into_iter()
+        .map(|reason| {
+            let content =
+                InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
+                    format!("/reportset {} {}", reason.to_i64().unwrap(), &set_id), // todo!
+                )));
 
-        let content = InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
-                format!("/reportset {} {}", reason.to_i64().unwrap(), &set_id) // todo! 
-        )));
-
-        InlineQueryResultArticle::new(
-            InlineQueryResultId::Other(reason.to_i64().unwrap().to_string()).to_string(),
-            reason.get_title(),
-            content,
-        )
-        .description(reason.get_description())
-        .into()
-
-    }).collect_vec();
+            InlineQueryResultArticle::new(
+                InlineQueryResultId::Other(reason.to_i64().unwrap().to_string()).to_string(),
+                reason.get_title(),
+                content,
+            )
+            .description(reason.get_description())
+            .into()
+        })
+        .collect_vec();
 
     request_context
         .bot

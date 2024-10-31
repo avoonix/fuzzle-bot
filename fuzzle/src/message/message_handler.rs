@@ -104,9 +104,8 @@ async fn handle_sticker_sets(
         }
     }
     for set_name in &potential_sticker_set_names {
-        request_context
-            .process_sticker_set(set_name.to_string(), false)
-            .await;
+        // TODO: this causes potential loss of sticker packs if bot is restarted before queue is empty
+        request_context.importer.queue_sticker_set_import(set_name, false, Some(request_context.user_id())).await;
     }
     request_context
         .bot
@@ -259,11 +258,11 @@ pub async fn message_handler(
         let urls = get_all_urls_from_entities(vec![entity.clone()]);
         for url in urls {
             match url.host_str() {
-                Some("t.me") => {
+                Some("t.me") | Some("telegram.me") => {
                     let path = url.path();
                     let path = path.trim_start_matches("/")
                         .trim_end_matches('/');
-                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$").unwrap().is_match(path);
+                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$").expect("hardcoded url to compile").is_match(path);
                     if matched {
                         request_context.database.add_username(path).await?;
                     }
@@ -276,7 +275,7 @@ pub async fn message_handler(
                 let text = entity.text();
                 if text.starts_with("@") {
                     let text = text.trim_start_matches("@");
-                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$").unwrap().is_match(text);
+                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$").expect("hardcoded url to compile").is_match(text);
                     if matched {
                         request_context.database.add_username(text).await?;
                     }
@@ -438,7 +437,7 @@ async fn handle_sticker_message(
                 .database
                 .untag_file(&file.id, &continuous_tag.remove_tags, request_context.user.id)
                 .await?;
-            request_context.tagging_worker.maybe_recompute().await?;
+            request_context.tfidf.request_recompute().await;
             handle_sticker_1(msg, sticker, request_context, true).await?;
         }
         DialogState::StickerRecommender {
@@ -522,12 +521,13 @@ async fn handle_sticker_1(
         .database
         .get_sticker_tags(&sticker.file.unique_id)
         .await?;
+    let set = request_context.database.get_sticker_set_by_sticker_id(&sticker.file.unique_id).await?;
     let suggested_tags = suggest_tags(
         &sticker.file.unique_id,
         request_context.bot.clone(),
         request_context.tag_manager.clone(),
         request_context.database.clone(),
-        request_context.tagging_worker.clone(),
+        request_context.tfidf.clone(),
         request_context.vector_db.clone(),
         // request_context.tag_worker.clone(),
     )
@@ -548,7 +548,7 @@ async fn handle_sticker_1(
             if is_continuous_tag {
                 Text::continuous_tag_success()
             } else {
-                Text::get_sticker_text(emojis)
+                Text::get_sticker_text(emojis, set.is_some_and(|set| set.last_fetched.is_none()))
             },
         )
         .reply_markup(Keyboard::tagging(
@@ -558,7 +558,7 @@ async fn handle_sticker_1(
             is_locked,
             is_continuous_tag,
         request_context.tag_manager.clone(),
-    ).await?)
+    )?)
         .allow_sending_without_reply(true)
         .reply_to_message_id(msg.id)
         .into_future()

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::background_tasks::{TagManagerWorker, TfIdfWorker};
+use crate::background_tasks::{StickerImportService, TagManagerService, TfIdfService};
 use crate::bot::config::Config;
 use crate::database::{Database, User};
 use crate::qdrant::VectorDatabase;
@@ -10,15 +10,16 @@ use teloxide::types::ChatKind;
 
 use super::{Bot, BotError, RequestContext};
 
-#[tracing::instrument(skip(update, config, database, tag_manager, bot, tagging_worker, vector_db))]
+#[tracing::instrument(skip(update, config, database, tag_manager, bot, tfidf_service, vector_db, importer))]
 pub async fn inject_context(
     update: Update,
     config: Arc<Config>,
     database: Database,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
     bot: Bot,
-    tagging_worker: TfIdfWorker,
+    tfidf_service: TfIdfService,
     vector_db: VectorDatabase,
+    importer: StickerImportService,
 ) -> Option<RequestContext> {
     match get_user(
         update.clone(),
@@ -34,8 +35,9 @@ pub async fn inject_context(
             database,
             tag_manager,
             user: Arc::new(user),
-            tagging_worker,
+            tfidf: tfidf_service,
             vector_db,
+            importer,
         }),
         Err(err) => {
             tracing::error!("error during inject: {err}");

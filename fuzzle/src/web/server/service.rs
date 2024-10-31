@@ -17,7 +17,7 @@ use crate::{
     sticker::{
         create_historgram_image, create_sticker_thumbnail, fetch_sticker_file, generate_merge_image,
     },
-    util::Required,
+    util::Required, web::server::WebAppInitData,
 };
 use web::Data;
 
@@ -173,6 +173,31 @@ async fn login(
         .secure(true)
         .http_only(true)
         .finish();
+    Ok(HttpResponse::Ok()
+        .cookie(cookie)
+        .insert_header((header::LOCATION, "/"))
+        .status(actix_web::http::StatusCode::TEMPORARY_REDIRECT)
+        .finish())
+}
+
+#[get("login-webapp")]
+#[tracing::instrument(skip(data, request))]
+async fn login_webapp(
+    init_data: web::Query<WebAppInitData>,
+    data: web::Data<AppState>,
+    request: HttpRequest,
+) -> actix_web::Result<impl Responder> {
+    if !init_data.check(data.config.telegram_bot_token.clone()) {
+        return Err(ErrorUnauthorized("invalid web app data"));
+    }
+    let auth_data = init_data.0.clone().into_auth_data(data.config.telegram_bot_token.clone());
+    let cookie = Cookie::build(AUTH_COOKIE_NAME, serde_json::to_string(&auth_data)?)
+        .max_age(Duration::DAY * 30)
+        .same_site(SameSite::Lax)
+        .secure(true)
+        .http_only(true)
+        .finish();
+
     Ok(HttpResponse::Ok()
         .cookie(cookie)
         .insert_header((header::LOCATION, "/"))

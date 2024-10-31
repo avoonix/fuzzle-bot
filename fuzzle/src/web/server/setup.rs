@@ -4,7 +4,7 @@ use actix_files::Files;
 use actix_web::{web::route, middleware, web, App, HttpServer};
 
 use crate::{
-    background_tasks::{TagManagerWorker, TfIdfWorker}, bot::Bot, database::Database, qdrant::VectorDatabase, web::server::page, Config
+    background_tasks::{TagManagerService, TfIdfService}, bot::Bot, database::Database, qdrant::VectorDatabase, web::server::page, Config
 };
 
 use super::service;
@@ -12,9 +12,9 @@ use super::service;
 pub struct AppState {
     pub config: Arc<Config>,
     pub database: Database,
-    pub tag_manager: TagManagerWorker,
+    pub tag_manager: TagManagerService,
     pub bot: Bot,
-    pub tagging_worker: TfIdfWorker,
+    pub tfidf_service: TfIdfService,
     // pub tag_worker: TagWorker,
     pub vector_db: VectorDatabase,
 }
@@ -22,9 +22,9 @@ pub struct AppState {
 pub fn setup(
     config: Arc<Config>,
     database: Database,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
     bot: Bot,
-    tagging_worker: TfIdfWorker,
+    tfidf_service: TfIdfService,
     // tag_worker: TagWorker,
     vector_db: VectorDatabase,
 ) {
@@ -39,7 +39,7 @@ pub fn setup(
                     database: database.clone(),
                     tag_manager: tag_manager.clone(),
                     bot: bot.clone(),
-                    tagging_worker: tagging_worker.clone(),
+                    tfidf_service: tfidf_service.clone(),
                     // tag_worker: tag_worker.clone(),
                     vector_db: vector_db.clone(),
                 }))
@@ -47,6 +47,7 @@ pub fn setup(
                 // .service(Files::new("/assets", site_root))
                 // .service(service::favicon)
                 .service(service::login)
+                .service(service::login_webapp)
                 .service(service::logout)
                 .service(service::favicon)
                 .service(service::asset_folder)
@@ -59,6 +60,9 @@ pub fn setup(
                 .service(page::sticker_set)
                 .service(page::sticker_page)
                 .service(page::tag_page)
+                .service(page::emoji_page)
+                .service(page::webapp_entrypoint)
+                // TODO: assets should be the default route
                 .default_service(route().to(page::not_found))
                 .wrap(middleware::Compress::default())
         })

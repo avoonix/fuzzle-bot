@@ -88,11 +88,11 @@ impl Database {
     ) -> Result<Option<ModerationTask>, DatabaseError> {
         self.pool
             .exec(move |conn| {
-        Ok(moderation_task::table
-            .select(ModerationTask::as_select())
-            .filter(moderation_task::id.eq(moderation_task_id))
-            .first(conn)
-            .optional()?)
+                Ok(moderation_task::table
+                    .select(ModerationTask::as_select())
+                    .filter(moderation_task::id.eq(moderation_task_id))
+                    .first(conn)
+                    .optional()?)
             })
             .await
     }

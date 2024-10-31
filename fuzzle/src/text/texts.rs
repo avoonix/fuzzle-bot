@@ -191,24 +191,27 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
     }
 
     #[must_use]
-    pub fn get_sticker_text(emoji: Option<Emoji>) -> Markdown {
+    pub fn get_sticker_text(emoji: Option<Emoji>, set_is_new: bool) -> Markdown {
         let value = if let Some(emoji) = emoji {
-            if let Some(emo) = emojis::get(&emoji.to_string_with_variant())
-                .or_else(|| emojis::get(&emoji.to_string_without_variant()))
-            {
-                format!(
-                    " {} {} ",
-                    emo.name().to_string(),
-                    emoji.to_string_with_variant()
-                )
+            if let Some(name) = emoji.name() {
+                format!(" {} {} ", name, emoji.to_string_with_variant())
             } else {
                 format!(" {} ", emoji.to_string_with_variant())
             }
         } else {
             " ".to_string()
         };
+        let new_set_text = if set_is_new {
+            "\n\n✨ New Set ✨\nIt can take a few minutes until I'm done processing all stickers"
+        } else {
+            ""
+        };
 
-        Markdown::new(format!("UwU you sent a{}sticker :3", escape(&value)))
+        Markdown::new(format!(
+            "UwU you sent a{}sticker :3{}",
+            escape(&value),
+            new_set_text
+        ))
     }
 
     #[must_use]

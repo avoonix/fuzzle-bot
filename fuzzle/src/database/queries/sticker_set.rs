@@ -122,10 +122,7 @@ impl Database {
             .await
     }
 
-    fn check_removed(
-        set_id: &str,
-        conn: &mut SqliteConnection,
-    ) -> Result<(), DatabaseError> {
+    fn check_removed(set_id: &str, conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
         let removed: Option<String> = removed_set::table
             .filter(removed_set::id.eq(set_id))
             .select((removed_set::id))

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    background_tasks::{GetCategory, TagManagerWorker},
+    background_tasks::TagManagerService,
     bot::InternalError,
     callback::CallbackData,
     database::{
@@ -13,7 +13,6 @@ use crate::{
     util::{format_relative_time, Emoji},
 };
 use chrono::NaiveDateTime;
-use futures::future::try_join_all;
 use itertools::Itertools;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, LoginUrl, UserId};
 use url::Url;
@@ -24,13 +23,13 @@ pub struct Keyboard;
 
 impl Keyboard {
     #[must_use]
-    pub async fn tagging(
+    pub fn tagging(
         current_tags: &[String],
         sticker_unique_id: &str,
         suggested_tags: &[String],
         tagging_locked: bool,
         is_continuous_tag: bool,
-        tag_manager: TagManagerWorker,
+        tag_manager: TagManagerService,
     ) -> Result<InlineKeyboardMarkup, InternalError> {
         let mut button_layout: Vec<Vec<String>> = vec![];
         // trio implies group; trio is more important than group
@@ -72,8 +71,7 @@ impl Keyboard {
                         current_tags,
                         sticker_unique_id,
                         tag_manager,
-                    )
-                    .await?,
+                    )?,
                 )));
             }
         };
@@ -133,8 +131,7 @@ impl Keyboard {
                 current_tags,
                 sticker_unique_id,
                 tag_manager,
-            )
-            .await?,
+            )?,
         );
         keyboard.push(vec![
             InlineKeyboardButton::switch_inline_query_current_chat(
@@ -341,21 +338,20 @@ impl Keyboard {
             markup = markup.append_row(vec![
                 set_button(set_name)?,
                 if set_name.len() < 50 {
-                if indexed_sets.contains(set_name) {
-                    InlineKeyboardButton::callback(
-                        format!("Ban {}", set_name),
-                        CallbackData::change_set_status(set_name, true, task_id),
-                    )
-                } else {
-                    InlineKeyboardButton::callback(
-                        format!("Unban {}", set_name),
-                        CallbackData::change_set_status(set_name, false, task_id),
-                    )
-                }
+                    if indexed_sets.contains(set_name) {
+                        InlineKeyboardButton::callback(
+                            format!("Ban {}", set_name),
+                            CallbackData::change_set_status(set_name, true, task_id),
+                        )
+                    } else {
+                        InlineKeyboardButton::callback(
+                            format!("Unban {}", set_name),
+                            CallbackData::change_set_status(set_name, false, task_id),
+                        )
+                    }
                 } else {
                     set_button(set_name)? // TODO: set name too long, use ids?
-                }
-                ,
+                },
             ]);
         }
 
@@ -1213,33 +1209,29 @@ fn set_button(set_id: &str) -> Result<InlineKeyboardButton, InternalError> {
     ))
 }
 
-async fn button_layout_to_keyboard_layout(
+fn button_layout_to_keyboard_layout(
     button_layout: Vec<Vec<String>>,
     current_tags: &[String],
     sticker_unique_id: &str,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
 ) -> Result<Vec<Vec<InlineKeyboardButton>>, InternalError> {
-    let keyboard = try_join_all(button_layout.iter().map(|row| async {
-        Ok::<_, InternalError>(
-            try_join_all(row.iter().map(|tag| async {
-                Ok::<_, InternalError>(
-                    tag_to_button(tag, current_tags, sticker_unique_id, tag_manager.clone())
-                        .await?,
-                )
-            }))
-            .await?,
-        )
-    }))
-    .await?;
+    let keyboard = button_layout
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|tag| tag_to_button(tag, current_tags, sticker_unique_id, tag_manager.clone()))
+                .collect_vec()
+        })
+        .collect_vec();
     Ok(keyboard)
 }
 
-async fn tag_to_button(
+fn tag_to_button(
     tag: &str,
     current_tags: &[String],
     sticker_unique_id: &str,
-    tag_manager: TagManagerWorker,
-) -> Result<InlineKeyboardButton, InternalError> {
+    tag_manager: TagManagerService,
+) -> InlineKeyboardButton {
     let is_already_tagged = current_tags.contains(&tag.to_string());
     let callback_data = if is_already_tagged {
         CallbackData::untag_sticker(sticker_unique_id, tag.to_string())
@@ -1247,20 +1239,18 @@ async fn tag_to_button(
         CallbackData::tag_sticker(sticker_unique_id, tag.to_string())
     };
     let text = if is_already_tagged {
-        // format!("✅ {}", tag.to_owned())
         let emoji = tag_manager
-            .execute(GetCategory::new(tag.to_string()))
-            .await?
+            .get_category(tag)
             .map(|c| c.to_emoji())
             .unwrap_or("✅");
         format!("{} {}", emoji, tag.to_owned())
     } else {
         tag.to_owned()
     };
-    Ok(InlineKeyboardButton::callback(
+    InlineKeyboardButton::callback(
         text,
         callback_data.to_string(),
-    ))
+    )
 }
 
 fn favorite_button(is_favorite: bool, sticker_id: &str) -> InlineKeyboardButton {

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::background_tasks::{BackgroundTaskExt, GetImplicationsIncludingSelf};
+use crate::background_tasks::BackgroundTaskExt;
 use crate::bot::{BotError, BotExt, InternalError, RequestContext, UserError};
 use crate::callback::{exit_mode, sticker_explore_keyboard, TagOperation};
 
@@ -327,9 +327,7 @@ impl HiddenCommand {
                 )
                 .await?;
 
-                request_context
-                    .process_sticker_set(set_id.clone(), true)
-                    .await;
+                request_context.importer.queue_sticker_set_import(&set_id, true, Some(request_context.user_id())).await;
 
                 request_context
                     .bot
@@ -407,9 +405,7 @@ impl HiddenCommand {
                     )
                     .await?;
 
-                request_context
-                    .process_sticker_set(set_id.clone(), true)
-                    .await;
+                request_context.importer.queue_sticker_set_import(&set_id, true, Some(request_context.user_id())).await;
 
                 request_context
                     .bot
@@ -492,7 +488,7 @@ impl HiddenCommand {
                                 Some(request_context.user.id),
                             )
                             .await?;
-                        request_context.tagging_worker.maybe_recompute().await?;
+                        request_context.tfidf.request_recompute().await;
                     }
                     let tags = request_context
                         .database
@@ -503,7 +499,7 @@ impl HiddenCommand {
                         request_context.bot.clone(),
                         request_context.tag_manager.clone(),
                         request_context.database.clone(),
-                        request_context.tagging_worker.clone(),
+                        request_context.tfidf.clone(),
                         request_context.vector_db.clone(),
                         // request_context.tag_worker.clone(),
                     )
@@ -522,17 +518,14 @@ impl HiddenCommand {
                         // file id
                         // from
                         // database
-                        .reply_markup(
-                            Keyboard::tagging(
-                                &tags,
-                                &sticker_unique_id,
-                                &suggested_tags,
-                                is_locked,
-                                request_context.is_continuous_tag_state(),
-                                request_context.tag_manager.clone(),
-                            )
-                            .await?,
-                        )
+                        .reply_markup(Keyboard::tagging(
+                            &tags,
+                            &sticker_unique_id,
+                            &suggested_tags,
+                            is_locked,
+                            request_context.is_continuous_tag_state(),
+                            request_context.tag_manager.clone(),
+                        )?)
                         .await?;
                 } else {
                     request_context
@@ -632,6 +625,7 @@ async fn suggest_sticker(
                 let database = &database;
                 let tag_state = &tag_state;
                 async move {
+                    // TODO: single query instead of 30 separate ones
                     let sticker_tags = database.get_sticker_tags_by_file_id(&file_id).await?;
                     for add_tag in &tag_state.add_tags {
                         if !sticker_tags.contains(add_tag) {
@@ -646,7 +640,6 @@ async fn suggest_sticker(
     .into_iter()
     .filter_map(|tag| tag)
     .collect_vec();
-dbg!(&negative_examples, &tag_state.already_recommended_sticker_file_ids);
     let stickers_similar_to_already_tagged = vector_db
         .find_similar_stickers(
             &sticker_file_ids,
@@ -703,18 +696,18 @@ async fn get_tag_implications_including_self(
     request_context: RequestContext,
 ) -> Result<Option<Vec<String>>, InternalError> {
     // TODO: change return type?
-    let tags = try_join_all(tags.into_iter().map(|tag| {
-        request_context
-            .tag_manager
-            .execute(GetImplicationsIncludingSelf::new(tag.to_string()))
-    }))
-    .await?
-    .into_iter()
-    .flatten()
-    .flatten()
-    .sorted()
-    .dedup()
-    .collect_vec();
+    let tags = tags
+        .into_iter()
+        .map(|tag| {
+            request_context
+                .tag_manager
+                .get_implications_including_self(&tag)
+        })
+        .flatten()
+        .flatten()
+        .sorted()
+        .dedup()
+        .collect_vec();
     Ok(if tags.is_empty() { None } else { Some(tags) })
 }
 
@@ -738,28 +731,26 @@ async fn modify_continuous_tag(
     request_context: RequestContext,
     msg: Message,
 ) -> Result<(), BotError> {
-    let new_add_tags = try_join_all(new_add_tags.into_iter().map(|tag| async {
-        let a = request_context
-            .tag_manager
-            .execute(GetImplicationsIncludingSelf::new(tag))
-            .await?;
-        Ok::<_, InternalError>(a.unwrap_or_default())
-    }))
-    .await?
-    .into_iter()
-    .flatten()
-    .collect_vec();
-    let new_remove_tags = try_join_all(new_remove_tags.into_iter().map(|tag| async {
-        let a = request_context
-            .tag_manager
-            .execute(GetImplicationsIncludingSelf::new(tag))
-            .await?;
-        Ok::<_, InternalError>(a.unwrap_or_default())
-    }))
-    .await?
-    .into_iter()
-    .flatten()
-    .collect_vec();
+    let new_add_tags = new_add_tags
+        .into_iter()
+        .map(|tag| {
+            request_context
+                .tag_manager
+                .get_implications_including_self(&tag)
+                .unwrap_or_default()
+        })
+        .flatten()
+        .collect_vec();
+    let new_remove_tags = new_remove_tags
+        .into_iter()
+        .map(|tag| {
+            request_context
+                .tag_manager
+                .get_implications_including_self(&tag)
+                .unwrap_or_default()
+        })
+        .flatten()
+        .collect_vec();
     let (state_changed, continuous_tag) = match request_context.dialog_state() {
         DialogState::ContinuousTag(ct) => (false, ct),
         _ => (true, Default::default()),
@@ -837,7 +828,7 @@ async fn set_tag_operation(
                     .database
                     .tag_all_files_in_set(&set_name, tags.as_ref(), request_context.user.id)
                     .await?;
-                request_context.tagging_worker.maybe_recompute().await?;
+                request_context.tfidf.request_recompute().await;
                 Text::tagged_set(&set_name, &tags, taggings_changed)
             } else {
                 Markdown::escaped("No tags changed".to_string())
@@ -892,9 +883,12 @@ pub async fn set_tag_id(
         }
         TagKind::Main => tag_creator.tag_id = tag_id,
     }
-    
+
     if let Some(linked_user_id) = linked_user_id {
-        let username = request_context.database.get_username(crate::database::UsernameKind::User, linked_user_id).await?;
+        let username = request_context
+            .database
+            .get_username(crate::database::UsernameKind::User, linked_user_id)
+            .await?;
         if let Some(username) = username {
             tag_creator.linked_user = Some(linked_user_id);
         }
@@ -1013,8 +1007,12 @@ async fn suggest_sticker_recommender(
         )
         .await?
         .required()?;
-    let recommended =
-        resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(request_context.database.clone(), request_context.vector_db.clone(), recommended_file_hashes).await?;
+    let recommended = resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
+        request_context.database.clone(),
+        request_context.vector_db.clone(),
+        recommended_file_hashes,
+    )
+    .await?;
 
     let sticker_ids = recommended.into_iter().map(|m| m.sticker_id).collect_vec();
     for id in sticker_ids {

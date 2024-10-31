@@ -5,7 +5,7 @@ use crate::inline::{inline_query_handler_wrapper, inline_result_handler_wrapper}
 use crate::message::{list_visible_admin_commands, list_visible_user_commands, message_handler_wrapper};
 use crate::qdrant::VectorDatabase;
 
-use crate::background_tasks::{start_periodic_tasks, TagManagerDependencies, TagManagerWorker, TfIdfDependencies, TfIdfWorker, Worker};
+use crate::background_tasks::{start_periodic_tasks, StickerImportService, TagManagerService, TfIdfService};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,12 +22,13 @@ use super::user_meta::inject_context;
 use super::{Bot, InternalError};
 
 pub struct UpdateListener {
-    tags: TagManagerWorker,
+    tag_manager: TagManagerService,
     bot: Bot,
     config: Arc<Config>,
     database: Database,
     vector_db: VectorDatabase,
-    tagging_worker: TfIdfWorker,
+    importer: StickerImportService,
+    tfidf_service: TfIdfService,
 }
 
 impl UpdateListener {
@@ -38,29 +39,25 @@ impl UpdateListener {
             .build()?;
         // let bot = Bot::with_client(scrape_config.token, client);
         let bot = teloxide::Bot::with_client(config.telegram_bot_token.clone(), client)
-            .set_api_url(Url::parse(&config.telegram_bot_api_url).unwrap())
+            .set_api_url(Url::parse(&config.telegram_bot_api_url).expect("configured url to be valid"))
             .parse_mode(ParseMode::MarkdownV2)
             .throttle(Limits::default());
         let database = Database::new(config.db()).await?;
         let vector_db = VectorDatabase::new(&config.vector_db_url).await?;
         let config = Arc::new(config);
+        let importer = StickerImportService::new(database.clone(), config.clone(), bot.clone(), vector_db.clone()).await?;
 
-        let tags = TagManagerWorker::start(TagManagerDependencies {
-            database: database.clone(),
-            config: config.clone(),
-        }); 
-        let tagging_worker = TfIdfWorker::start(TfIdfDependencies {
-            database: database.clone(),
-            tag_manager: tags.clone(),
-        });
+        let tag_manager = TagManagerService::new(database.clone(), config.clone()).await?;
+        let tfidf_service = TfIdfService::new(database.clone(), tag_manager.clone()).await?;
 
         Ok(Self {
-            tags,
+            tag_manager,
             bot,
             config,
             database,
             vector_db,
-            tagging_worker,
+            tfidf_service,
+            importer,
         })
     }
 
@@ -89,16 +86,17 @@ impl UpdateListener {
             self.bot.clone(),
             self.database.clone(),
             self.config.clone(),
-            self.tags.clone(),
+            self.tag_manager.clone(),
             self.vector_db.clone(),
+            self.importer.clone(),
         );
 
         crate::web::server::setup(
             self.config.clone(),
             self.database.clone(),
-            self.tags.clone(),
+            self.tag_manager.clone(),
             self.bot.clone(),
-            self.tagging_worker.clone(),
+            self.tfidf_service.clone(),
             // tag_worker.clone(),
             self.vector_db.clone(),
         );
@@ -127,11 +125,12 @@ impl UpdateListener {
         Dispatcher::builder(self.bot.clone(), handler)
             .dependencies(dptree::deps![
                 self.config.clone(),
-                self.tags.clone(),
+                self.tag_manager.clone(),
                 self.database.clone(),
-                self.tagging_worker.clone(),
+                self.tfidf_service.clone(),
                 // tag_worker,
-                self.vector_db.clone()
+                self.vector_db.clone(),
+                self.importer.clone()
             ])
             .default_handler(|upd| async move {
                 let span = tracing::error_span!("default_handler").entered();

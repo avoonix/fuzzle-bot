@@ -8,7 +8,10 @@ pub struct Emoji(String);
 
 impl Emoji {
     pub fn new_from_string_single(emoji: impl Into<String>) -> Emoji {
-        let without_variant_selector = emoji.into().trim_matches(|c| c =='\u{fe0f}' || c == '\u{fe0e}').to_string();
+        let without_variant_selector = emoji
+            .into()
+            .trim_matches(|c| c == '\u{fe0f}' || c == '\u{fe0e}')
+            .to_string();
         Emoji(without_variant_selector)
     }
 }
@@ -17,9 +20,15 @@ impl Emoji {
     pub fn to_string_without_variant(&self) -> String {
         self.0.to_string()
     }
-    
+
     pub fn to_string_with_variant(&self) -> String {
         format!("{}\u{fe0f}", self.0)
+    }
+
+    pub fn name(&self) -> Option<String> {
+        let emo = emojis::get(&self.to_string_with_variant())
+            .or_else(|| emojis::get(&self.to_string_without_variant()));
+        emo.map(|emo| emo.name().to_string())
     }
 }
 
@@ -32,7 +41,8 @@ pub fn parse_first_emoji(input: &str) -> (Option<Emoji>, &str) {
         return (None, input);
     }
     let Some(emoji) = emojis::get(first_grapheme).or_else(|| {
-        let without_variant_selector = first_grapheme.trim_matches(|c| c =='\u{fe0f}' || c == '\u{fe0e}');
+        let without_variant_selector =
+            first_grapheme.trim_matches(|c| c == '\u{fe0f}' || c == '\u{fe0e}');
         emojis::get(without_variant_selector)
     }) else {
         return (None, input);

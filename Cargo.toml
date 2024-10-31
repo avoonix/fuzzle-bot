@@ -2,6 +2,7 @@
 members = [
     "fuzzle",
     "duplicate_detector",
+    "tag_search_engine",
 ]
 resolver = "2"
 

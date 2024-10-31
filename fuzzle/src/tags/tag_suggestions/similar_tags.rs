@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use itertools::Itertools;
 
 use crate::{
-    background_tasks::TagManagerWorker, bot::InternalError, database::Database, qdrant::VectorDatabase,
+    background_tasks::TagManagerService, bot::InternalError, database::Database, qdrant::VectorDatabase,
 };
 
 use super::{
@@ -14,7 +14,7 @@ use super::{
 pub async fn suggest_similar_tags(
     database: &Database,
     vector_db: &VectorDatabase,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
     tags: &[String],
 ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
     if tags.len() < 2 || tags.len() >= 30 {

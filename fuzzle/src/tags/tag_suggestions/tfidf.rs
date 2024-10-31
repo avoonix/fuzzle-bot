@@ -1,31 +1,22 @@
-
-
 use crate::database::Database;
 
-
-use crate::util::Emoji;
 use anyhow::Result;
 use itertools::Itertools;
 
+use std::{collections::HashMap, hash::Hash};
 
-use std::collections::HashMap;
-
-
-use super::{ScoredTagSuggestion};
-
+use super::ScoredTagSuggestion;
 
 #[derive(Debug)]
-pub struct Tfidf {
-    lookup: HashMap<Emoji, Vec<(String, f32)>>,
+pub struct Tfidf<T: Hash + Clone + Eq, D: Hash + Clone + Eq> { // term - document
+    lookup: HashMap<D, Vec<ScoredTagSuggestion<T>>>,
 }
 
-impl Tfidf {
+impl<T: Hash + Clone + Eq, D: Hash + Clone + Eq> Tfidf<T, D> {
     #[tracing::instrument(skip(all_used_tags))]
-    pub fn generate(all_used_tags: Vec<(Emoji, String, i64)>) -> Self {
-        type Document = Emoji;
-        type Term = String;
-        let mut documents: HashMap<Document, HashMap<Term, u64>> = HashMap::new();
-        let mut terms: Vec<Term> = Vec::new();
+    pub fn generate(all_used_tags: Vec<(D, T, i64)>) -> Self {
+        let mut documents: HashMap<D, HashMap<T, u64>> = HashMap::new();
+        let mut terms: Vec<T> = Vec::new();
         for (document, term, count) in all_used_tags {
             terms.push(term.clone());
             *documents
@@ -35,28 +26,28 @@ impl Tfidf {
                 .or_default() += count as u64;
         }
 
-        let tf = |term: Term, document: HashMap<Term, u64>| {
+        let tf = |term: T, document: HashMap<T, u64>| {
             *document.get(&term).unwrap_or(&0) as f32 / document.values().sum::<u64>() as f32
         };
 
-        let mut document_counts: HashMap<Term, f32> = HashMap::new();
+        let mut document_counts: HashMap<T, f32> = HashMap::new();
         for document in documents.values() {
             for document in document.keys() {
                 *document_counts.entry(document.clone()).or_default() += 1.0;
             }
         }
         let documents_2 = documents.clone();
-        let idf = |term: Term| {
+        let idf = |term: T| {
             (documents.len() as f32 / document_counts.get(&term).unwrap_or(&1.0)).log10()
         };
 
         let tfidf =
-            |term: Term, document: HashMap<Term, u64>| tf(term.clone(), document) * idf(term);
+            |term: T, document: HashMap<T, u64>| tf(term.clone(), document) * idf(term);
 
         // computation
-        let mut lookup: HashMap<Document, Vec<(Term, f32)>> = HashMap::new();
+        let mut lookup: HashMap<D, Vec<(T, f32)>> = HashMap::new();
         for term in terms {
-            let mut list: Vec<(Document, f32)> = Vec::new();
+            let mut list: Vec<(D, f32)> = Vec::new();
             for document in documents_2.clone() {
                 let tfidf = tfidf;
                 let weight = tfidf(term.clone(), document.1);
@@ -76,34 +67,26 @@ impl Tfidf {
                 }
             }
         }
+        let lookup = lookup
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    v.into_iter()
+                        .sorted_by(|a, b| b.1.total_cmp(&a.1))
+                        .take(30)
+                        .map(|entry| ScoredTagSuggestion {
+                            score: f64::from(entry.1),
+                            tag: entry.0,
+                        })
+                        .collect_vec(),
+                )
+            })
+            .collect();
         Self { lookup }
     }
 
-    #[tracing::instrument(skip(self))]
-    pub fn suggest_tags(&self, query: Emoji) -> Vec<ScoredTagSuggestion> {
-        let result = self
-            .lookup
-            .get(&query)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .sorted_by(|a, b| b.1.total_cmp(&a.1))
-            .map(|entry| ScoredTagSuggestion {
-                score: f64::from(entry.1),
-                tag: entry.0,
-            })
-            .collect_vec();
-        let max = result
-            .iter()
-            .map(|e| e.score)
-            .reduce(f64::max)
-            .unwrap_or(1.0);
-        result
-            .into_iter()
-            .map(|e| ScoredTagSuggestion {
-                score: e.score / max * 0.7,
-                tag: e.tag,
-            })
-            .collect_vec()
+    pub fn suggest(&self, query: D) -> Vec<ScoredTagSuggestion<T>> {
+        self.lookup.get(&query).cloned().unwrap_or_default()
     }
 }

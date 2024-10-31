@@ -1,9 +1,10 @@
 :root {
-    --background: #000000;
-    --foreground: #007F0E;
+    --background: var(--tg-theme-bg-color, #000000);
+    --foreground: var(--tg-theme-button-color, #007F0E);
 }
 
-html, body {
+html,
+body {
     background-color: var(--background);
     color: var(--foreground);
     scrollbar-color: var(--foreground) var(--background);
@@ -14,12 +15,13 @@ html, body {
     display: grid;
     grid-auto-rows: 128px;
     grid-gap: 10px;
-	grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
 }
 
 .sticker-thumbnail {
     width: 100%;
     height: 100%;
+    object-fit: contain;
 }
 
 .set-thumbnail {
@@ -30,18 +32,18 @@ html, body {
 .set-thumbnail img {
     width: 100%;
     height: 100%;
-    object-fit:contain;
+    object-fit: contain;
 }
 
 .set-grid {
     display: grid;
     grid-auto-rows: 128px;
     grid-gap: 12px;
-	grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
 }
 
 .set-name {
-    display:flex;
+    display: flex;
     flex-direction: column;
     flex: 0 0;
 }
@@ -61,18 +63,22 @@ a {
 }
 
 .sticker-container {
-    width: 500px;
+    width: 100%;
+    max-width: 1000px;
     /* TODO: also support smaller devices */
     margin: auto;
+    margin-top: 16px;
     display: flex;
 }
 
 .big-sticker {
-
+    object-fit: contain;
+    height: 300px;
+    width: 300px;
 }
 
 .sticker-information {
-
+    padding: 8px;
 }
 
 .full-width {
@@ -98,14 +104,14 @@ a {
 .tag-counter {
     background-color: var(--foreground);
     color: var(--background);
-    border-radius: 100%;
-    width: 1.3em;
+    border-radius: 100px;
     height: 1.3em;
     display: flex;
     justify-content: center;
     align-items: center;
     margin-left: 4px;
     margin-right: -2px;
+    padding: 0em 0.3em;
 }
 
 input {
@@ -119,5 +125,28 @@ input {
 }
 
 input:focus {
-    outline: 3px solid var(--foreground);    
+    outline: 3px solid var(--foreground);
+}
+
+.main-page {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    max-width: 500px;
+    margin: auto;
+    justify-content: center;
+    min-height: 100vh;
+}
+
+.main-page .tag-container {
+    justify-content: center;
+}
+
+.emoji {
+    outline: 2px solid var(--foreground);
+    border-radius: 8px;
+    padding: 4px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
 }

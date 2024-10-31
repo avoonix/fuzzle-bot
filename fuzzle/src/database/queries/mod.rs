@@ -61,9 +61,10 @@ pub struct DbWorker {
 
 impl DbWorker {
     pub fn new(path: PathBuf) -> Self {
-        let (tx, rx) = flume::bounded(100);
+        let (tx, rx) = flume::unbounded();
 
-        for _ in 0..4 { // TODO: add config parameter for number of threads
+        for _ in 0..4 {
+            // TODO: add config parameter for number of threads
             // TODO: get rid of unwrap
 
             let rx = rx.clone();

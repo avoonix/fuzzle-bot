@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, PoisonError},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, PoisonError, RwLock,
+    },
 };
 use tracing::warn;
 
@@ -15,93 +18,112 @@ use crate::{
     util::Emoji,
 };
 
-use super::{Comm, State, TagManagerWorker, Worker};
-
-#[derive(Clone, Debug)]
-pub struct TfIdfState {
-    // lookup: HashMap<u64, String>,
-    tfidf: Arc<Tfidf>,
-    last_computed: DateTime<Utc>,
-    // database: Database, // TODO: dont put in state
-}
+use super::TagManagerService;
 
 #[derive(Clone)]
-pub struct TfIdfDependencies {
-    pub database: Database,
-    pub tag_manager: TagManagerWorker,
+pub struct TfIdfService {
+    tag_manager: TagManagerService,
+    database: Database,
+    last_computed: Arc<RwLock<DateTime<Utc>>>,
+    tfidf: Arc<RwLock<Tfidf<String, Emoji>>>,
+    inverse_tfidf: Arc<RwLock<Tfidf<Emoji, String>>>,
+    is_computing: Arc<AtomicBool>,
 }
 
-impl TfIdfState {
-    #[tracing::instrument(skip(deps))]
-    async fn new(deps: TfIdfDependencies) -> Result<Arc<Self>, InternalError> {
-        let all_used_tags: Vec<(Emoji, String, i64)> =
-            deps.database.get_all_tag_emoji_pairs().await?;
-        let tfidf =
-            tokio::task::spawn_blocking(move || Arc::new(Tfidf::generate(all_used_tags))).await?;
-        let last_computed = chrono::Utc::now();
+impl TfIdfService {
+    #[tracing::instrument(skip(database, tag_manager))]
+    pub async fn new(
+        database: Database,
+        tag_manager: TagManagerService,
+    ) -> Result<Self, InternalError> {
+        let all_used_tags: Vec<(Emoji, String, i64)> = database.get_all_tag_emoji_pairs().await?;
+        let inverse = all_used_tags.iter().map(|(a,b,c)|(b.clone(),a.clone(),*c)).collect_vec();
+        let tfidf = tokio::task::spawn_blocking(move || {
+            Arc::new(RwLock::new(Tfidf::generate(all_used_tags)))
+        })
+        .await?;
+        let inverse_tfidf = tokio::task::spawn_blocking(move || {
+            Arc::new(RwLock::new(Tfidf::generate(inverse)))
+        })
+        .await?;
 
-        Ok(Arc::new(Self {
-            tfidf,
+        let last_computed = Arc::new(RwLock::new(chrono::Utc::now()));
+        let service = Self {
+            tag_manager,
+            database,
             last_computed,
-        }))
+            tfidf,
+            inverse_tfidf,
+            is_computing: Arc::new(false.into()),
+        };
+        Ok(service)
     }
-    async fn needs_recomputation(&self, deps: TfIdfDependencies) -> Result<bool, InternalError> {
-        Ok(chrono::Utc::now() - self.last_computed > chrono::Duration::minutes(5))
-    }
-}
 
-impl State<TfIdfDependencies> for TfIdfState {
-    fn generate(
-        deps: TfIdfDependencies,
-    ) -> impl std::future::Future<Output = Result<Arc<Self>, InternalError>> + Send {
-        Self::new(deps)
+    /// does not wait for completion
+    pub async fn request_recompute(&self) {
+        let should_recompute = {
+            chrono::Utc::now() - *self.last_computed.read().unwrap() > chrono::Duration::minutes(5)
+        };
+        if !should_recompute {
+            return;
+        }
+        if self
+            .is_computing
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            == Ok(false)
+        {
+            let val = self.clone();
+            tokio::spawn(async move {
+                let all_used_tags = val.database.get_all_tag_emoji_pairs().await;
+                let all_used_tags = match all_used_tags {
+                    Ok(t) => t,
+                    Err(err) => {
+                        tracing::error!("async task error: {err:?}");
+                        return;
+                    }
+                };
+
+                // TODO: also recompute inverse
+                let res = tokio::task::spawn_blocking(move || Tfidf::generate(all_used_tags))
+                    .await
+                    .unwrap();
+                let mut t = val.tfidf.write().unwrap();
+                *t = res;
+                let mut last_computed = val.last_computed.write().unwrap();
+                *last_computed = chrono::Utc::now();
+                val.is_computing.store(false, Ordering::Release);
+            });
+        }
     }
-    fn needs_recomputation(
+
+    pub async fn suggest_tags_for_sticker(
         &self,
-        deps: TfIdfDependencies,
-    ) -> impl std::future::Future<Output = Result<bool, InternalError>> + Send {
-        self.needs_recomputation(deps)
-    }
-}
-
-pub type TfIdfWorker = Worker<TfIdfState, TfIdfDependencies>;
-
-pub struct SuggestTags {
-    sticker_id: String,
-}
-
-impl SuggestTags {
-    pub fn new(sticker_id: String) -> Self {
-        Self { sticker_id }
-    }
-
-    #[tracing::instrument(skip(self, state, deps))]
-    async fn apply(
-        &self,
-        state: Arc<TfIdfState>,
-        deps: TfIdfDependencies,
+        sticker_id: &str,
     ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
-        Ok(deps
+        Ok(self
             .database
-            .get_sticker_by_id(&self.sticker_id)
+            .get_sticker_by_id(sticker_id)
             .await?
             .and_then(|sticker| {
                 sticker
                     .emoji
                     .map(|e| Emoji::new_from_string_single(e))
-                    .map(|emoji| state.tfidf.suggest_tags(emoji))
+                    .map(|emoji| self.tfidf.read().unwrap().suggest(emoji))
             })
             .unwrap_or_default())
     }
-}
 
-impl Comm<TfIdfState, TfIdfDependencies> for SuggestTags {
-    type ReturnType = Vec<ScoredTagSuggestion>;
-    fn apply(
+    pub async fn suggest_emojis_for_tag(
         &self,
-        state: Arc<TfIdfState>,
-        deps: TfIdfDependencies,
-    ) -> impl std::future::Future<Output = Result<Self::ReturnType, InternalError>> + Send {
-        Self::apply(&self, state, deps)
+        tag: String,
+    ) -> Result<Vec<ScoredTagSuggestion<Emoji>>, InternalError> {
+        Ok(self.inverse_tfidf.read().unwrap().suggest(tag))
+    }
+
+    pub async fn suggest_tags_for_emoji(
+        &self,
+        emoji: Emoji,
+    ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
+        Ok(self.tfidf.read().unwrap().suggest(emoji))
     }
 }

@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use futures::future::try_join_all;
 use itertools::Itertools;
 
-use crate::{background_tasks::{GetInverseImplications, TagManagerWorker}, bot::InternalError};
+use crate::{background_tasks::TagManagerService, bot::InternalError};
 
 use super::tag_suggestion::ScoredTagSuggestion;
 
@@ -11,16 +10,15 @@ use super::tag_suggestion::ScoredTagSuggestion;
 #[tracing::instrument(skip(tag_manager))]
 pub async fn suggest_tags_by_reverse_implication(
     known_good_tags: &[String],
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
 ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
-    Ok(try_join_all(known_good_tags
+    Ok(known_good_tags
         .iter()
-        .map(|tag| async {
-            Ok::<_, InternalError>(tag_manager
-            .execute(GetInverseImplications::new(tag.to_string())).await?
-                .unwrap_or_default())
-        })).await?
-        .into_iter()
+        .map(|tag| {
+            tag_manager
+                .get_inverse_implications(&tag)
+                .unwrap_or_default()
+        })
         .flatten()
         .sorted()
         .chunk_by(std::clone::Clone::clone)

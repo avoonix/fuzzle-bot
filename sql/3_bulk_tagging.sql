@@ -13,7 +13,7 @@ INSERT INTO sticker_file_tag (sticker_file_id, tag) SELECT DISTINCT sticker_file
 -- nix_snowsong
 INSERT INTO sticker_file_tag (sticker_file_id, tag) SELECT DISTINCT sticker_file_id, 'nix_snowsong' FROM sticker WHERE sticker.sticker_set_id IN (SELECT sticker_set.id FROM sticker_set WHERE sticker_set.created_by_user_id = 263912736 AND sticker_set.id LIKE "%Nix") AND NOT EXISTS (SELECT * FROM sticker_file WHERE sticker.sticker_file_id = sticker_file.id AND sticker_file.tags_locked_by_user_id IS NOT NULL) ON CONFLICT (sticker_file_id, tag) DO NOTHING;
 
--- nreyn_goldfur
+-- reyn_goldfur
 INSERT INTO sticker_file_tag (sticker_file_id, tag) SELECT DISTINCT sticker_file_id, 'reyn_goldfur' FROM sticker WHERE sticker.sticker_set_id IN (SELECT sticker_set.id FROM sticker_set WHERE sticker_set.created_by_user_id = 123547509 AND (sticker_set.id LIKE "%ByReyn" OR sticker_set.title LIKE "%@ReynGoldfur%")) AND NOT EXISTS (SELECT * FROM sticker_file WHERE sticker.sticker_file_id = sticker_file.id AND sticker_file.tags_locked_by_user_id IS NOT NULL) ON CONFLICT (sticker_file_id, tag) DO NOTHING;
 
 -- zempy3

@@ -28,8 +28,6 @@ pub use util::{cosine_similarity, vec_u8_to_f32};
 use crate::qdrant::StickerMatch;
 use crate::qdrant::VectorDatabase;
 
-use super::{import_all_stickers_from_set, import_individual_sticker_and_queue_set};
-
 pub async fn find_with_text_embedding(
     database: Database,
     text: String,
@@ -124,9 +122,8 @@ pub async fn compute_similar(
     let file_hashes = match file_hashes {
         Some(hashes) => hashes,
         None => {
-            request_context
-                .process_sticker_set(sticker.sticker_set_id, false)
-                .await; // dispatch in background - otherwise the query would take too long if the set is large
+            // dispatch in background - otherwise the query would take too long if the set is large
+            request_context.importer.queue_sticker_set_import(&sticker.sticker_set_id, false, Some(request_context.user_id())).await;
             return Err(UserError::VectorNotFound.into());
         }
     };

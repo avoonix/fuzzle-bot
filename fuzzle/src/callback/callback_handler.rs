@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use flate2::read::GzEncoder;
 use flate2::{Compression, GzBuilder};
-use futures::future::try_join_all;
 use itertools::Itertools;
 
 use teloxide::dispatching::dialogue::GetChatId;
@@ -16,9 +15,7 @@ use teloxide::types::{
     ReplyMarkup,
 };
 
-use crate::background_tasks::{
-    get_moderation_task_data, BackgroundTaskExt, GetCategory, GetImplications, TagManagerWorker
-};
+use crate::background_tasks::{get_moderation_task_data, BackgroundTaskExt, TagManagerService};
 use crate::bot::{
     report_bot_error, report_internal_error, report_internal_error_result, BotError, BotExt,
     InternalError, RequestContext, UserError, UserErrorSeverity,
@@ -28,10 +25,7 @@ use crate::callback::TagOperation;
 use crate::database::{ContinuousTag, Database, MergeStatus};
 use crate::database::{DialogState, TagCreator};
 use crate::message::{send_merge_queue, set_tag_id, Keyboard};
-use crate::sticker::{
-    determine_canonical_sticker_and_merge, fetch_sticker_file, import_all_stickers_from_set,
-    FileKind,
-};
+use crate::sticker::{determine_canonical_sticker_and_merge, fetch_sticker_file, FileKind};
 use crate::tags::{suggest_tags, Category};
 use crate::text::{Markdown, Text};
 use crate::util::{create_tag_id, teloxide_error_can_safely_be_ignored, Emoji, Required};
@@ -86,11 +80,7 @@ async fn handle_sticker_tag_action(
 
     match operation {
         Some(TagOperation::Tag(tag)) => {
-            if let Some(implications) = request_context
-                .tag_manager
-                .execute(GetImplications::new(tag.clone()))
-                .await?
-            {
+            if let Some(implications) = request_context.tag_manager.get_implications(&tag) {
                 let tags = implications
                     .clone()
                     .into_iter()
@@ -100,7 +90,7 @@ async fn handle_sticker_tag_action(
                     .database
                     .tag_file(&file.id, &tags, Some(request_context.user.id))
                     .await?;
-                request_context.tagging_worker.maybe_recompute().await?;
+                request_context.tfidf.request_recompute().await;
                 notification = Some(if implications.is_empty() {
                     "Saved!".to_string()
                 } else {
@@ -118,16 +108,12 @@ async fn handle_sticker_tag_action(
                     .get_sticker_tags(&unique_id)
                     .await?,
                 request_context.tag_manager.clone(),
-            )
-            .await?;
+            )?;
             request_context
                 .database
                 .untag_file(&file.id, &tags, request_context.user.id)
                 .await?;
-            let implications = request_context
-                .tag_manager
-                .execute(GetImplications::new(tag.clone()))
-                .await?;
+            let implications = request_context.tag_manager.get_implications(&tag);
             let tags = tags.join(", ");
             notification = Some(implications.map_or_else(
                 || "Tag does not exist!".to_string(),
@@ -157,7 +143,7 @@ async fn send_tagging_keyboard(
     q: CallbackQuery,
 ) -> Result<(), BotError> {
     // database: Database,
-    // tag_manager: TagManagerWorker,
+    // tag_manager: TagManagerService,
     // bot: Bot,
     let tags = request_context.database.get_sticker_tags(unique_id).await?;
     let suggested_tags = suggest_tags(
@@ -165,7 +151,7 @@ async fn send_tagging_keyboard(
         request_context.bot.clone(),
         request_context.tag_manager.clone(),
         request_context.database.clone(),
-        request_context.tagging_worker.clone(),
+        request_context.tfidf.clone(),
         request_context.vector_db.clone(),
         // request_context.tag_worker.clone(),
     )
@@ -175,17 +161,14 @@ async fn send_tagging_keyboard(
         .get_sticker_file_by_sticker_id(unique_id)
         .await?
         .map_or(false, |file| file.tags_locked_by_user_id.is_some());
-    let keyboard = Some(
-        Keyboard::tagging(
-            &tags,
-            unique_id,
-            &suggested_tags,
-            is_locked,
-            request_context.is_continuous_tag_state(),
-            request_context.tag_manager.clone(),
-        )
-        .await?,
-    );
+    let keyboard = Some(Keyboard::tagging(
+        &tags,
+        unique_id,
+        &suggested_tags,
+        is_locked,
+        request_context.is_continuous_tag_state(),
+        request_context.tag_manager.clone(),
+    )?);
 
     answer_callback_query(request_context, q, None, keyboard, notification).await
 }
@@ -290,10 +273,21 @@ pub async fn callback_handler(
 
             Ok(())
         }
-        CallbackData::CreateTagForUser {user_id} => {
-            let username = request_context.database.get_username(crate::database::UsernameKind::User, user_id).await?.required()?;
+        CallbackData::CreateTagForUser { user_id } => {
+            let username = request_context
+                .database
+                .get_username(crate::database::UsernameKind::User, user_id)
+                .await?
+                .required()?;
             let tag_id = create_tag_id(&username).to_lowercase();
-            set_tag_id(request_context.clone(), q.chat_id().required()?, tag_id, crate::inline::TagKind::Main, Some(user_id)).await?;
+            set_tag_id(
+                request_context.clone(),
+                q.chat_id().required()?,
+                tag_id,
+                crate::inline::TagKind::Main,
+                Some(user_id),
+            )
+            .await?;
             _ = request_context.bot.answer_callback_query(&q.id).await; // TODO: should i just ignore the error?
             Ok(())
         }
@@ -364,8 +358,8 @@ pub async fn callback_handler(
         }
         CallbackData::ApplyTags { sticker_id } => {
             let continuous_tag = match request_context.dialog_state() {
-                DialogState::ContinuousTag (ct) => ct,
-                DialogState::TagCreator (..)
+                DialogState::ContinuousTag(ct) => ct,
+                DialogState::TagCreator(..)
                 | DialogState::Normal
                 | DialogState::StickerRecommender { .. } => {
                     return Err(UserError::InvalidMode.into());
@@ -378,14 +372,22 @@ pub async fn callback_handler(
                 .required()?;
             request_context
                 .database
-                .tag_file(&file.id, &continuous_tag.add_tags, Some(request_context.user.id))
+                .tag_file(
+                    &file.id,
+                    &continuous_tag.add_tags,
+                    Some(request_context.user.id),
+                )
                 .await?;
 
             request_context
                 .database
-                .untag_file(&file.id, &continuous_tag.remove_tags, request_context.user.id)
+                .untag_file(
+                    &file.id,
+                    &continuous_tag.remove_tags,
+                    request_context.user.id,
+                )
                 .await?;
-            request_context.tagging_worker.maybe_recompute().await?;
+            request_context.tfidf.request_recompute().await;
 
             send_tagging_keyboard(request_context.clone(), None, &sticker_id, q).await
         }
@@ -465,11 +467,16 @@ pub async fn callback_handler(
         CallbackData::RemoveContinuousTag(tag) => {
             remove_continuous_tag(q, tag, request_context).await
         }
-        CallbackData::ChangeSetBannedStatus { set_name, banned, moderation_task_id } => {
+        CallbackData::ChangeSetBannedStatus {
+            set_name,
+            banned,
+            moderation_task_id,
+        } => {
             let task = request_context
                 .database
                 .get_moderation_task_by_id(moderation_task_id)
-                .await?.required()?;
+                .await?
+                .required()?;
             if banned {
                 let set = request_context
                     .database
@@ -486,7 +493,8 @@ pub async fn callback_handler(
                 // TODO: re-insert added_by_user_id; or leave in table and only add is_banned column?
             }
 
-            let (text, keyboard) = get_moderation_task_data(task, &request_context.database).await?;
+            let (text, keyboard) =
+                get_moderation_task_data(task, &request_context.database).await?;
             answer_callback_query(request_context, q, Some(text), Some(keyboard), None).await
         }
         CallbackData::NoAction => {
@@ -595,19 +603,15 @@ pub async fn callback_handler(
         CallbackData::PopularTags => {
             let tags = request_context.database.get_popular_tags(40).await?;
 
-            let tags = try_join_all(tags.into_iter().map(|tag| async {
-                Ok::<_, InternalError>((
-                    tag.clone(),
+            let tags = tags
+                .into_iter()
+                .filter_map(|tag| {
                     request_context
                         .tag_manager
-                        .execute(GetCategory::new(tag.name))
-                        .await?,
-                ))
-            }))
-            .await?
-            .into_iter()
-            .filter_map(|(tag, category)| category.map(|c| (tag, c)))
-            .collect_vec();
+                        .get_category(&tag.name)
+                        .map(|c| (tag, c))
+                })
+                .collect_vec();
             answer_callback_query(
                 request_context.clone(),
                 q,
@@ -964,37 +968,60 @@ pub async fn callback_handler(
             )
             .await
         }
-        CallbackData::TagListAction { moderation_task_id, action } => {
+        CallbackData::TagListAction {
+            moderation_task_id,
+            action,
+        } => {
             if !request_context.is_admin() {
-                return Err(UserError::NoPermissionForAction( "changing tags".to_string(),) .into());
+                return Err(UserError::NoPermissionForAction("changing tags".to_string()).into());
             }
 
             let task = request_context
                 .database
                 .get_moderation_task_by_id(moderation_task_id)
-                .await?.required()?;
+                .await?
+                .required()?;
 
             match task.details.clone() {
-                crate::database::ModerationTaskDetails::CreateTag { tag_id, linked_channel, linked_user, category, example_sticker_id, aliases, implications } => {
-
+                crate::database::ModerationTaskDetails::CreateTag {
+                    tag_id,
+                    linked_channel,
+                    linked_user,
+                    category,
+                    example_sticker_id,
+                    aliases,
+                    implications,
+                } => {
                     match action {
                         super::TagListAction::Add => {
-                            request_context.database.upsert_tag(&tag_id, category, task.created_by_user_id, linked_channel, linked_user, aliases, implications).await?;
+                            request_context
+                                .database
+                                .upsert_tag(
+                                    &tag_id,
+                                    category,
+                                    task.created_by_user_id,
+                                    linked_channel,
+                                    linked_user,
+                                    aliases,
+                                    implications,
+                                )
+                                .await?;
                         }
                         super::TagListAction::Remove => {
                             request_context.database.delete_tag(&tag_id).await?;
                         }
                     }
 
-
-                },
-                crate::database::ModerationTaskDetails::ReportStickerSet { .. } | crate::database::ModerationTaskDetails::ReviewNewSets { .. } => 
-                {
+                    request_context.tag_manager.recompute().await; // might take a while
+                }
+                crate::database::ModerationTaskDetails::ReportStickerSet { .. }
+                | crate::database::ModerationTaskDetails::ReviewNewSets { .. } => {
                     return Err(anyhow::anyhow!("invalid task type").into());
                 }
             }
 
-            let (text, keyboard) = get_moderation_task_data(task, &request_context.database).await?;
+            let (text, keyboard) =
+                get_moderation_task_data(task, &request_context.database).await?;
             answer_callback_query(request_context, q, Some(text), Some(keyboard), None).await
         }
     }
@@ -1159,27 +1186,18 @@ fn create_sticker_name(path: String) -> String {
         })
 }
 
-async fn tags_that_should_be_removed(
+fn tags_that_should_be_removed(
     tag: String,
     current: Vec<String>,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
 ) -> Result<Vec<String>, InternalError> {
-    Ok(try_join_all(current.into_iter().map(|t| async {
-        let tag_manager = &tag_manager;
-        async move {
-            Ok::<_, InternalError>((
-                t.clone(),
-                tag_manager.execute(GetImplications::new(t.clone())).await?,
-            ))
-        }
-        .await
-    }))
-    .await?
-    .into_iter()
-    .filter(|(t, implications)| implications.clone().unwrap_or_default().contains(&tag))
-    .map(|(t, _)| t)
-    .chain(std::iter::once(tag.clone()))
-    .collect_vec())
+    Ok(current
+        .into_iter()
+        .map(|t| (t.clone(), tag_manager.get_implications(&t)))
+        .filter(|(t, implications)| implications.clone().unwrap_or_default().contains(&tag))
+        .map(|(t, _)| t)
+        .chain(std::iter::once(tag.clone()))
+        .collect_vec())
 }
 
 #[tracing::instrument(skip(request_context, q), err(Debug))]
@@ -1188,37 +1206,38 @@ async fn remove_continuous_tag(
     tag: String,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
-    let (add_tags, remove_tags, already_recommended_sticker_file_ids) = match request_context.dialog_state() {
-        DialogState::ContinuousTag (continuous_tag) => {
-            let to_add = tags_that_should_be_removed(
-                tag.clone(),
-                continuous_tag.add_tags.clone(),
-                request_context.tag_manager.clone(),
-            )
-            .await?;
-            let to_remove = tags_that_should_be_removed(
-                tag.clone(),
-                continuous_tag.remove_tags.clone(),
-                request_context.tag_manager.clone(),
-            )
-            .await?;
-            (
-                continuous_tag.add_tags
-                    .into_iter()
-                    .filter(|t| !to_add.contains(t))
-                    .collect_vec(),
-                continuous_tag.remove_tags
-                    .into_iter()
-                    .filter(|t| !to_remove.contains(t))
-                    .collect_vec(),
+    let (add_tags, remove_tags, already_recommended_sticker_file_ids) =
+        match request_context.dialog_state() {
+            DialogState::ContinuousTag(continuous_tag) => {
+                let to_add = tags_that_should_be_removed(
+                    tag.clone(),
+                    continuous_tag.add_tags.clone(),
+                    request_context.tag_manager.clone(),
+                )?;
+                let to_remove = tags_that_should_be_removed(
+                    tag.clone(),
+                    continuous_tag.remove_tags.clone(),
+                    request_context.tag_manager.clone(),
+                )?;
+                (
+                    continuous_tag
+                        .add_tags
+                        .into_iter()
+                        .filter(|t| !to_add.contains(t))
+                        .collect_vec(),
+                    continuous_tag
+                        .remove_tags
+                        .into_iter()
+                        .filter(|t| !to_remove.contains(t))
+                        .collect_vec(),
                     continuous_tag.already_recommended_sticker_file_ids,
-            )
-        }
-        _ => {
-            return Err(UserError::InvalidMode.into());
-        }
-    };
-    let new_dialog_state = DialogState::ContinuousTag (ContinuousTag {
+                )
+            }
+            _ => {
+                return Err(UserError::InvalidMode.into());
+            }
+        };
+    let new_dialog_state = DialogState::ContinuousTag(ContinuousTag {
         add_tags: add_tags.clone(),
         remove_tags: remove_tags.clone(),
         already_recommended_sticker_file_ids,
@@ -1277,10 +1296,7 @@ async fn remove_blacklist_tag(
 }
 
 #[tracing::instrument(skip(request_context), err(Debug))]
-async fn unban_set(
-    set_name: String,
-    request_context: RequestContext,
-) -> Result<(), BotError> {
+async fn unban_set(set_name: String, request_context: RequestContext) -> Result<(), BotError> {
     if !request_context.is_admin() {
         return Err(UserError::NoPermissionForAction("unban set".to_string()).into());
     }
@@ -1290,7 +1306,10 @@ async fn unban_set(
         .upsert_sticker_set(&set_name, request_context.user.id)
         .await?;
     // TODO: add original user's user id?
-    request_context.process_sticker_set(set_name, true).await;
+    request_context
+        .importer
+        .queue_sticker_set_import(&set_name, true, Some(request_context.user_id()))
+        .await;
     Ok(())
 }
 

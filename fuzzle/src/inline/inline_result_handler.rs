@@ -26,11 +26,6 @@ pub async fn inline_result_handler(
     let result = InlineQueryResultId::try_from(q.result_id)?;
     match result {
         InlineQueryResultId::Sticker(sticker_unique_id) => {
-            // ensure that used sticker sets are always kept updated
-            request_context
-                .process_set_of_sticker(sticker_unique_id.clone())
-                .await;
-
             request_context.database
                 .add_recently_used_sticker(request_context.user.id, &sticker_unique_id)
                 .await?;

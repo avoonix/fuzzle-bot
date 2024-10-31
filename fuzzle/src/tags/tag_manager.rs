@@ -20,6 +20,8 @@ use super::{
     Category,
 };
 
+use tag_search_engine::TagSearchEngine;
+
 const MATCH_DISTANCE: f64 = 0.7;
 // TODO: rwlock for e621_tags?
 
@@ -99,23 +101,35 @@ impl TagRepository {
     }
 }
 
-#[derive(Clone, Debug)] // TODO: is this possible without clone/debug?
 pub struct TagManager2 {
     tags: HashMap<String, Category>,
     aliases: HashMap<String, String>,
     implications: HashMap<String, Vec<String>>,
     inverse_implications: HashMap<String, Vec<String>>,
+    engine: TagSearchEngine,
 }
 
 impl TagManager2 {
     pub fn new(repositories: Vec<TagRepository>) -> Self {
         info!("setting up default tag manager");
 
+        let engine = TagSearchEngine::new(
+            &repositories
+                .iter()
+                .flat_map(|r| {
+                    let tags = r.get_tags().keys().map(|term| term.to_string()).collect_vec();
+                    let aliases = r.get_aliases().keys().map(|term| term.to_string()).collect_vec();
+                    tags.into_iter().chain(aliases.into_iter()).collect_vec()
+                })
+                .collect_vec(),
+        );
+
         let mut tag_manager = Self {
             tags: HashMap::new(),
             aliases: HashMap::new(),
             implications: HashMap::new(),
             inverse_implications: HashMap::new(),
+            engine,
         };
 
         for repository in repositories {
@@ -207,56 +221,22 @@ impl TagManager2 {
             .map(|(_, tag, score)| (tag, score))
     }
 
-    /// Returns a list of tags that match the user query (e.g. for autocomplete when tagging or
-    /// searching)
-    ///
-    /// every string in the query must be a substring
     #[must_use]
     #[tracing::instrument(skip(self))]
     pub fn find_tags(&self, query: &[String]) -> Vec<String> {
-        let query = query.iter().map(|q| q.to_lowercase()).collect_vec();
-        // TODO: doesnt matter if this is slow, we can cache it
-        // TODO: use tags and aliases to find matching tags for the query; use prefix matching, fuzzy
-        // matching, and double metaphone matching
-        let found_entries = self
-            .tags
-            .keys()
-            .map(|tag| (tag, tag))
-            .chain(self.aliases.iter())
-            .filter(|(_, tag)| query.iter().all(|q| tag.contains(q)));
-        let query = query.join(" ");
-        let mut tags = Self::get_tags_with_similarities(found_entries, &query)
-            .map(|(tag, _)| tag)
-            .collect_vec();
-
-        let all_entries = self
-            .tags
-            .keys()
-            .map(|tag| (tag, tag))
-            .chain(self.aliases.iter());
-        let approximate_tags = Self::get_tags_with_similarities(all_entries, &query)
-            .take_while(|(_, score)| *score > MATCH_DISTANCE)
-            .map(|(tag, _)| tag)
-            .collect_vec();
-
-        // close matches that are not substrings of the query
-        let mut insertions = 0;
-        for tag in approximate_tags.into_iter().rev() {
-            if !tags.contains(&tag) {
-                tags.insert(0, tag);
-                insertions += 1;
-            }
-            if insertions >= 3 {
-                break;
+        let raw_results = self.engine.search(&query.join(" "));
+        let mut results = Vec::new();
+        for r in raw_results {
+            let r = self.resolve_exact(&r);
+            if let Some(r) = r {
+                if !results.contains(&r) {
+                    results.push(r)
+                }
             }
         }
-
-        // this re-sorting destroys the order obtained from using the alias to match
-        // tags.sort_by(|a, b| normalized_damerau_levenshtein(&query, b).total_cmp(&normalized_damerau_levenshtein(&query, a)).then_with(|| a.len().cmp(&b.len())));
-        tags
+        results
     }
 
-    #[tracing::instrument(skip(self))]
     fn resolve_exact(&self, query: &str) -> Option<String> {
         if self.tags.get(query).is_some() {
             return Some(query.to_string());
@@ -316,25 +296,8 @@ impl TagManager2 {
     #[must_use]
     #[tracing::instrument(skip(self))]
     pub fn closest_matching_tag(&self, query: &str) -> Option<String> {
-        // TODO: maybe cache result?
-        let query = query.to_lowercase();
-        if let Some(tag) = self.resolve_exact(&query) {
-            return Some(tag);
-        }
-
-        let entries = self
-            .tags
-            .keys()
-            .map(|tag| (tag, tag))
-            .chain(self.aliases.iter());
-        let highest_match = Self::get_tags_with_similarities(entries, &query).next();
-
-        if let Some((highest_match, score)) = highest_match {
-            if score > MATCH_DISTANCE {
-                return Some(highest_match);
-            }
-        }
-        None
+        let res = self.engine.closest(query, MATCH_DISTANCE);
+        res.and_then(|r| self.resolve_exact(&r))
     }
 
     pub fn get_tags(&self) -> Vec<String> {
@@ -344,25 +307,4 @@ impl TagManager2 {
     pub fn get_aliases(&self) -> Vec<String> {
         self.aliases.keys().cloned().collect_vec()
     }
-}
-
-#[cfg(test)]
-mod tests {
-
-    // use super::*;
-    // use anyhow::Result;
-    // use bk_tree::{BKTree, metrics};
-    // use itertools::Itertools;
-
-    // #[tokio::test]
-    // async fn compare_tag_finders() -> anyhow::Result<()> {
-    //     let tag_manager = get_default_tag_manager(std::env::temp_dir()).await?;
-    //     let mut tree: BKTree<&str> = BKTree::new(metrics::Levenshtein);
-    //     for tag in tag_manager.get_tags() {
-    //         tree.add(&tag)
-    //     }
-
-    //     dbg!(tree.find("bup", 2).collect_vec());
-    //     Ok(())
-    // }
 }

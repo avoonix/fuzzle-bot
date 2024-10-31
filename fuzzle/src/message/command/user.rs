@@ -7,7 +7,8 @@ use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
 
 use teloxide::types::{
-    BotCommand, InputFile, KeyboardButton, KeyboardMarkup, LinkPreviewOptions, MessageId, ReplyMarkup
+    BotCommand, InputFile, KeyboardButton, KeyboardMarkup, LinkPreviewOptions, MessageId,
+    ReplyMarkup,
 };
 use tracing::warn;
 
@@ -154,9 +155,7 @@ impl RegularCommand {
                 request_context
                     .bot
                     .send_markdown(msg.chat.id, Text::general_stats(stats))
-                    .link_preview_options(LinkPreviewOptions::new()
-                    .is_disabled(true)
-                )
+                    .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
                     .reply_markup(Keyboard::general_stats())
                     .await?;
             }
@@ -191,7 +190,7 @@ impl RegularCommand {
                         .reply_markup(Keyboard::make_continuous_tag_keyboard(false, &[], &[]))
                         .await?;
                 }
-                DialogState::ContinuousTag (continuous_tag) => {
+                DialogState::ContinuousTag(continuous_tag) => {
                     request_context
                         .bot
                         .send_markdown(
@@ -224,7 +223,11 @@ impl RegularCommand {
                         .bot
                         .send_markdown(
                             msg.chat.id,
-                            Markdown::escaped(format!("Creating tag: {}\nExamples: {}", &tag_creator.tag_id, &tag_creator.example_sticker_id.len())),
+                            Markdown::escaped(format!(
+                                "Creating tag: {}\nExamples: {}",
+                                &tag_creator.tag_id,
+                                &tag_creator.example_sticker_id.len()
+                            )),
                         )
                         .reply_markup(Keyboard::tag_creator(&tag_creator))
                         .await?;
@@ -267,7 +270,10 @@ impl RegularCommand {
                         KeyboardMarkup::new(vec![
                             // TODO: move to keyboard struct
                             vec![KeyboardButton::new("/stickerrecommendermode")],
-                            vec![KeyboardButton::new("/random"), KeyboardButton::new("/autosuggest")],
+                            vec![
+                                KeyboardButton::new("/random"),
+                                KeyboardButton::new("/autosuggest"),
+                            ],
                             vec![KeyboardButton::new("/cancel")],
                         ])
                         .resize_keyboard()
@@ -327,7 +333,7 @@ pub async fn send_sticker_with_tag_input(
                     request_context.bot.clone(),
                     request_context.tag_manager.clone(),
                     request_context.database.clone(),
-                    request_context.tagging_worker.clone(),
+                    request_context.tfidf.clone(),
                     request_context.vector_db.clone(),
                     // request_context.tag_worker.clone(),
                 )
@@ -343,8 +349,8 @@ pub async fn send_sticker_with_tag_input(
                     &suggested_tags,
                     is_locked,
                     request_context.is_continuous_tag_state(),
-        request_context.tag_manager.clone(),
-    ).await?
+                    request_context.tag_manager.clone(),
+                )?
             }
             DialogState::StickerRecommender {
                 positive_sticker_id,
@@ -363,9 +369,7 @@ pub async fn send_sticker_with_tag_input(
                     is_favorited,
                 )
             }
-            DialogState::TagCreator(tag_creator) => {
-                Keyboard::tag_creator(&tag_creator)
-            }
+            DialogState::TagCreator(tag_creator) => Keyboard::tag_creator(&tag_creator),
         })
         .reply_to_message_id(message_id)
         .allow_sending_without_reply(true)

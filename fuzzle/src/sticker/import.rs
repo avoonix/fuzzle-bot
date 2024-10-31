@@ -102,8 +102,9 @@ pub async fn import_individual_sticker_and_queue_set(
         .await?
         .is_some();
     if sticker_in_database {
-        info!("sticker in database, queuing set");
-        request_context.process_sticker_set(set_id, false).await;
+        if !request_context.importer.is_busy() {
+            request_context.importer.queue_sticker_set_import(&set_id, false, Some(request_context.user_id())).await;
+        }
         return Ok(());
     }
 
@@ -122,7 +123,7 @@ pub async fn import_individual_sticker_and_queue_set(
     )
     .await?;
 
-    request_context.process_sticker_set(set_id, true).await;
+    request_context.importer.queue_sticker_set_import(&set_id, true, Some(request_context.user_id())).await;
 
     request_context
         .analyze_sticker(sticker.file.unique_id.clone())
@@ -192,7 +193,7 @@ async fn fetch_sticker_set_and_save_to_db(
         .await?;
     let saved_stickers = database.get_all_stickers_in_set(&set.name).await?;
 
-    let re = Regex::new(r"(\W|^)@([_a-zA-Z0-9]+)\b").unwrap();
+    let re = Regex::new(r"(\W|^)@([_a-zA-Z0-9]+)\b").expect("static regex to compile");
     for (_, [_, username]) in re.captures_iter(&set.title).map(|c| c.extract()) {
         database.add_username(username).await?;
     }

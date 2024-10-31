@@ -15,28 +15,27 @@ use crate::inference::text_to_clip_embedding;
 use crate::message::send_database_export_to_chat;
 use crate::qdrant::VectorDatabase;
 use crate::simple_bot_api;
-use crate::sticker::import_all_stickers_from_set;
 use crate::Config;
 
 use super::create_and_send_daily_moderation_tasks;
 use super::send_daily_report;
-use super::GetImplications;
-use super::GetTagsAndAliases;
-use super::TagManagerWorker;
-use super::TagsAndAliases;
+use super::StickerImportService;
+use super::TagManagerService;
 
 pub fn start_periodic_tasks(
     bot: Bot,
     database: Database,
     config: Arc<Config>,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
     vector_db: VectorDatabase,
+    importer: StickerImportService,
 ) {
     let bot_clone = bot.clone();
     let database_clone = database;
     let admin_id = config.get_admin_user_id();
     let config_clone = config;
     let vector_db_clone = vector_db.clone();
+    let importer_clone = importer.clone();
 
     // TODO: make intervals and counts configurable
 
@@ -44,14 +43,16 @@ pub fn start_periodic_tasks(
     let database = database_clone.clone();
     let paths = config_clone.clone();
     let vector_db = vector_db_clone.clone();
+    let importer = importer_clone.clone();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::minutes(10).to_std().expect("no overflow")).await;
+            sleep(Duration::minutes(15).to_std().expect("no overflow")).await;
             let span = tracing::info_span!("periodic_refetch_stickers");
             let bot = bot.clone();
             let database = database.clone();
             let paths = paths.clone();
             let vector_db = vector_db.clone();
+            let importer = importer.clone();
             async move {
                 // TODO: make this configurable
                 let result = refetch_stickers(
@@ -60,6 +61,7 @@ pub fn start_periodic_tasks(
                     bot.clone(),
                     paths.clone(),
                     vector_db.clone(),
+                    importer.clone(),
                 )
                 .await;
                 report_periodic_task_error(result);
@@ -78,7 +80,9 @@ pub fn start_periodic_tasks(
             let bot = bot.clone();
             let database = database.clone();
             async move {
-                let result = create_and_send_daily_moderation_tasks(database.clone(), bot.clone(), admin_id).await;
+                let result =
+                    create_and_send_daily_moderation_tasks(database.clone(), bot.clone(), admin_id)
+                        .await;
                 report_periodic_task_error(result);
             }
             .instrument(span)
@@ -137,7 +141,8 @@ pub fn start_periodic_tasks(
             let tag_manager_clone = tag_manager_clone.clone();
             let config = config.clone();
             async move {
-                let result = insert_tags(vector_db.clone(), tag_manager_clone.clone(), config.clone()).await;
+                let result =
+                    insert_tags(vector_db.clone(), tag_manager_clone.clone(), config.clone()).await;
                 report_periodic_task_error(result);
             }
             .instrument(span)
@@ -165,8 +170,13 @@ pub fn start_periodic_tasks(
 }
 
 #[tracing::instrument(skip(database))]
-async fn clean_up_sticker_files(database: Database, vector_db: VectorDatabase) -> Result<(), InternalError> {
-    let deleted_file_ids = database.clean_up_sticker_files_without_stickers_and_without_tags().await?;
+async fn clean_up_sticker_files(
+    database: Database,
+    vector_db: VectorDatabase,
+) -> Result<(), InternalError> {
+    let deleted_file_ids = database
+        .clean_up_sticker_files_without_stickers_and_without_tags()
+        .await?;
     if !deleted_file_ids.is_empty() {
         vector_db.delete_stickers(deleted_file_ids).await?;
     }
@@ -176,13 +186,17 @@ async fn clean_up_sticker_files(database: Database, vector_db: VectorDatabase) -
 #[tracing::instrument(skip(vector_db, tag_manager, config))]
 async fn insert_tags(
     vector_db: VectorDatabase,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
     config: Arc<Config>,
 ) -> Result<(), InternalError> {
-    tag_manager.maybe_recompute().await?; // TODO: this doesn't wait for completion
-    let TagsAndAliases {tags, aliases} = tag_manager.execute(GetTagsAndAliases::new()).await?;
+    tag_manager.recompute().await;
+
+    let tags = tag_manager.get_tags();
+    let aliases = tag_manager.get_aliases();
+
     for tag_or_alias in tags.into_iter().chain(aliases) {
-        let embedding = text_to_clip_embedding(tag_or_alias.to_string(), config.inference_url.clone()).await?;
+        let embedding =
+            text_to_clip_embedding(tag_or_alias.to_string(), config.inference_url.clone()).await?;
         vector_db
             .insert_tag(embedding, tag_or_alias.to_string())
             .await?;
@@ -195,11 +209,11 @@ async fn insert_tags(
 #[tracing::instrument(skip(database, tag_manager))]
 async fn fix_missing_tag_implications(
     database: Database,
-    tag_manager: TagManagerWorker,
+    tag_manager: TagManagerService,
 ) -> Result<(), InternalError> {
     let used_tags = database.get_used_tags().await?;
     for tag in used_tags {
-        let Some(implications) = tag_manager.execute(GetImplications::new(tag.clone())).await? else {
+        let Some(implications) = tag_manager.get_implications(&tag) else {
             continue;
         };
         for implication in implications {
@@ -231,26 +245,23 @@ async fn fix_missing_tag_implications(
     Ok(())
 }
 
-#[tracing::instrument(skip(database, bot, config, vector_db))]
+#[tracing::instrument(skip(database, bot, config, vector_db, importer))]
 async fn refetch_stickers(
     count: u64,
     database: Database,
     bot: Bot,
     config: Arc<Config>,
     vector_db: VectorDatabase,
+    importer: StickerImportService,
 ) -> Result<(), InternalError> {
-    let set_names = database.get_n_least_recently_fetched_set_ids(count as i64).await?;
-    for (i, set_name) in set_names.into_iter().enumerate() {
-        import_all_stickers_from_set(
-            &set_name,
-            true,
-            bot.clone(),
-            database.clone(),
-            config.clone(),
-            vector_db.clone(),
-            None,
-        )
+    let set_names = database
+        .get_n_least_recently_fetched_set_ids(count as i64)
         .await?;
+    if importer.is_busy() {
+        return Ok(());
+    }
+    for (i, set_name) in set_names.into_iter().enumerate() {
+        importer.queue_sticker_set_import(&set_name, false, None).await;
     }
     let stats = database.get_stats().await?;
     let percentage_tagged = stats.tagged_stickers as f32 / stats.stickers as f32 * 100.0;

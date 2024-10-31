@@ -1,54 +1,14 @@
 use tracing::{warn, Instrument};
 
-use crate::{
-    bot::{RequestContext},
-    sticker::{analyze_sticker, import_all_stickers_from_set},
-};
 use crate::bot::report_periodic_task_error;
+use crate::{bot::RequestContext, sticker::analyze_sticker};
 
 pub trait BackgroundTaskExt {
-    async fn process_sticker_set(&self, set_name: String, ignore_last_fetched: bool);
-    async fn process_set_of_sticker(&self, sticker_unique_id: String);
     async fn analyze_sticker(&self, sticker_unique_id: String);
 }
 
 impl BackgroundTaskExt for RequestContext {
-    async fn process_sticker_set(&self, set_name: String, ignore_last_fetched: bool) {
-        // TODO: retry on error
-        let bot = self.bot.clone();
-        let admin_id = self.config.get_admin_user_id();
-        let database = self.database.clone();
-        let request_context = self.clone();
-        let span = tracing::info_span!("spawned_process_sticker_set");
-        tokio::spawn(async move {
-            let result =
-                import_all_stickers_from_set(&set_name, ignore_last_fetched, bot.clone(), database.clone(), request_context.config.clone(), request_context.vector_db.clone(), Some(request_context.user_id())).await;
-            report_periodic_task_error(result);
-        }.instrument(span));
-    }
-
-    async fn process_set_of_sticker(&self, sticker_unique_id: String) {
-        let bot = self.bot.clone();
-        let admin_id = self.config.get_admin_user_id();
-        let database = self.database.clone();
-        let request_context = self.clone();
-        let span = tracing::info_span!("spawned_process_set_of_sticker");
-        tokio::spawn(async move {
-            let result = database.get_sticker_set_by_sticker_id(&sticker_unique_id).await;
-            let set_id = match result {
-                Ok(Some(sticker_set)) => sticker_set.id,
-                Ok(None) => return warn!("sticker without set {sticker_unique_id}"),
-                Err(err) => {
-                    tracing::error!("error while getting sticker set name: {err:?}");
-                    return;
-                }
-            };
-            let result =
-                import_all_stickers_from_set(&set_id, false, bot.clone(), database.clone(), request_context.config.clone(), request_context.vector_db.clone(), Some(request_context.user_id())).await;
-            report_periodic_task_error(result);
-        }.instrument(span));
-    }
-
+    // TODO: should we also add a queue for the analyze task?
     #[tracing::instrument(skip(self))]
     async fn analyze_sticker(&self, sticker_unique_id: String) {
         let bot = self.bot.clone();

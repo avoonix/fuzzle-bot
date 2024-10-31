@@ -131,6 +131,7 @@ tracing-actix-web = { version = "0.7" }
 qdrant-client = { version = "1.9.0" }
 uuid = { version = "1.8.0", features = ["v5"] }
 duplicate_detector = { path = "../duplicate_detector" }
+tag_search_engine = { path = "../tag_search_engine" }
 prost = "0.12.6"
 config = { version = "0.14.0", default-features = false, features = ["json"] }
 enum-primitive-derive = "0.3.0"
