@@ -190,7 +190,7 @@ async fn login_webapp(
     if !init_data.check(data.config.telegram_bot_token.clone()) {
         return Err(ErrorUnauthorized("invalid web app data"));
     }
-    let auth_data = init_data.0.clone().into_auth_data(data.config.telegram_bot_token.clone());
+    let auth_data = init_data.0.clone().into_auth_data(data.config.telegram_bot_token.clone())?;
     let cookie = Cookie::build(AUTH_COOKIE_NAME, serde_json::to_string(&auth_data)?)
         .max_age(Duration::DAY * 30)
         .same_site(SameSite::Lax)
