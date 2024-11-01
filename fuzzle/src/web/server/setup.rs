@@ -62,6 +62,7 @@ pub fn setup(
                 .service(page::tag_page)
                 .service(page::emoji_page)
                 .service(page::webapp_entrypoint)
+                .service(page::sticker_set_timeline_page)
                 // TODO: assets should be the default route
                 .default_service(route().to(page::not_found))
                 .wrap(middleware::Compress::default())

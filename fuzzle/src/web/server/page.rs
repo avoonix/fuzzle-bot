@@ -1,5 +1,5 @@
-use actix_web::web::{Data, Query};
 use actix_web::web::{route, Form};
+use actix_web::web::{Data, Query};
 use actix_web::{
     get, post, App, HttpRequest, HttpResponse, HttpServer, Responder, Result as ActixResult,
 };
@@ -11,13 +11,14 @@ use nom::sequence::terminated;
 use nom::Finish;
 use serde::Deserialize;
 
+use crate::background_tasks::TagManagerService;
 use crate::bot::UserError;
 use crate::database::{Order, StickerSet};
 use crate::inline::{
     get_last_input_match_list_and_other_input_closest_matches, parse_comma_separated_tags,
 };
 use crate::sticker::resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files;
-use crate::util::{parse_first_emoji, Emoji, Required};
+use crate::util::{format_relative_time, parse_first_emoji, Emoji, Required};
 use crate::web::server::AppState;
 
 use super::OptionalAuthenticatedUser;
@@ -79,12 +80,7 @@ pub async fn index(
             "Most Used Tags:"
                 div class="tag-container" {
                     @for tag in &tags {
-                        a class="tag" style={"--foreground: "(data.tag_manager.get_category(&tag.name).unwrap_or_default().to_color_name())";"} href={ "/tag/" (tag.name) } {
-                            (tag.name) 
-                            div class="tag-counter" {
-                                (tag.count)
-                            }
-                        }
+                        (tag_list_item(&data.tag_manager, &tag.name, Some(format!("{}", tag.count))))
                     }
                 }
 
@@ -92,18 +88,48 @@ pub async fn index(
             "Most Used Emojis:"
                 div class="tag-container" {
                     @for emoji in &emojis {
-                        a class="emoji" href={ "/emoji/" (emoji.0.to_string_without_variant()) } {
-                            (emoji.0.to_string_with_variant())
-                            div class="emoji-counter" {
-                                (emoji.1)
-                            }
-                        }
+                        (emoji_list_item(&emoji.0, Some(format!("{}", emoji.1))))
                     }
         }
 
         }
     };
     Ok(page(&host, title, desc, lang, content))
+}
+
+pub fn tag_list_item(
+    tag_manager: &TagManagerService,
+    tag: &str,
+    counter: Option<String>,
+) -> Markup {
+    html! {
+        a class="tag" style={"--foreground: "(tag_manager.get_category(tag).unwrap_or_default().to_color_name())";"} href={ "/tag/" (tag) } {
+            (tag)
+                @match counter {
+                    Some(counter) =>
+                            div class="tag-counter" {
+                                (counter)
+                    },
+                    None => ""
+                }
+        }
+    }
+}
+
+pub fn emoji_list_item(emoji: &Emoji, counter: Option<String>) -> Markup {
+    html! {
+                        a class="emoji" href={ "/emoji/" (emoji.to_string_without_variant()) } {
+                            (emoji.to_string_with_variant())
+
+                @match counter {
+                    Some(counter) =>
+                            div class="emoji-counter" {
+                                (counter)
+                    },
+                    None => ""
+                }
+                        }
+    }
 }
 
 #[post("/search-tags")]
@@ -130,9 +156,7 @@ pub async fn search_tags(
 
                 div class="tag-container" {
                     @for tag in &suggested_tags {
-                        a class="tag" style={"--foreground: "(data.tag_manager.get_category(&tag).unwrap_or_default().to_color_name())";"}  href={ "/tag/" (tag) } {
-                            (tag)
-                        }
+                        (tag_list_item(&data.tag_manager, tag, None))
                     }
                 }
         }
@@ -211,19 +235,22 @@ async fn sticker_set(
             "Tags:"
                 div class="tag-container" {
                     @for tag in &tags {
-                        a class="tag" style={"--foreground: "(data.tag_manager.get_category(&tag.0).unwrap_or_default().to_color_name())";"}  href={ "/tag/" (tag.0) } {
-                            (tag.0)
-                            div class="tag-counter" {
-                                (tag.1)
-                            }
-                        }
+                        (tag_list_item(&data.tag_manager, &tag.0, Some(format!("{}", tag.1))))
                     }
                 }
 
                 div {
 
+                            a href={ "/set/" (set.id) "/timeline" } {
+                                "show sticker set timeline"
+                            }
+
+                }
+
+                div {
+
                             a href={ "https://t.me/addstickers/" (set.id) } {
-                                "https://t.me/addstickers/" (set.id) 
+                                "https://t.me/addstickers/" (set.id)
                             }
 
                 }
@@ -374,9 +401,7 @@ async fn sticker_page(
                 "Tags: "
                 div class="tag-container" {
                     @for tag in &tags {
-                        a class="tag" style={"--foreground: "(data.tag_manager.get_category(&tag).unwrap_or_default().to_color_name())";"}  href={ "/tag/" (tag) } {
-                            (tag)
-                        }
+                        (tag_list_item(&data.tag_manager, &tag, None))
                     }
                 }
                 h1 {
@@ -390,10 +415,8 @@ async fn sticker_page(
 
                 }
                 div {
-                            "Emoji" 
-                        a class="emoji" href={ "/emoji/" (emoji.to_string_without_variant()) } {
-                            (emoji.to_string_with_variant())
-                        }
+                            "Emoji"
+                            (emoji_list_item(&emoji, None))
 
                 }
                 div {
@@ -472,9 +495,7 @@ pub async fn not_found() -> impl Responder {
 }
 
 #[get("/webapp")]
-pub async fn webapp_entrypoint(
-    start_form: Query<WebAppStart>,
-) -> impl Responder {
+pub async fn webapp_entrypoint(start_form: Query<WebAppStart>) -> impl Responder {
     dbg!(&start_form.start_param);
     (
         html! {
@@ -714,7 +735,13 @@ async fn tag_page(
             Order::LatestFirst,
         )
         .await?;
-    let emojis = data.tfidf_service.suggest_emojis_for_tag(tag_id.clone()).await?.into_iter().take(10).collect_vec();
+    let emojis = data
+        .tfidf_service
+        .suggest_emojis_for_tag(tag_id.clone())
+        .await?
+        .into_iter()
+        .take(10)
+        .collect_vec();
 
     let host = format!("{}", req.uri());
     let title = "fuzzle bot";
@@ -731,12 +758,7 @@ async fn tag_page(
             "Recommended Emojis:"
                 div class="tag-container" {
                     @for emoji in &emojis {
-                        a class="emoji" href={ "/emoji/" (emoji.tag.to_string_without_variant()) } {
-                            (emoji.tag.to_string_with_variant())
-                            div class="emoji-counter" {
-                                (format!("{:.2}", emoji.score))
-                            }
-                        }
+                        (emoji_list_item(&emoji.tag, Some(format!("{:.2}", emoji.score))))
                     }
         }
 
@@ -779,7 +801,13 @@ async fn emoji_page(
         .database
         .get_stickers_by_emoji(&emoji.to_string_without_variant(), 100, 0)
         .await?;
-    let tags = data.tfidf_service.suggest_tags_for_emoji(emoji.clone()).await?.into_iter().take(10).collect_vec();
+    let tags = data
+        .tfidf_service
+        .suggest_tags_for_emoji(emoji.clone())
+        .await?
+        .into_iter()
+        .take(10)
+        .collect_vec();
 
     let host = format!("{}", req.uri());
     let title = "fuzzle bot";
@@ -791,18 +819,17 @@ async fn emoji_page(
             h1 {
                 "Emoji "
                 (emoji.to_string_with_variant())
+                @match emoji.name() {
+                    Some(name) => {" (" (name) ")"},
+                    None => ""
+                }
             }
 
 
             "Recommended Tags:"
                 div class="tag-container" {
                     @for tag in &tags {
-                        a class="tag" style={"--foreground: "(data.tag_manager.get_category(&tag.tag).unwrap_or_default().to_color_name())";"} href={ "/tag/" (tag.tag) } {
-                            (tag.tag) 
-                            div class="tag-counter" {
-                                (format!("{:.2}", tag.score))
-                            }
-                        }
+                        (tag_list_item(&data.tag_manager, &tag.tag, Some(format!("{:.2}", tag.score))))
                     }
                 }
 
@@ -822,3 +849,100 @@ async fn emoji_page(
 
     Ok(page(&host, title, desc, lang, content))
 }
+
+#[get("/set/{setId}/timeline")]
+async fn sticker_set_timeline_page(
+    Path(set_id): Path<String>,
+    data: Data<AppState>,
+    req: HttpRequest,
+) -> actix_web::Result<impl Responder> {
+    let set = data
+        .database
+        .get_sticker_set_by_id(&set_id)
+        .await?
+        .required()?;
+    let stickers = data.database.get_all_stickers_in_set(&set.id).await?;
+
+    let r = stickers
+        .into_iter()
+        .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
+        .rev()
+        .chunk_by(|s| format_relative_time(s.created_at))
+        .into_iter()
+        .map(|(relative_time, stickers)| (format!("{}", relative_time), stickers.collect_vec()))
+        .map(|(header, stickers)| {
+            TimelineItem {
+                header,
+                content: 
+            html! {
+
+            div class="grid" {
+                @for sticker in &stickers {
+                    (sticker_list_item(&sticker.id))
+                }
+            }
+            }
+            }
+        })
+        .collect_vec();
+
+    let host = format!("{}", req.uri());
+    let title = "fuzzle bot";
+    let desc = "Hi there";
+    let lang = "en";
+    let set_title = set.title.unwrap_or_else(|| set.id.clone());
+
+    let content = html! {
+        #content {
+            h1 {
+                (set_title) " Timeline"
+            }
+
+            (timeline(&r, Some("Set first seen".to_string())))
+        }
+    };
+
+    Ok(page(&host, title, desc, lang, content))
+}
+
+pub struct TimelineItem {
+    pub header: String,
+    pub content: Markup,
+}
+
+pub fn timeline(items: &[TimelineItem], last_header: Option<String>) -> Markup {
+    html! {
+            div class="timeline" {
+                @for timeline_item in items {
+                    div class="timeline-section" {
+                        div class="timeline-section-header" {
+                            div class="timeline-dot" {}
+                            h2 {
+                                (timeline_item.header)
+                            }
+                        }
+                        div class="timeline-section-body" {
+                            div class="timeline-bar" {}
+                            div class="timeline-content" {
+                                (timeline_item.content)
+                            }
+                        }
+                    }
+                }
+                @match last_header {
+                    Some(last_header) =>
+                            div class="timeline-section" {
+                    div class="timeline-section-header" {
+                        div class="timeline-dot" {}
+                        h2 {
+                            (last_header)
+                        }
+                    }
+                },
+                    None => ""
+                }
+
+            }
+    }
+}
+
