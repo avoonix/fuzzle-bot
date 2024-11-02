@@ -5,7 +5,7 @@ use itertools::Itertools;
 use teloxide::types::UserId;
 
 use crate::{
-    bot::{Bot, InternalError},
+    bot::{report_periodic_task_error, Bot, InternalError},
     database::Database,
     qdrant::VectorDatabase,
     sticker::import_all_stickers_from_set,
@@ -52,7 +52,7 @@ impl StickerImportService {
                         ignore_last_fetched,
                         user_id,
                     } = received;
-                    import_all_stickers_from_set(
+                    let result = import_all_stickers_from_set(
                         &set_id,
                         ignore_last_fetched,
                         service.bot.clone(),
@@ -61,8 +61,8 @@ impl StickerImportService {
                         service.vector_db.clone(),
                         user_id,
                     )
-                    .await
-                    .unwrap()
+                    .await;
+                    report_periodic_task_error(result);
                 }
             });
         }
