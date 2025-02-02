@@ -31,7 +31,7 @@ fn get_trigrams(s: &str) -> HashSet<String> {
         .into_owned()
         .chars()
         .tuple_windows()
-        .map(|(c0, c1, c2)| format!("{c0}{c1}{c2}"))
+        .map(|(c0, c1, c2)| format!("{c0}{c1}{c2}").to_lowercase())
         .collect()
 }
 
