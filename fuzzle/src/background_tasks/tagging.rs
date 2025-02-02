@@ -37,15 +37,16 @@ impl TfIdfService {
         tag_manager: TagManagerService,
     ) -> Result<Self, InternalError> {
         let all_used_tags: Vec<(Emoji, String, i64)> = database.get_all_tag_emoji_pairs().await?;
-        let inverse = all_used_tags.iter().map(|(a,b,c)|(b.clone(),a.clone(),*c)).collect_vec();
+        let inverse = all_used_tags
+            .iter()
+            .map(|(a, b, c)| (b.clone(), a.clone(), *c))
+            .collect_vec();
         let tfidf = tokio::task::spawn_blocking(move || {
             Arc::new(RwLock::new(Tfidf::generate(all_used_tags)))
-        })
-        .await?;
-        let inverse_tfidf = tokio::task::spawn_blocking(move || {
-            Arc::new(RwLock::new(Tfidf::generate(inverse)))
-        })
-        .await?;
+        });
+        let inverse_tfidf =
+            tokio::task::spawn_blocking(move || Arc::new(RwLock::new(Tfidf::generate(inverse))));
+        let (tfidf, inverse_tfidf) = tokio::try_join!(tfidf, inverse_tfidf)?;
 
         let last_computed = Arc::new(RwLock::new(chrono::Utc::now()));
         let service = Self {
@@ -87,10 +88,14 @@ impl TfIdfService {
                 let res = tokio::task::spawn_blocking(move || Tfidf::generate(all_used_tags))
                     .await
                     .unwrap();
-                let mut t = val.tfidf.write().unwrap();
-                *t = res;
-                let mut last_computed = val.last_computed.write().unwrap();
-                *last_computed = chrono::Utc::now();
+                {
+                    let mut t = val.tfidf.write().unwrap();
+                    *t = res;
+                }
+                {
+                    let mut last_computed = val.last_computed.write().unwrap();
+                    *last_computed = chrono::Utc::now();
+                }
                 val.is_computing.store(false, Ordering::Release);
             });
         }

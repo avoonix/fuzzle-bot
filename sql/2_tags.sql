@@ -25,3 +25,4 @@ INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('crazy
 INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('nikraccoon', 1, -1001208505070, 339605847);
 INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('jvrex', 1, -1001297253010, 1202127094);
 INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('whiteklaw', 1, -1001803082681, 1435369674);
+INSERT INTO tag (id, category, linked_channel_id, linked_user_id) VALUES ('pupsonar', 1, -1001621198987, 495780776);

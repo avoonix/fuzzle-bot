@@ -296,6 +296,67 @@ impl VectorDatabase {
         Ok(convert_tag_recommend_response(search_result.result))
     }
 
+    // #[tracing::instrument(skip(self), err(Debug))]
+    // pub async fn scroll_stickers(
+    //     &self,
+    // ) -> Result<Vec<(Vec<f32>, Vec<u8>, String)>, VectorDatabaseError> {
+    //     let result = self
+    //         .client
+    //         .scroll(&ScrollPoints {
+    //             collection_name: STICKER_COLLECTION_NAME.into(),
+    //             limit: Some(999999),
+    //             with_payload: Some(true.into()),
+    //             with_vectors: Some(true.into()),
+    //             ..Default::default()
+    //         })
+    //         .await?;
+    //     Ok(result
+    //         .result
+    //         .into_iter()
+    //         .map(|scored_point| {
+    //             (
+    //                 scored_point
+    //                     .vectors
+    //                     .clone()
+    //                     .map(|v| match v.vectors_options {
+    //                         Some(options) => match options.clone() {
+    //                             qdrant_client::qdrant::vectors::VectorsOptions::Vector(v) => {
+    //                                 todo!()
+    //                             }
+    //                             qdrant_client::qdrant::vectors::VectorsOptions::Vectors(v) => {
+    //                                 v.vectors["clip"].data.clone()
+    //                             }
+    //                         },
+    //                         None => todo!(),
+    //                     })
+    //                     .unwrap(),
+    //                 scored_point
+    //                     .vectors
+    //                     .map(|v| match v.vectors_options {
+    //                         Some(options) => match options.clone() {
+    //                             qdrant_client::qdrant::vectors::VectorsOptions::Vector(v) => {
+    //                                 todo!()
+    //                             }
+    //                             qdrant_client::qdrant::vectors::VectorsOptions::Vectors(v) => v
+    //                                 .vectors["histogram"]
+    //                                 .data
+    //                                 .clone()
+    //                                 .into_iter()
+    //                                 .map(|entry| entry.round().min(255.0) as u8)
+    //                                 .collect_vec(),
+    //                         },
+    //                         None => todo!(),
+    //                     })
+    //                     .unwrap(),
+    //                 scored_point.payload["file_hash"]
+    //                     .as_str()
+    //                     .unwrap()
+    //                     .to_string(),
+    //             )
+    //         })
+    //         .collect_vec())
+    // }
+
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn find_stickers_given_vector(
         &self,

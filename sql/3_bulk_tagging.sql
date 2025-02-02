@@ -27,3 +27,9 @@ INSERT INTO sticker_file_tag (sticker_file_id, tag) SELECT DISTINCT sticker_file
 
 -- ookami_kemono
 INSERT INTO sticker_file_tag (sticker_file_id, tag) SELECT DISTINCT sticker_file_id, 'ookami_kemono' FROM sticker WHERE sticker.sticker_set_id IN (SELECT sticker_set.id FROM sticker_set WHERE sticker_set.created_by_user_id = 235044733) AND NOT EXISTS (SELECT * FROM sticker_file WHERE sticker.sticker_file_id = sticker_file.id AND sticker_file.tags_locked_by_user_id IS NOT NULL) ON CONFLICT (sticker_file_id, tag) DO NOTHING;
+
+-- exiledmorph
+INSERT INTO sticker_file_tag (sticker_file_id, tag) SELECT DISTINCT sticker_file_id, 'exiledmorph' FROM sticker WHERE sticker.sticker_set_id IN (SELECT sticker_set.id FROM sticker_set WHERE sticker_set.created_by_user_id = 611584489) AND NOT EXISTS (SELECT * FROM sticker_file WHERE sticker.sticker_file_id = sticker_file.id AND sticker_file.tags_locked_by_user_id IS NOT NULL) ON CONFLICT (sticker_file_id, tag) DO NOTHING;
+
+-- pupsonar
+INSERT INTO sticker_file_tag (sticker_file_id, tag) SELECT DISTINCT sticker_file_id, 'pupsonar' FROM sticker WHERE sticker.sticker_set_id IN (SELECT sticker_set.id FROM sticker_set WHERE sticker_set.created_by_user_id = 495780776) AND NOT EXISTS (SELECT * FROM sticker_file WHERE sticker.sticker_file_id = sticker_file.id AND sticker_file.tags_locked_by_user_id IS NOT NULL) ON CONFLICT (sticker_file_id, tag) DO NOTHING;
