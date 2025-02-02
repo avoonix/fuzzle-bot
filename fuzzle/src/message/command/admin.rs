@@ -22,9 +22,6 @@ pub enum AdminCommand {
     #[command(description = "ADMIN ban a set (set name is case sensitive)")]
     BanSet { set_name: String },
 
-    #[command(description = "ADMIN export json")]
-    ExportJson,
-
     #[command(description = "ADMIN get pending moderation tasks")]
     Tasks,
 
@@ -59,9 +56,6 @@ impl AdminCommand {
                     request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("banned set"))
                         .await?;
                 }
-            }
-            Self::ExportJson => {
-                send_database_export_to_chat(msg.chat.id, request_context.database.clone(), request_context.bot.clone()).await?;
             }
             Self::Ui => {
                 request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("Log in with this button"))
@@ -116,27 +110,6 @@ pub async fn send_merge_queue(chat_id: ChatId, request_context: RequestContext) 
     )
     .markdown_caption(Markdown::escaped("TODO: some content"))
     .reply_markup(Keyboard::merge(&a, &b, &set_a.id, &set_b.id)?)
-    .await?;
-Ok(())
-}
-
-pub async fn send_database_export_to_chat(
-    chat_id: ChatId,
-    database: Database,
-    bot: Bot,
-) -> Result<(), InternalError> {
-    let data = export_database(database).await?;
-    let data = serde_json::to_vec(&data)?; // TODO: stream?
-    let mut gz = GzEncoder::new(&*data, Compression::best());
-    let mut buffer = Vec::new();
-    gz.read_to_end(&mut buffer)?;
-    let kbytes = data.len() / 1024;
-    info!("{} KiB exported", kbytes);
-    bot.send_document(
-        chat_id,
-        InputFile::memory(data).file_name("stickers.json.gz"),
-    )
-    .markdown_caption(Markdown::escaped("list of all sticker sets"))
     .await?;
     Ok(())
 }

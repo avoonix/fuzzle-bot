@@ -1,11 +1,12 @@
-use crate::bot::{BotError, BotExt, RequestContext};
+use crate::bot::{Bot, BotError, BotExt, InternalError, RequestContext, SendDocumentExt};
 
 use crate::callback::exit_mode;
-use crate::database::{DialogState, Sticker, TagCreator};
+use crate::database::{export_database, Database, DialogState, Sticker, TagCreator};
 use crate::message::Keyboard;
 use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
 
+use itertools::Itertools;
 use teloxide::types::{
     BotCommand, InputFile, KeyboardButton, KeyboardMarkup, LinkPreviewOptions, MessageId,
     ReplyMarkup,
@@ -38,6 +39,9 @@ pub enum RegularCommand {
     #[command(description = "general statistics")]
     Stats,
 
+    #[command(description = "export a list of all stickers and taggings")]
+    Export,
+
     #[command(description = "clear recently used stickers")]
     ClearRecentlyUsed,
 
@@ -64,6 +68,9 @@ impl RegularCommand {
         request_context: RequestContext,
     ) -> Result<(), BotError> {
         match self {
+            Self::Export => {
+                send_database_export_to_chat(msg.chat.id, request_context.database.clone(), request_context.bot.clone()).await?;
+            }
             Self::Privacy => {
                 request_context
                     .bot
@@ -374,5 +381,35 @@ pub async fn send_sticker_with_tag_input(
         .reply_to_message_id(message_id)
         .allow_sending_without_reply(true)
         .await?;
+    Ok(())
+}
+
+pub async fn send_database_export_to_chat(
+    chat_id: ChatId,
+    database: Database,
+    bot: Bot,
+) -> Result<(), InternalError> {
+    let data = export_database(database).await?;
+    let packs = data.sets.keys();
+    let data = serde_json::to_vec(&data)?; // TODO: stream?
+    // let mut gz = GzEncoder::new(&*data, Compression::best());
+    // let mut buffer = Vec::new();
+    // gz.read_to_end(&mut buffer)?;
+    let kbytes = data.len() / 1024;
+    tracing::info!("{} KiB exported", kbytes);
+    bot.send_document(
+        chat_id,
+        InputFile::memory(data).file_name("stickers.json"),
+    )
+    .markdown_caption(Markdown::escaped("all sticker sets, stickers, and tags"))
+    .await?;
+
+    let packs = packs.into_iter().map(|pack| format!("https://t.me/addstickers/{pack}")).join("\n");
+    bot.send_document(
+        chat_id,
+        InputFile::memory(packs).file_name("sticker_sets.txt"),
+    )
+    .markdown_caption(Markdown::escaped("list of all sticker pack links"))
+    .await?;
     Ok(())
 }
