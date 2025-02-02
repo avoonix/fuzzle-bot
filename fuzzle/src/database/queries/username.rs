@@ -55,19 +55,13 @@ impl Database {
         let name = name.to_string();
         self.pool
             .exec(move |conn| {
-                insert_into(username::table)
-                    .values((
-                        username::tg_username.eq(name),
-                        username::kind.eq(kind),
-                        username::tg_id.eq(Some(telegram_id)),
-                    ))
-                    .on_conflict(username::tg_username)
-                    .do_update()
-                    .set((
-                        username::kind.eq(kind),
-                        username::tg_id.eq(Some(telegram_id)),
-                        username::updated_at.eq(now),
-                    ))
+                sql_query("INSERT INTO username (tg_username, kind, tg_id) 
+                            VALUES (?1, ?2, ?3)
+                            ON CONFLICT (tg_username) DO UPDATE SET kind = ?2, tg_id = ?3, updated_at = datetime('now')
+                            ON CONFLICT (tg_id) DO UPDATE SET kind = ?2, tg_username = ?1, updated_at = datetime('now')")
+                            .bind::<Text, _>(name)
+                            .bind::<BigInt, _>(kind)
+                            .bind::<BigInt, _>(telegram_id)
                     .execute(conn)?;
 
                 Ok(())
