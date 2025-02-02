@@ -254,6 +254,9 @@ async fn refetch_stickers(
     vector_db: VectorDatabase,
     importer: StickerImportService,
 ) -> Result<(), InternalError> {
+    if config.is_readonly {
+        return Ok(());
+    }
     let set_names = database
         .get_n_least_recently_fetched_set_ids(count as i64)
         .await?;

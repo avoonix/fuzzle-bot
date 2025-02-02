@@ -287,6 +287,15 @@ pub async fn message_handler(
         }
     }
     if request_context.config.is_readonly {
+        if let Some(sticker) = msg.sticker() {
+            if let Some(ref set_id) = sticker.set_name {
+                request_context
+                    .database
+                    .upsert_sticker_set(set_id, request_context.user.id)
+                    .await?;
+                return Ok(());
+            }
+        }
         return send_readonly_message(msg.chat.id, request_context).await;
     }
     let potential_sticker_set_names = find_sticker_set_urls(&msg);
@@ -318,7 +327,7 @@ pub async fn send_readonly_message(id: ChatId, request_context: RequestContext) 
         .bot
         .send_markdown(
             id,
-            Markdown::escaped("Hi, I am temporarily(?) semi-disabled until Avoo has more capacity to develop and moderate. 
+            Markdown::escaped("Hi, I am temporarily(?) semi-disabled (you can still search for stickers) until Avoo has more capacity to develop and moderate. 
 
 Thanks to everyone who submitted their sticker packs or helped tagging <3. All packs and taggings can be found below and the source code can be found here https://github.com/avoonix/fuzzle-bot"),
         )
