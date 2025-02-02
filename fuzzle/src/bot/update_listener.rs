@@ -45,9 +45,11 @@ impl UpdateListener {
         let database = Database::new(config.db()).await?;
         let vector_db = VectorDatabase::new(&config.vector_db_url).await?;
         let config = Arc::new(config);
-        let importer = StickerImportService::new(database.clone(), config.clone(), bot.clone(), vector_db.clone()).await?;
+        let (tag_manager, importer) = tokio::try_join!(
+            TagManagerService::new(database.clone(), config.clone()),
+            StickerImportService::new(database.clone(), config.clone(), bot.clone(), vector_db.clone()),
+        )?;
 
-        let tag_manager = TagManagerService::new(database.clone(), config.clone()).await?;
         let tfidf_service = TfIdfService::new(database.clone(), tag_manager.clone()).await?;
 
         Ok(Self {

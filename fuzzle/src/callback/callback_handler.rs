@@ -24,7 +24,7 @@ use crate::callback::TagOperation;
 
 use crate::database::{ContinuousTag, Database, MergeStatus};
 use crate::database::{DialogState, TagCreator};
-use crate::message::{send_merge_queue, set_tag_id, Keyboard};
+use crate::message::{send_merge_queue, send_readonly_message, set_tag_id, Keyboard};
 use crate::sticker::{determine_canonical_sticker_and_merge, fetch_sticker_file, FileKind};
 use crate::tags::{suggest_tags, Category};
 use crate::text::{Markdown, Text};
@@ -211,6 +211,13 @@ pub async fn callback_handler(
     q: CallbackQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
+    if request_context.config.is_readonly {
+        if let Some(chat_id) = q.chat_id() {
+            return send_readonly_message(chat_id, request_context).await;
+        } else {
+            return Ok(())
+        }
+    }
     let data: CallbackData = q.data.clone().unwrap_or_default().try_into()?;
     match data {
         CallbackData::ChangeModerationTaskStatus { status, task_id } => {

@@ -7,7 +7,7 @@ use crate::database::Database;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct ExportedData {
-    sets: HashMap<String, Vec<String>>,
+    pub sets: HashMap<String, Vec<String>>,
     files: Vec<ExportedStickerFile>,
     // users: std::collections::HashMap<u64, ExportedUser>,
 }

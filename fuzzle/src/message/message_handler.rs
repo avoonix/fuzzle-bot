@@ -6,6 +6,7 @@ use nom::combinator::map;
 use nom::sequence::tuple;
 use nom::{character::complete::multispace0, Finish};
 use regex::Regex;
+use teloxide::types::ChatId;
 use teloxide::{
     dispatching::dialogue::GetChatId,
     payloads::{SendMessageSetters, SendPhotoSetters},
@@ -33,6 +34,7 @@ use crate::{
     util::{parse_emoji, Emoji, Required},
 };
 
+use super::send_database_export_to_chat;
 use super::{
     command::{fix_underline_command_separator_and_normalize, AdminCommand, HiddenCommand, RegularCommand},
     send_sticker_with_tag_input, Keyboard,
@@ -284,6 +286,9 @@ pub async fn message_handler(
             _ => {}
         }
     }
+    if request_context.config.is_readonly {
+        return send_readonly_message(msg.chat.id, request_context).await;
+    }
     let potential_sticker_set_names = find_sticker_set_urls(&msg);
     if !potential_sticker_set_names.is_empty() {
         handle_sticker_sets(&msg, potential_sticker_set_names, request_context).await
@@ -306,6 +311,21 @@ pub async fn message_handler(
     } else {
         Ok(())
     }
+}
+
+pub async fn send_readonly_message(id: ChatId, request_context: RequestContext) -> Result<(), BotError> {
+    request_context
+        .bot
+        .send_markdown(
+            id,
+            Markdown::escaped("Hi, I am temporarily(?) semi-disabled until Avoo has more capacity to develop and moderate. 
+
+Thanks to everyone who submitted their sticker packs or helped tagging <3. All packs and taggings can be found below and the source code can be found here https://github.com/avoonix/fuzzle-bot"),
+        )
+        .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+        .await?;
+        send_database_export_to_chat(id, request_context.database, request_context.bot).await?;
+        Ok(())
 }
 
 #[tracing::instrument(skip(request_context, msg))]

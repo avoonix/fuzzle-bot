@@ -114,7 +114,7 @@ Current Order: {order}
                 format!("{link} \\({relative_time}\\)")
             })
             .collect_vec()
-            .join("\n"); // TODO: add relative age (eg "added 10h ago")
+            .join("\n");
         Markdown::new(format!("🗂️ *New Sets*\n\n{sets_str}"))
     }
 

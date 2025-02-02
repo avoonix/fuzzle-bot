@@ -13,6 +13,7 @@ pub struct Config {
     pub bot_display_name: String, // TODO: use this instead of hardcoding
     pub greeting_sticker_id: Option<String>,
     pub default_blacklist: Vec<String>,
+    pub is_readonly: bool,
 
     pub vector_db_url: String,
     pub inference_url: String,
