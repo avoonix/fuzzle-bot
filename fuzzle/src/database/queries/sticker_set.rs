@@ -253,7 +253,7 @@ impl Database {
         limit: i64,
         before: NaiveDateTime,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
-        dbg!(self.pool
+        self.pool
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .select(StickerSet::as_select())
@@ -263,7 +263,7 @@ impl Database {
                     .limit(limit)
                     .load(conn)?)
             })
-            .await)
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
