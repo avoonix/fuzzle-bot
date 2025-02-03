@@ -35,7 +35,7 @@ pub async fn index(
     let desc = "Hi there";
     let lang = "en";
     let stats = data.database.get_stats().await?;
-    let tags = data.database.get_popular_tags(20).await?;
+    let tags = data.database.get_popular_tags(20, 0).await?;
     let emojis = data.database.get_most_used_emojis(20, 0).await?;
 
     let content = html! {
