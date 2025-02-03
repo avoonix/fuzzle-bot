@@ -80,6 +80,8 @@ async fn handle_sticker_tag_action(
 
     match operation {
         Some(TagOperation::Tag(tag)) => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             if let Some(implications) = request_context.tag_manager.get_implications(&tag) {
                 let tags = implications
                     .clone()
@@ -101,6 +103,8 @@ async fn handle_sticker_tag_action(
             }
         }
         Some(TagOperation::Untag(tag)) => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let tags = tags_that_should_be_removed(
                 tag.clone(),
                 request_context
@@ -206,18 +210,19 @@ pub async fn show_error(
     Ok(())
 }
 
+async fn handle_readonly(request_context: &RequestContext, q: &CallbackQuery) -> Result<bool, BotError> {
+    if !request_context.config.is_readonly { return Ok(false) }
+    if let Some(chat_id) = q.chat_id() {
+        send_readonly_message(chat_id, request_context.clone()).await?;
+    }
+    Ok(true)
+}
+
 #[tracing::instrument(skip(request_context, q), err(Debug))]
 pub async fn callback_handler(
     q: CallbackQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
-    if request_context.config.is_readonly {
-        if let Some(chat_id) = q.chat_id() {
-            return send_readonly_message(chat_id, request_context).await;
-        } else {
-            return Ok(())
-        }
-    }
     let data: CallbackData = q.data.clone().unwrap_or_default().try_into()?;
     match data {
         CallbackData::ChangeModerationTaskStatus { status, task_id } => {
@@ -248,6 +253,8 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::CreateTag => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
                 DialogState::ContinuousTag { .. }
@@ -281,6 +288,8 @@ pub async fn callback_handler(
             Ok(())
         }
         CallbackData::CreateTagForUser { user_id } => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let username = request_context
                 .database
                 .get_username(crate::database::UsernameKind::User, user_id)
@@ -299,6 +308,8 @@ pub async fn callback_handler(
             Ok(())
         }
         CallbackData::RemoveAlias(alias) => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
                 DialogState::ContinuousTag { .. }
@@ -327,6 +338,8 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::ToggleExampleSticker { sticker_id } => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
                 DialogState::ContinuousTag { .. }
@@ -364,6 +377,8 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::ApplyTags { sticker_id } => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let continuous_tag = match request_context.dialog_state() {
                 DialogState::ContinuousTag(ct) => ct,
                 DialogState::TagCreator(..)
@@ -462,16 +477,22 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::SetLock { lock, sticker_id } => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             change_sticker_locked_status(lock, &sticker_id, q, request_context).await
         }
         CallbackData::Sticker {
             sticker_id,
             operation,
-        } => handle_sticker_tag_action(operation, sticker_id, q, request_context).await,
+        } => {
+            handle_sticker_tag_action(operation, sticker_id, q, request_context).await
+        },
         CallbackData::RemoveBlacklistedTag(tag) => {
             remove_blacklist_tag(q, tag, request_context).await
         }
         CallbackData::RemoveContinuousTag(tag) => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             remove_continuous_tag(q, tag, request_context).await
         }
         CallbackData::ChangeSetBannedStatus {
@@ -479,6 +500,12 @@ pub async fn callback_handler(
             banned,
             moderation_task_id,
         } => {
+            if !request_context.is_admin() {
+                return Err(UserError::NoPermissionForAction(
+                    "set banned status".to_string(),
+                )
+                .into());
+            }
             let task = request_context
                 .database
                 .get_moderation_task_by_id(moderation_task_id)
@@ -608,7 +635,7 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::PopularTags => {
-            let tags = request_context.database.get_popular_tags(40).await?;
+            let tags = request_context.database.get_popular_tags(40, 0).await?;
 
             let tags = tags
                 .into_iter()
@@ -868,6 +895,8 @@ pub async fn callback_handler(
             merge,
         } => handle_sticker_merge(sticker_id_a, sticker_id_b, merge, q, request_context).await,
         CallbackData::RemoveLinkedUser => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
                 DialogState::ContinuousTag { .. }
@@ -894,6 +923,8 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::LinkSelf => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
                 DialogState::ContinuousTag { .. }
@@ -923,6 +954,8 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::RemoveLinkedChannel => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             // TODO: method tag_creator_state() that returns Result<TagCreator, UserError>?
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
@@ -950,6 +983,8 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::SetCategory(category) => {
+            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
                 DialogState::ContinuousTag { .. }

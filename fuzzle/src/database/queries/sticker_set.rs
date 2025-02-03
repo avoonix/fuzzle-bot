@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose, Engine};
+use chrono::NaiveDateTime;
 use diesel::{
     delete,
     dsl::{count_star, now, sql},
@@ -218,16 +219,51 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    #[deprecated = "use get_latest_sticker_sets instead"]
     pub async fn get_n_latest_sets(&self, n: i64) -> Result<Vec<StickerSet>, DatabaseError> {
         self.pool
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .select(StickerSet::as_select())
+                    .filter(diesel::dsl::exists(sticker::table.filter(sticker::sticker_set_id.eq(sticker_set::id))))
                     .order_by(sticker_set::created_at.desc())
                     .limit(n)
                     .load(conn)?)
             })
             .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_latest_stickers(&self, limit: i64, before: NaiveDateTime) -> Result<Vec<Sticker>, DatabaseError> {
+        self.pool
+            .exec(move |conn| {
+                Ok(sticker::table
+                    .select(Sticker::as_select())
+                    .filter(sticker::created_at.lt(before))
+                    .order_by(sticker::created_at.desc())
+                    .limit(limit)
+                    .load(conn)?)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_latest_sticker_sets(
+        &self,
+        limit: i64,
+        before: NaiveDateTime,
+    ) -> Result<Vec<StickerSet>, DatabaseError> {
+        dbg!(self.pool
+            .exec(move |conn| {
+                Ok(sticker_set::table
+                    .select(StickerSet::as_select())
+                    .filter(diesel::dsl::exists(sticker::table.filter(sticker::sticker_set_id.eq(sticker_set::id))))
+                    .filter(sticker_set::created_at.lt(before))
+                    .order_by(sticker_set::created_at.desc())
+                    .limit(limit)
+                    .load(conn)?)
+            })
+            .await)
     }
 
     #[tracing::instrument(skip(self), err(Debug))]

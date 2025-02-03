@@ -2,6 +2,7 @@ use crate::bot::{Bot, BotError, BotExt, InternalError, RequestContext, SendDocum
 
 use crate::callback::exit_mode;
 use crate::database::{export_database, Database, DialogState, Sticker, TagCreator};
+use crate::message::message_handler::handle_readonly;
 use crate::message::Keyboard;
 use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
@@ -184,7 +185,10 @@ impl RegularCommand {
                         .await?;
                 }
             }
-            Self::ContinuousTagMode => match request_context.dialog_state() {
+            Self::ContinuousTagMode => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
+
+                match request_context.dialog_state() {
                 DialogState::Normal
                 | DialogState::StickerRecommender { .. }
                 | DialogState::TagCreator { .. } => {
@@ -214,8 +218,11 @@ impl RegularCommand {
                         ))
                         .await?;
                 }
-            },
-            Self::TagCreator => match request_context.dialog_state() {
+            }},
+            Self::TagCreator => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
+
+                match request_context.dialog_state() {
                 DialogState::Normal
                 | DialogState::StickerRecommender { .. }
                 | DialogState::ContinuousTag { .. } => {
@@ -239,7 +246,7 @@ impl RegularCommand {
                         .reply_markup(Keyboard::tag_creator(&tag_creator))
                         .await?;
                 }
-            },
+            }},
             Self::StickerRecommenderMode => {
                 let (positive_sticker_id, negative_sticker_id) =
                     match request_context.dialog_state() {

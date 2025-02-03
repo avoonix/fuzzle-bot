@@ -109,6 +109,9 @@ async fn handle_sticker_sets(
         // TODO: this causes potential loss of sticker packs if bot is restarted before queue is empty
         request_context.importer.queue_sticker_set_import(set_name, false, Some(request_context.user_id())).await;
     }
+
+    if handle_readonly(&request_context, msg).await? { return Ok(()); }
+
     request_context
         .bot
         .send_markdown(
@@ -286,18 +289,6 @@ pub async fn message_handler(
             _ => {}
         }
     }
-    if request_context.config.is_readonly {
-        if let Some(sticker) = msg.sticker() {
-            if let Some(ref set_id) = sticker.set_name {
-                request_context
-                    .database
-                    .upsert_sticker_set(set_id, request_context.user.id)
-                    .await?;
-                return Ok(());
-            }
-        }
-        return send_readonly_message(msg.chat.id, request_context).await;
-    }
     let potential_sticker_set_names = find_sticker_set_urls(&msg);
     if !potential_sticker_set_names.is_empty() {
         handle_sticker_sets(&msg, potential_sticker_set_names, request_context).await
@@ -322,18 +313,32 @@ pub async fn message_handler(
     }
 }
 
+pub async fn handle_readonly(request_context: &RequestContext, msg: &Message) -> Result<bool, BotError> {
+    if !request_context.config.is_readonly { return Ok(false) }
+    if let Some(sticker) = msg.sticker() {
+        if let Some(ref set_id) = sticker.set_name {
+            request_context
+                .database
+                .upsert_sticker_set(set_id, request_context.user.id)
+                .await?;
+        }
+    }
+
+    send_readonly_message(msg.chat.id, request_context.clone()).await?;
+    Ok(true)
+}
+
 pub async fn send_readonly_message(id: ChatId, request_context: RequestContext) -> Result<(), BotError> {
     request_context
         .bot
         .send_markdown(
             id,
-            Markdown::escaped("Hi, I am temporarily(?) semi-disabled (you can still search for stickers) until Avoo has more capacity to develop and moderate. 
+            Markdown::escaped("Hi, I am temporarily(?) semi-disabled (you can still search for stickers but not add new ones, nor tag any stickers) - programming was fun, but moderating not so much; not sure if or when I want to continue. 
 
-Thanks to everyone who submitted their sticker packs or helped tagging <3. All packs and taggings can be found below and the source code can be found here https://github.com/avoonix/fuzzle-bot"),
+Thanks to everyone who submitted their sticker packs or helped tagging <3. All packs and taggings can be downloaded with /export and the source code can be found here https://github.com/avoonix/fuzzle-bot"),
         )
         .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
         .await?;
-        send_database_export_to_chat(id, request_context.database, request_context.bot).await?;
         Ok(())
 }
 

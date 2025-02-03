@@ -294,7 +294,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_popular_tags(&self, limit: i64) -> Result<Vec<PopularTag>, DatabaseError> {
+    pub async fn get_popular_tags(&self, limit: i64, offset: i64) -> Result<Vec<PopularTag>, DatabaseError> {
         self.pool
             .exec(move |conn| {
                 let tags = sticker_file_tag::table
@@ -302,6 +302,7 @@ impl Database {
                     .select((sticker_file_tag::tag, count_star()))
                     .order(count_star().desc())
                     .limit(limit)
+                    .offset(offset)
                     .load(conn)?;
 
                 Ok(tags

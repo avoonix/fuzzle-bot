@@ -115,6 +115,8 @@ pub async fn import_individual_sticker_and_queue_set(
         .await?;
     info!("sticker not in database");
 
+    if request_context.config.is_readonly { return Ok(()); }
+
     fetch_sticker_and_save_to_db(
         sticker.clone(),
         set_id.clone(),
@@ -234,6 +236,8 @@ async fn fetch_sticker_set_and_save_to_db(
             .all(|s| s.id != sticker.file.unique_id)
     });
     // TODO: find out which stickers are missing embeddings; find out which stickers need to be updated (is_animated)?
+
+    if config.is_readonly { return Ok(()); }
 
     // todo: tag animated?
     for sticker in stickers_not_in_database_yet {

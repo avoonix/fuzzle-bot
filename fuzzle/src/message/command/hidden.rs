@@ -9,6 +9,7 @@ use crate::database::{
     ContinuousTag, Database, DialogState, Order, ReportReason, Sticker, TagCreator,
 };
 use crate::inline::{SetOperation, SimilarityAspect, TagKind};
+use crate::message::message_handler::handle_readonly;
 use crate::message::Keyboard;
 use crate::qdrant::{StickerMatch, VectorDatabase};
 use crate::simple_bot_api;
@@ -188,6 +189,8 @@ impl HiddenCommand {
     ) -> Result<(), BotError> {
         match self {
             Self::ReportSet { reason, set_id } => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
+
                 request_context
                     .database
                     .create_moderation_task(
@@ -467,6 +470,7 @@ impl HiddenCommand {
                 sticker_unique_id,
                 tag,
             } => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
                 if !request_context.can_tag_stickers() {
                     return Err(anyhow::anyhow!(
                         "user is not permitted to tag stickers (hidden command)"
@@ -561,19 +565,24 @@ impl HiddenCommand {
                     .await?;
             }
             Self::TagSet { set_name, tag } => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
                 set_tag_operation(tag.0, set_name, SetOperation::Tag, msg, request_context).await?;
             }
             Self::UntagSet { set_name, tag } => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
                 set_tag_operation(tag.0, set_name, SetOperation::Untag, msg, request_context)
                     .await?;
             }
             Self::TagContinuous { tag } => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
                 modify_continuous_tag(tag.0, vec![], request_context, msg).await?;
             }
             Self::UntagContinuous { tag } => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
                 modify_continuous_tag(vec![], tag.0, request_context, msg).await?;
             }
             Self::SetTag { tag_id, kind } => {
+                if handle_readonly(&request_context, &msg).await? { return Ok(()); }
                 set_tag_id(request_context, msg.chat.id, tag_id, kind, None).await?;
             }
             Self::Cancel => {
