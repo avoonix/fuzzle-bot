@@ -7,9 +7,9 @@ members = [
 resolver = "2"
 
 [profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
+opt-level = 2
+lto = 'thin'
+codegen-units = 16
 panic = 'abort'
 strip = 'symbols'
 overflow-checks = true  
