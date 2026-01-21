@@ -24,7 +24,6 @@ pub struct Config {
     pub admin_telegram_user_id: u64,
     pub telegram_bot_token: String,
     pub telegram_bot_username: String,
-    pub telegram_bot_api_url: String,
 }
 
 impl Config {

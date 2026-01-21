@@ -10,6 +10,7 @@ use crate::background_tasks::{start_periodic_tasks, StickerImportService, TagMan
 use std::sync::Arc;
 use std::time::Duration;
 use teloxide::adaptors::throttle::Limits;
+use teloxide::backoff::exponential_backoff_strategy;
 use teloxide::net::default_reqwest_settings;
 use teloxide::prelude::*;
 use teloxide::types::{AllowedUpdate, ParseMode, UpdateKind};
@@ -35,11 +36,11 @@ impl UpdateListener {
     #[tracing::instrument(name="UpdateListener::new", skip(config), err(Debug))]
     pub async fn new(config: Config) -> Result<Self, anyhow::Error> {
         let client = default_reqwest_settings()
-            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(20))
+            .timeout(Duration::from_secs(60))
             .build()?;
         // let bot = Bot::with_client(scrape_config.token, client);
         let bot = teloxide::Bot::with_client(config.telegram_bot_token.clone(), client)
-            .set_api_url(Url::parse(&config.telegram_bot_api_url).expect("configured url to be valid"))
             .parse_mode(ParseMode::MarkdownV2)
             .throttle(Limits::default());
         let database = Database::new(config.db()).await?;
@@ -111,7 +112,13 @@ impl UpdateListener {
             .branch(Update::filter_chosen_inline_result().endpoint(inline_result_handler_wrapper));
 
         let update_listener = Polling::builder(self.bot.clone())
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .backoff_strategy(|error_count| 
+                {dbg!("error count", &error_count);
+                    // TODO: add metrics?
+    Duration::from_secs(1_u64 << error_count.min(5)) // max 32 second backoff between attempts
+            }
+)
             .allowed_updates(vec![
                 AllowedUpdate::Message,
                 AllowedUpdate::InlineQuery,

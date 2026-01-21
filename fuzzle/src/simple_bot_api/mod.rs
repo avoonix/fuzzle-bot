@@ -6,10 +6,12 @@ use teloxide::types::{StickerFormat, UserId};
 
 use crate::bot::{BotError, InternalError};
 
-async fn perform_request(telegram_url: &str, method: &str, token: &str, body: Value) -> Result<(), InternalError> {
+const TELEGRAM_BOT_API_URL: &str = "https://api.telegram.org";
+
+async fn perform_request(method: &str, token: &str, body: Value) -> Result<(), InternalError> {
     let client = reqwest::Client::new();
     let res: Map<String, Value> = client
-        .post(format!("{telegram_url}/bot{token}/{method}"))
+        .post(format!("{TELEGRAM_BOT_API_URL}/bot{token}/{method}"))
         .json(&body)
         .send()
         .await?
@@ -32,12 +34,10 @@ async fn perform_request(telegram_url: &str, method: &str, token: &str, body: Va
 /// 0-120 characters
 #[tracing::instrument(skip(token))]
 pub async fn set_my_short_description(
-    telegram_url: &str,
     token: &str,
     short_description: &str,
 ) -> Result<(), InternalError> {
     perform_request(
-        telegram_url,
         "setMyShortDescription",
         token,
         json!({
@@ -49,12 +49,10 @@ pub async fn set_my_short_description(
 /// 0-512 characters, plain text
 #[tracing::instrument(skip(token))]
 pub async fn set_my_description(
-    telegram_url: &str,
     token: &str,
     description: &str,
 ) -> Result<(), InternalError> {
     perform_request(
-        telegram_url,
         "setMyDescription",
         token,
         json!({
@@ -65,7 +63,6 @@ pub async fn set_my_description(
 
 #[tracing::instrument(skip(token))]
 pub async fn create_new_sticker_set(
-    telegram_url: &str,
     token: &str,
     user_id: UserId,
     set_id: &str,
@@ -76,7 +73,6 @@ pub async fn create_new_sticker_set(
     keywords: &[String],
 ) -> Result<(), InternalError> {
     perform_request(
-        telegram_url,
         "createNewStickerSet",
         token,
         json!({
@@ -96,7 +92,6 @@ pub async fn create_new_sticker_set(
 /// https://core.telegram.org/bots/api#inputsticker
 #[tracing::instrument(skip(token))]
 pub async fn add_sticker_to_set(
-    telegram_url: &str,
     token: &str,
     user_id: UserId,
     set_id: &str,
@@ -106,7 +101,6 @@ pub async fn add_sticker_to_set(
     keywords: &[String],
 ) -> Result<(), InternalError> {
     perform_request(
-        telegram_url,
         "addStickerToSet",
         token,
         json!({

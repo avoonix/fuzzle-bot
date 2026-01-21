@@ -1,4 +1,4 @@
-use diesel::dsl::count_distinct;
+use diesel::dsl::count;
 use diesel::dsl::count_star;
 use diesel::prelude::*;
 use diesel::sql_query;
@@ -40,11 +40,11 @@ impl Database {
             .exec(move |conn| {
                 let sets: i64 = sticker_set::table.select(count_star()).first(conn)?;
                 let stickers: i64 = sticker::table
-                    .select(count_distinct(sticker::sticker_file_id))
+                    .select(count(sticker::sticker_file_id).aggregate_distinct())
                     .first(conn)?;
                 let taggings: i64 = sticker_file_tag::table.select(count_star()).first(conn)?;
                 let tagged_stickers: i64 = sticker_file_tag::table
-                    .select(count_distinct(sticker_file_tag::sticker_file_id))
+                    .select(count(sticker_file_tag::sticker_file_id).aggregate_distinct())
                     .filter(diesel::dsl::exists(sticker::table.filter(
                         sticker::sticker_file_id.eq(sticker_file_tag::sticker_file_id),
                     )))
@@ -280,7 +280,7 @@ order by set_count desc limit ?1 offset ?2;")
         self.pool
             .exec(move |conn| {
                 let unique_sticker_owners = sticker_set::table
-                    .select(count_distinct(sticker_set::created_by_user_id))
+                    .select(count(sticker_set::created_by_user_id).aggregate_distinct())
                     .first(conn)?;
                 Ok(AggregatedUserStats {
                     unique_sticker_owners,

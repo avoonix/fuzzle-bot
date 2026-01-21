@@ -12,5 +12,7 @@ mod qdrant;
 mod sticker;
 mod web;
 mod inference;
+mod fmetrics;
 
 pub use bot::{Config, UpdateListener};
+pub use fmetrics::setup_observability;

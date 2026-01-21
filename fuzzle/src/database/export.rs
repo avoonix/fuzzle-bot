@@ -9,18 +9,12 @@ use crate::database::Database;
 pub struct ExportedData {
     pub sets: HashMap<String, Vec<String>>,
     files: Vec<ExportedStickerFile>,
-    // users: std::collections::HashMap<u64, ExportedUser>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 struct ExportedStickerFile {
     sticker_ids: Vec<String>,
     tags: Vec<String>,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
-struct ExportedUser {
-    blacklist: Vec<String>,
 }
 
 impl ExportedStickerFile {

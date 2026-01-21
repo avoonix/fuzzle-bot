@@ -455,8 +455,8 @@ impl VectorDatabase {
             .filter_map(|point| {
                 point.vectors.and_then(|v| {
                     v.vectors_options.and_then(|o| match o {
-                        qdrant_client::qdrant::vectors::VectorsOptions::Vector(_) => None,
-                        qdrant_client::qdrant::vectors::VectorsOptions::Vectors(v) => {
+                        qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(_) => None,
+                        qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => {
                             Some(v.vectors)
                         }
                     })

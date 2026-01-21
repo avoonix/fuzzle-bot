@@ -4,6 +4,7 @@ use actix_web::{
     get, post, App, HttpRequest, HttpResponse, HttpServer, Responder, Result as ActixResult,
 };
 use actix_web_lab::extract::Path;
+use chrono::{DateTime, NaiveDateTime};
 use itertools::Itertools;
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use nom::combinator::eof;
@@ -12,8 +13,8 @@ use nom::Finish;
 use serde::Deserialize;
 
 use crate::background_tasks::TagManagerService;
-use crate::bot::UserError;
-use crate::database::{Order, StickerSet};
+use crate::bot::{InternalError, UserError};
+use crate::database::{Database, Order, Sticker, StickerSet};
 use crate::inline::{
     get_last_input_match_list_and_other_input_closest_matches, parse_comma_separated_tags,
 };
@@ -91,6 +92,9 @@ pub async fn index(
                         (emoji_list_item(&emoji.0, Some(format!("{}", emoji.1))))
                     }
         }
+            
+            (link_btn("/tags".to_string(), "All Tags".to_string()))
+            (link_btn("/emojis".to_string(), "All Emojis".to_string()))
 
         }
     };
@@ -113,6 +117,14 @@ pub fn tag_list_item(
                     None => ""
                 }
         }
+    }
+}
+
+pub fn link_btn(href: String, text: String) -> Markup {
+    html! {
+                        a class="emoji" href={ (href) } {
+                            (text)
+                        }
     }
 }
 
@@ -460,7 +472,7 @@ async fn sticker_page(
             }
 
                         div {
-                            "other sets"
+                            "duplicates exist in these sets"
             div class="set-grid" {
                 @for set in &other_sets {
                     (sticker_set_list_item(&set.id))
@@ -494,32 +506,32 @@ pub async fn not_found() -> impl Responder {
     )
 }
 
-#[get("/webapp")]
-pub async fn webapp_entrypoint(start_form: Query<WebAppStart>) -> impl Responder {
-    dbg!(&start_form.start_param);
-    (
-        html! {
-            html lang="en" {
-                head {
-                    meta charset=(strings::UTF8);
-                    title { "Loading" }
-                    script { (PreEscaped(strings::WEBAPP_LOGIN_SCRIPT)) }
-                }
-                body {
-                    h1 { "Loading" }
-                    p { "Loading" }
-                }
-            }
-        },
-        actix_web::http::StatusCode::OK,
-    )
-}
+// #[get("/webapp")]
+// pub async fn webapp_entrypoint(start_form: Query<WebAppStart>) -> impl Responder {
+//     dbg!(&start_form.start_param);
+//     (
+//         html! {
+//             html lang="en" {
+//                 head {
+//                     meta charset=(strings::UTF8);
+//                     title { "Loading" }
+//                     script { (PreEscaped(strings::WEBAPP_LOGIN_SCRIPT)) }
+//                 }
+//                 body {
+//                     h1 { "Loading" }
+//                     p { "Loading" }
+//                 }
+//             }
+//         },
+//         actix_web::http::StatusCode::OK,
+//     )
+// }
 
-#[derive(Deserialize)]
-struct WebAppStart {
-    #[serde(rename = "tgWebAppStartParam")]
-    start_param: Option<String>,
-}
+// #[derive(Deserialize)]
+// struct WebAppStart {
+//     #[serde(rename = "tgWebAppStartParam")]
+//     start_param: Option<WebAppStartParameter>,
+// }
 
 #[derive(Deserialize)]
 struct TagForm {
@@ -534,7 +546,8 @@ struct SearchTagsForm {
 
 fn body(content: Markup) -> Markup {
     html! {
-        body {
+        body hx-boost="true" {
+            div #loading {}
             (content)
             script src="/assets/js/vendor/htmx.min.js" {}
             script src="/assets/js/main.js" {}
@@ -628,7 +641,7 @@ mod strings {
     pub static NOT_FOUND_TITLE: &str = "Page Not Found";
     pub static UTF8: &str = "utf-8";
     pub static VIEWPORT: &str = "viewport";
-    pub static VIEWPORT_CONTENT: &str = "width=device-width, initial-scale=1";
+    pub static VIEWPORT_CONTENT: &str = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0";
     pub static WEBSITE: &str = "website";
     pub static WEBAPP_LOGIN_SCRIPT: &str = r#"
 var locationHash = '';
@@ -856,33 +869,27 @@ async fn sticker_set_timeline_page(
     data: Data<AppState>,
     req: HttpRequest,
 ) -> actix_web::Result<impl Responder> {
-    let set = data
-        .database
-        .get_sticker_set_by_id(&set_id)
-        .await?
-        .required()?;
-    let stickers = data.database.get_all_stickers_in_set(&set.id).await?;
-
-    let r = stickers
+        let set = data // TODO: set is not required
+            .database
+            .get_sticker_set_by_id(&set_id)
+            .await?
+            .required()?;
+    let sticker_service = StickerService::new(data.database.clone());
+    let groups = sticker_service
+        .get_sticker_set_timeline(&set_id)
+        .await?;
+    let r = groups
         .into_iter()
-        .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
-        .rev()
-        .chunk_by(|s| format_relative_time(s.created_at))
-        .into_iter()
-        .map(|(relative_time, stickers)| (format!("{}", relative_time), stickers.collect_vec()))
-        .map(|(header, stickers)| {
-            TimelineItem {
-                header,
-                content: 
-            html! {
+        .map(|(header, stickers)| TimelineItem {
+            header,
+            content: html! {
 
             div class="grid" {
                 @for sticker in &stickers {
                     (sticker_list_item(&sticker.id))
                 }
             }
-            }
-            }
+            },
         })
         .collect_vec();
 
@@ -898,7 +905,7 @@ async fn sticker_set_timeline_page(
                 (set_title) " Timeline"
             }
 
-            (timeline(&r, Some("Set first seen".to_string())))
+            (timeline(&r,true, Some(html! { "Set first seen" })))
         }
     };
 
@@ -910,39 +917,395 @@ pub struct TimelineItem {
     pub content: Markup,
 }
 
-pub fn timeline(items: &[TimelineItem], last_header: Option<String>) -> Markup {
-    html! {
-            div class="timeline" {
-                @for timeline_item in items {
-                    div class="timeline-section" {
-                        div class="timeline-section-header" {
-                            div class="timeline-dot" {}
-                            h2 {
-                                (timeline_item.header)
-                            }
-                        }
-                        div class="timeline-section-body" {
-                            div class="timeline-bar" {}
-                            div class="timeline-content" {
-                                (timeline_item.content)
-                            }
-                        }
-                    }
-                }
-                @match last_header {
-                    Some(last_header) =>
-                            div class="timeline-section" {
-                    div class="timeline-section-header" {
-                        div class="timeline-dot" {}
-                        h2 {
-                            (last_header)
-                        }
-                    }
-                },
-                    None => ""
-                }
+pub fn timeline(
+    items: &[TimelineItem],
+    wrap_with_div: bool,
+    last_header: Option<Markup>,
+) -> Markup {
+    let timeline_items = html! {
+    @for timeline_item in items {
+                       div class="timeline-section" {
+                           div class="timeline-section-header" {
+                               div class="timeline-dot" {}
+                               h2 {
+                                   (timeline_item.header)
+                               }
+                           }
+                           div class="timeline-section-body" {
+                               div class="timeline-bar" {}
+                               div class="timeline-content" {
+                                   (timeline_item.content)
+                               }
+                           }
+                       }
+                   }
+                   @match last_header {
+                       Some(last_header) =>
+                               div class="timeline-section" {
+                       div class="timeline-section-header" {
+                           div class="timeline-dot" {}
+                           h2 {
+                               (last_header)
+                           }
+                       }
+                   },
+                       None => ""
+                   }
+       };
+    if wrap_with_div {
+        html! {
+                div class="timeline" {
 
+                   (timeline_items)
+                }
+        }
+    } else {
+        timeline_items
+    }
+}
+
+pub struct StickerService {
+    database: Database,
+}
+
+impl StickerService {
+    pub fn new(database: Database) -> Self {
+        Self { database }
+    }
+
+
+    pub async fn get_sticker_set_timeline(
+        &self,
+        set_id: &str,
+    ) -> Result<Vec<(String, Vec<Sticker>)>, InternalError> {
+        let stickers = self.database.get_all_stickers_in_set(set_id).await?;
+
+    let groups = stickers
+        .into_iter()
+        .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
+        .rev()
+        .chunk_by(|s| format_relative_time(s.created_at))
+        .into_iter()
+        .map(|(relative_time, stickers)| (format!("{}", relative_time), stickers.collect_vec()))
+        .collect_vec();
+
+        Ok(groups)
+    }
+
+    pub async fn get_all_sticker_timeline(
+        &self,
+        limit: i64,
+        before: NaiveDateTime,
+    ) -> Result<(NaiveDateTime, Vec<(String, Vec<Sticker>)>), InternalError> {
+        let stickers = self.database.get_latest_stickers(limit, before).await?;
+        let after = stickers.last().required()?.created_at; // TODO: is reaching the end really an error?
+
+        let groups = stickers
+            .into_iter()
+            .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
+            .rev()
+            .chunk_by(|s| format!("{}", s.created_at.format("%B %-d, %Y ~%l %P")))
+            .into_iter()
+            .map(|(relative_time, stickers)| (format!("{}", relative_time), stickers.collect_vec()))
+            .collect_vec();
+
+        Ok((after, groups))
+    }
+
+    pub async fn get_all_sticker_set_timeline(
+        &self,
+        limit: i64,
+        before: NaiveDateTime,
+    ) -> Result<(NaiveDateTime, Vec<(String, Vec<StickerSet>)>), InternalError> {
+        let sets = self.database.get_latest_sticker_sets(limit, before).await?;
+        let after = sets.last().required()?.created_at; // TODO: is reaching the end really an error?
+
+        let groups = sets
+            .into_iter()
+            .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
+            .rev()
+            .chunk_by(|s| format!("{}", s.created_at.format("%B %-d, %Y")))
+            .into_iter()
+            .map(|(relative_time, sets)| (format!("{}", relative_time), sets.collect_vec()))
+            .collect_vec();
+
+        Ok((after, groups))
+    }
+}
+
+pub fn sticker_set_grid(sets: Vec<StickerSet>) -> Markup {
+    html! {
+
+            div class="set-grid" {
+                @for set in &sets {
+                    (sticker_set_list_item(&set.id))
+                }
             }
     }
 }
 
+pub fn sticker_grid(stickers: Vec<Sticker>) -> Markup {
+    html! {
+
+                div class="grid" {
+                    @for sticker in &stickers {
+                        (sticker_list_item(&sticker.id))
+                    }
+                }
+    }
+}
+
+pub fn infinite_scroll_trigger(url: impl Into<String>, swap_target: impl Into<String>) -> Markup {
+    html! {
+        div class="infinite-scroll-trigger" hx-get={(url.into())} hx-trigger="revealed" hx-swap="outerHTML" hx-indicator="body" hx-target={(swap_target.into())} {}
+    }
+}
+
+#[get("/timeline/stickers")]
+async fn sticker_timeline_page(
+    data: Data<AppState>,
+    req: HttpRequest,
+) -> actix_web::Result<impl Responder> {
+    let sticker_service = StickerService::new(data.database.clone());
+    let (after, groups) = sticker_service
+        .get_all_sticker_timeline(100, chrono::Utc::now().naive_utc())
+        .await?;
+    let r = groups
+        .into_iter()
+        .map(|(header, stickers)| TimelineItem {
+            header,
+            content: sticker_grid(stickers),
+        })
+        .collect_vec();
+
+    let host = format!("{}", req.uri());
+    let title = "fuzzle bot";
+    let desc = "Hi there";
+    let lang = "en";
+
+    let content = html! {
+            h1 { " Timeline" }
+
+            (timeline(&r,true, Some(html! {
+            "End?"
+            (infinite_scroll_trigger(format!("/fragment/timeline/stickers/{}", after.and_utc().timestamp()), "closest .timeline-section"))
+        })))
+    };
+
+    Ok(page(&host, title, desc, lang, content))
+}
+
+#[get("/fragment/timeline/stickers/{after}")]
+async fn sticker_timeline_page_fragment(
+    Path(after): Path<i64>,
+    data: Data<AppState>,
+    req: HttpRequest,
+) -> actix_web::Result<impl Responder> {
+    let sticker_service = StickerService::new(data.database.clone());
+    let after = DateTime::from_timestamp(after, 0).required()?.naive_utc();
+    // TODO: fragments should be served with noindex header
+    let (after, groups) = sticker_service
+        .get_all_sticker_timeline(100, after)
+        .await?;
+    let r = groups
+        .into_iter()
+        .map(|(header, stickers)| TimelineItem {
+            header,
+            content: sticker_grid(stickers),
+        })
+        .collect_vec();
+
+    Ok(timeline(
+        &r,
+        false,
+        Some(html! {
+            "End?"
+            (infinite_scroll_trigger(format!("/fragment/timeline/stickers/{}", after.and_utc().timestamp()), "closest .timeline-section"))
+        }),
+    ))
+}
+
+#[get("/emojis")]
+async fn emojis_page(data: Data<AppState>, req: HttpRequest) -> actix_web::Result<impl Responder> {
+    let emojis = data.database.get_most_used_emojis(300, 0).await?;
+    if emojis.is_empty() {
+        return Ok(html! {""});
+    }
+
+    let host = format!("{}", req.uri());
+    let title = "fuzzle bot";
+    let desc = "Hi there";
+    let lang = "en";
+
+    let content = html! {
+            h1 {
+                " Emojis"
+            }
+
+                div class="tag-container" {
+                    @for emoji in &emojis {
+                        (emoji_list_item(&emoji.0, Some(format!("{}", emoji.1))))
+                    }
+            (infinite_scroll_trigger("/fragment/emojis/1", "this"))
+        }
+
+
+    };
+
+    Ok(page(&host, title, desc, lang, content))
+}
+
+#[get("/fragment/emojis/{page}")]
+async fn emojis_page_fragment(
+    Path(page): Path<i64>,
+    data: Data<AppState>,
+    req: HttpRequest,
+) -> actix_web::Result<impl Responder> {
+    let offset = page * 300; // TODO: higher limit, constant
+    let emojis = data.database.get_most_used_emojis(300, offset).await?;
+    if emojis.is_empty() {
+        return Ok(html! {""});
+    }
+
+    let content = html! {
+                    @for emoji in &emojis {
+                        (emoji_list_item(&emoji.0, Some(format!("{}", emoji.1))))
+                    }
+            (infinite_scroll_trigger(format!("/fragment/emojis/{}", page + 1), "this"))
+
+    };
+
+    Ok(content)
+}
+
+#[get("/timeline/sets")]
+async fn set_timeline_page(
+    data: Data<AppState>,
+    req: HttpRequest,
+) -> actix_web::Result<impl Responder> {
+    let sticker_service = StickerService::new(data.database.clone());
+    let (after, groups) = sticker_service
+        .get_all_sticker_set_timeline(100, chrono::Utc::now().naive_utc())
+        .await?;
+    let r = groups
+        .into_iter()
+        .map(|(header, stickers)| TimelineItem {
+            header,
+            content: sticker_set_grid(stickers),
+        })
+        .collect_vec();
+
+    let host = format!("{}", req.uri());
+    let title = "fuzzle bot";
+    let desc = "Hi there";
+    let lang = "en";
+
+    let content = html! {
+            h1 { " Timeline" }
+
+            (timeline(&r,true, Some(html! {
+            "End?"
+            (infinite_scroll_trigger(format!("/fragment/timeline/sets/{}", after.and_utc().timestamp()), "closest .timeline-section"))
+        })))
+    };
+
+    Ok(page(&host, title, desc, lang, content))
+}
+
+#[get("/fragment/timeline/sets/{after}")]
+async fn set_timeline_page_fragment(
+    Path(after): Path<i64>,
+    data: Data<AppState>,
+    req: HttpRequest,
+) -> actix_web::Result<impl Responder> {
+    let sticker_service = StickerService::new(data.database.clone());
+    let after = DateTime::from_timestamp(after, 0).required()?.naive_utc();
+    // TODO: fragments should be served with noindex header
+    let (after, groups) = sticker_service
+        .get_all_sticker_set_timeline(100, after)
+        .await?;
+    let r = groups
+        .into_iter()
+        .map(|(header, stickers)| TimelineItem {
+            header,
+            content: sticker_set_grid(stickers),
+        })
+        .collect_vec();
+
+    Ok(timeline(
+        &r,
+        false,
+        Some(html! {
+            "End?"
+            (infinite_scroll_trigger(format!("/fragment/timeline/sets/{}", after.and_utc().timestamp()), "closest .timeline-section"))
+        }),
+    ))
+}
+
+#[get("/tags")]
+async fn tags_page(data: Data<AppState>, req: HttpRequest) -> actix_web::Result<impl Responder> {
+    let tags = data.database.get_popular_tags(300, 0).await?;
+    if tags.is_empty() {
+        return Ok(html! {""});
+    }
+
+    let host = format!("{}", req.uri());
+    let title = "fuzzle bot";
+    let desc = "Hi there";
+    let lang = "en";
+
+    let content = html! {
+            h1 {
+                "Tags"
+            }
+
+                div class="tag-container" {
+                    @for tag in &tags {
+                        (tag_list_item(&data.tag_manager, &tag.name, Some(tag.count.to_string())))
+                    }
+            (infinite_scroll_trigger("/fragment/tags/1", "this"))
+        }
+
+
+    };
+
+    Ok(page(&host, title, desc, lang, content))
+}
+
+#[get("/fragment/tags/{page}")]
+async fn tags_page_fragment(
+    Path(page): Path<i64>,
+    data: Data<AppState>,
+    req: HttpRequest,
+) -> actix_web::Result<impl Responder> {
+    let offset = page * 100; // TODO: higher limit, constant
+    let tags = data.database.get_popular_tags(300, offset).await?;
+    if tags.is_empty() {
+        return Ok(html! {""});
+    }
+
+    let content = html! {
+                    @for tag in &tags {
+                        (tag_list_item(&data.tag_manager, &tag.name, Some(tag.count.to_string())))
+                    }
+            (infinite_scroll_trigger(format!("/fragment/tags/{}", page + 1), "this"))
+
+    };
+
+    Ok(content)
+}
+
+// #[derive(Debug)]
+// pub enum WebAppStartParameter {
+//     Home,
+//     StickerSetTimeline { set_id: String },
+//     AllStickerTimeline,
+//     AllStickerSetTimeline,
+//     EmojiList,
+//     TagList,
+// }
+
+// impl WebAppStartParameter {
+//     // fn validate(db: Database)
+//     // impl parse + tostring/display
+// }

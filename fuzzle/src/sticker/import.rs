@@ -188,10 +188,13 @@ async fn fetch_sticker_set_and_save_to_db(
 ) -> Result<(), InternalError> {
     // TODO: result should be how many stickers were added/removed/updated
 
-    let creator_id = decode_sticker_set_id(set.__custom__id.clone())?.owner_id;
+    // let creator_id = decode_sticker_set_id(set.__custom__id.clone())?.owner_id;
 
+    // database
+    //     .upsert_sticker_set_with_title_and_creator(&set.name, &set.title, creator_id, user_id.map(|id| id.0 as i64))
+    //     .await?;
     database
-        .upsert_sticker_set_with_title_and_creator(&set.name, &set.title, creator_id, user_id.map(|id| id.0 as i64))
+        .upsert_sticker_set_with_title(&set.name, &set.title, user_id.map(|id| id.0 as i64))
         .await?;
     let saved_stickers = database.get_all_stickers_in_set(&set.name).await?;
 

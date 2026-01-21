@@ -269,10 +269,8 @@ async fn refetch_stickers(
     let stats = database.get_stats().await?;
     let percentage_tagged = stats.tagged_stickers as f32 / stats.stickers as f32 * 100.0;
     simple_bot_api::set_my_short_description(
-        &config.telegram_bot_api_url,
         &config.telegram_bot_token, &format!("I organize {} furry sticker sets 💚 {} taggings 💚 {} stickers ({:.1}% tagged) 💚  uwu", stats.sets, stats.taggings, stats.stickers, percentage_tagged)).await?;
     simple_bot_api::set_my_description(
-        &config.telegram_bot_api_url,
         &config.telegram_bot_token, &format!("Hi, I am {} and I organize furry sticker sets!
 
 To use me, type @{} followed some tags in any chat to find one of the {} already tagged stickers. 

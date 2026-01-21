@@ -14,6 +14,8 @@ use crate::sticker::{
 };
 use crate::text::{Markdown, Text};
 use crate::util::{create_sticker_set_id, create_tag_id, format_relative_time, Emoji, Required};
+use crate::web::server::StickerService;
+use chrono::DateTime;
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use rand::Rng;
@@ -320,7 +322,9 @@ pub async fn query_stickers(
             .collect(); // TODO: this should probably be done during parsing
         let (tags, query_blacklist) = (
             treat_missing_tags_as_errors(tag_manager.closest_matching_tags(&tags).await)?,
-            treat_missing_tags_as_errors(tag_manager.closest_matching_tags(&query_blacklist).await)?,
+            treat_missing_tags_as_errors(
+                tag_manager.closest_matching_tags(&query_blacklist).await,
+            )?,
         );
 
         let tags_empty = tags.is_empty();
@@ -1083,7 +1087,10 @@ pub async fn handle_tag_creator(
         format!("/settag {} {tag_id}", kind.to_u8().unwrap_or_default()),
     )));
 
-    let most_similar_tag = request_context.tag_manager.closest_matching_tag(&tag_id).await;
+    let most_similar_tag = request_context
+        .tag_manager
+        .closest_matching_tag(&tag_id)
+        .await;
     let existing_tag = request_context.database.get_tag_by_id(&tag_id).await?;
     if let Some(tag) = existing_tag {
         return Err(
@@ -1177,7 +1184,10 @@ async fn handle_user_sets(
     let mut articles = vec![];
     for set in sets {
         if !request_context.importer.is_busy() {
-            request_context.importer.queue_sticker_set_import(&set.id, false, Some(request_context.user_id())).await;
+            request_context
+                .importer
+                .queue_sticker_set_import(&set.id, false, Some(request_context.user_id()))
+                .await;
         }
         // TODO: use futuresunordered
         let url = format!(
@@ -1273,28 +1283,22 @@ async fn handle_stickers_by_date(
         .get_sticker_set_by_sticker_id(&sticker_id)
         .await?
         .required()?;
-    let stickers = request_context
-        .database
-        .get_all_stickers_in_set(&set.id)
-        .await?;
 
-    let r = stickers
+    let sticker_service = StickerService::new(request_context.database.clone());
+    let groups = sticker_service.get_sticker_set_timeline(&set.id).await?;
+
+    let r = groups
         .into_iter()
-        .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
-        .rev()
-        .chunk_by(|s| format_relative_time(s.created_at))
-        .into_iter()
-        .flat_map(|(key, chunk)| {
-            // TODO: this looks weird in telegram
+        .flat_map(|(header, stickers)| {
             let mut res = vec![InlineQueryResultArticle::new(
-                InlineQueryResultId::Other(key.clone()).to_string(),
-                format!("{}", &key),
+                InlineQueryResultId::Other(header.clone()).to_string(),
+                format!("{}", &header),
                 InputMessageContent::Text(InputMessageContentText::new(Markdown::escaped(
-                    format!("{}", key),
+                    format!("{}", header),
                 ))),
             )
             .into()];
-            for sticker in chunk {
+            for sticker in stickers {
                 res.push(
                     InlineQueryResultCachedSticker::new(
                         InlineQueryResultId::Sticker(sticker.id).to_string(),

@@ -50,6 +50,8 @@ body {
 
 .set-name * {
     margin: 0;
+    text-overflow: ellipsis;
+    overflow: hidden;
 }
 
 a {
@@ -149,4 +151,75 @@ input:focus {
     display: inline-flex;
     flex-direction: column;
     align-items: center;
+}
+
+.timeline {
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
+.timeline-section {}
+
+.timeline-section-header {
+    display: flex;
+    align-items: stretch;
+}
+
+.timeline-section-body {
+    display: flex;
+}
+
+.timeline-dot {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    border-radius: 100%;
+    background-color: var(--foreground);
+    margin: 0 8px;
+    align-self: center;
+}
+
+.timeline-bar {
+    width: 2px;
+    min-width: 2px;
+    background-color: var(--foreground);
+    margin: -20px 11px;
+}
+
+.timeline-content {
+    flex-grow: 1;
+}
+
+.infinite-scroll-trigger {
+    width: 1px;
+    height: 0px;
+    display: inline;
+}
+
+.timeline-dot {}
+
+#loading {
+    width: calc(100vw / cos(45deg));
+    height: 14px;
+    background: repeating-linear-gradient(-45deg, var(--foreground) 0 15vw, #0000 0 20vw) left/200% 100%;
+    animation: l3 2s infinite cubic-bezier(0.71, 0.27, 0.36, 0.74);
+
+    position: fixed;
+    left: 0;
+    /* width: 100%; */
+    margin: 0;
+    padding: 0;
+    height: 8px;
+    bottom: -9px;
+    transition: bottom .3s ease-in-out;
+}
+
+.htmx-request #loading {
+    bottom: 0;
+}
+
+@keyframes l3 {
+    100% {
+        background-position: right
+    }
 }

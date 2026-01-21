@@ -6,3 +6,5 @@ mod page;
 
 pub use auth::*;
 pub use setup::*;
+
+pub use page::*; // TODO: dont expose everything

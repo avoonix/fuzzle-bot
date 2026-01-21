@@ -119,15 +119,6 @@ ring = { version = "0.17.7" }
 actix-web-lab = { version = "0.20.2" }
 once_cell = { version = "1.19.0" }
 serde_repr = "0.1.18"
-tracing = { version = "0.1.40" }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
-opentelemetry = { version = "0.21", features = ["trace"] }
-tracing-opentelemetry = { version = "0.22", features = ["metrics"] }
-opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.14", features = ["grpc-tonic", "reqwest-client", "reqwest-rustls", "http-proto", "tls", "metrics"] }
-tracing-core = { version = "0.1.32" }
-tonic = { version = "0.10", features = ["tls", "tls-roots"]}
-tracing-actix-web = { version = "0.7" }
 qdrant-client = { version = "1.9.0" }
 uuid = { version = "1.8.0", features = ["v5"] }
 duplicate_detector = { path = "../duplicate_detector" }
@@ -141,6 +132,30 @@ rust-embed = "8.4.0"
 mime_guess = "2.0.4"
 maud = { version = "0.26.0", features = ["actix-web"] }
 flume = "0.11.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
+tonic = { version = "0.10", features = ["tls", "tls-roots"]}
+tracing-actix-web = { version = "0.7" }
+opentelemetry = "0.31"
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-proto", "reqwest-client"] }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.31"
+pprof = { version = "0.15", features = ["prost-codec"] }
+tower-http = { version = "0.5", features = ["trace"] }
+tracing = "0.1"
+tracing-opentelemetry = "0.32.1"
+opentelemetry-appender-tracing = "0.31.1"
+tokio-metrics = { version = "0.4.7", features = ["metrics-rs-integration"] }
+metrics = "0.24.3"
+sysinfo = "0.37.2"
+metrics-util = "0.20.1"
+scc = "3.4.10"
+portable-atomic = { version = "1.13.0", features = ["float"] }
+pyroscope = "0.5.8"
+pyroscope_pprofrs = "0.2.10"
+
+
+
+
 
 [build-dependencies]
 tonic-build = "0.11.0"

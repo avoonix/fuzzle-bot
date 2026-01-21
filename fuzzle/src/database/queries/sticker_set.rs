@@ -1,14 +1,7 @@
 use base64::{engine::general_purpose, Engine};
 use chrono::NaiveDateTime;
 use diesel::{
-    delete,
-    dsl::{count_star, now, sql},
-    insert_into,
-    prelude::*,
-    sql_query,
-    sql_types::BigInt,
-    update,
-    upsert::excluded,
+    debug_query, delete, dsl::{count_star, now, sql}, insert_into, prelude::*, query_builder::{BoxedSqlQuery, SqlQuery}, sql_query, sql_types::BigInt, sqlite::Sqlite, update, upsert::excluded
 };
 use itertools::Itertools;
 use tracing::warn;
@@ -36,11 +29,11 @@ define_sql_function! {
 
 impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn create_sticker_set_with_creator(
+    pub async fn upsert_sticker_set_with_title(
         &self,
         set_id: &str,
         title: &str,
-        created_by_user_id: i64,
+        added_by_user_id: Option<i64>, // only set if the set is new, not updated
     ) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
         let title = title.to_string();
@@ -52,8 +45,12 @@ impl Database {
                         .values((
                             sticker_set::id.eq(set_id),
                             sticker_set::title.eq(title),
-                            sticker_set::created_by_user_id.eq(created_by_user_id),
-                            sticker_set::added_by_user_id.eq(created_by_user_id),
+                            sticker_set::added_by_user_id.eq(added_by_user_id),
+                        ))
+                        .on_conflict(sticker_set::id)
+                        .do_update()
+                        .set((
+                            sticker_set::title.eq(excluded(sticker_set::title)),
                         ))
                         .execute(conn)?;
                     Ok(())
@@ -223,18 +220,25 @@ impl Database {
     pub async fn get_n_latest_sets(&self, n: i64) -> Result<Vec<StickerSet>, DatabaseError> {
         self.pool
             .exec(move |conn| {
-                Ok(sticker_set::table
+                let q = sticker_set::table
                     .select(StickerSet::as_select())
-                    .filter(diesel::dsl::exists(sticker::table.filter(sticker::sticker_set_id.eq(sticker_set::id))))
+                    .filter(diesel::dsl::exists(
+                        sticker::table.filter(sticker::sticker_set_id.eq(sticker_set::id)),
+                    ))
                     .order_by(sticker_set::created_at.desc())
-                    .limit(n)
-                    .load(conn)?)
+                    .limit(n);
+                dbg!(debug_query::<Sqlite, _>(&q).to_string());
+                Ok(q.load(conn)?)
             })
             .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_latest_stickers(&self, limit: i64, before: NaiveDateTime) -> Result<Vec<Sticker>, DatabaseError> {
+    pub async fn get_latest_stickers(
+        &self,
+        limit: i64,
+        before: NaiveDateTime,
+    ) -> Result<Vec<Sticker>, DatabaseError> {
         self.pool
             .exec(move |conn| {
                 Ok(sticker::table
@@ -257,7 +261,9 @@ impl Database {
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .select(StickerSet::as_select())
-                    .filter(diesel::dsl::exists(sticker::table.filter(sticker::sticker_set_id.eq(sticker_set::id))))
+                    .filter(diesel::dsl::exists(
+                        sticker::table.filter(sticker::sticker_set_id.eq(sticker_set::id)),
+                    ))
                     .filter(sticker_set::created_at.lt(before))
                     .order_by(sticker_set::created_at.desc())
                     .limit(limit)
