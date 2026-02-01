@@ -863,7 +863,7 @@ impl Keyboard {
 
     #[must_use]
     fn owner(
-        user_id: i64,
+        sticker_pack_owner_user_id: Option<i64>,
         set_count: i64,
         owner_username: Option<String>,
         owner_tags: Vec<Tag>,
@@ -900,40 +900,62 @@ impl Keyboard {
             })
             .collect_vec();
 
-        let open_owner_button = if let Some(owner_username) = owner_username {
-            vec![
-                InlineKeyboardButton::url(
-                    format!("@{owner_username}"),
-                    Url::parse(format!("https://t.me/{}", owner_username).as_str())
+        let open_owner_button = match (owner_username, sticker_pack_owner_user_id) {
+            (Some(owner_username), Some(sticker_pack_owner_user_id)) => {
+                vec![
+                    InlineKeyboardButton::url(
+                        format!("@{owner_username}"),
+                        Url::parse(format!("https://t.me/{}", owner_username).as_str())
+                            .expect("url to be valid"),
+                    ),
+                    InlineKeyboardButton::callback(
+                        "🏷️ Create Tag",
+                        CallbackData::CreateTagForUser {
+                            user_id: sticker_pack_owner_user_id,
+                        },
+                    ),
+                ]
+            }
+            (None, Some(sticker_pack_owner_user_id)) => {
+                vec![
+                    InlineKeyboardButton::url(
+                        format!("Show user if known (Android)"),
+                        Url::parse(
+                            format!("tg://openmessage?user_id={}", sticker_pack_owner_user_id)
+                                .as_str(),
+                        )
                         .expect("url to be valid"),
-                ),
-                InlineKeyboardButton::callback(
-                    "🏷️ Create Tag",
-                    CallbackData::CreateTagForUser { user_id },
-                ),
-            ]
-        } else {
-            vec![
-                InlineKeyboardButton::url(
-                    format!("Show user if known (Android)"),
-                    Url::parse(format!("tg://openmessage?user_id={}", user_id).as_str())
+                    ),
+                    InlineKeyboardButton::url(
+                        format!("Show user if known (iOS)"),
+                        Url::parse(
+                            format!("https://t.me/@id{}", sticker_pack_owner_user_id).as_str(),
+                        )
                         .expect("url to be valid"),
-                ),
-                InlineKeyboardButton::url(
-                    format!("Show user if known (iOS)"),
-                    Url::parse(format!("https://t.me/@id{}", user_id).as_str())
-                        .expect("url to be valid"),
-                ),
-            ]
+                    ),
+                ]
+            }
+            _ => {
+                vec![InlineKeyboardButton::callback(
+                    "Pack Owner Unknown",
+                    CallbackData::NoAction,
+                )]
+            }
         };
         vec![
-            vec![
-                vec![InlineKeyboardButton::switch_inline_query_current_chat(
-                    format!("{} sets owned by this user", set_count), // TODO: some users are known - display those names?
-                    InlineQueryData::SetsByUserId { user_id: user_id },
-                )],
-                open_owner_button,
-            ],
+            if let Some(sticker_pack_owner_user_id) = sticker_pack_owner_user_id {
+                vec![
+                    vec![InlineKeyboardButton::switch_inline_query_current_chat(
+                        format!("{} sets owned by this user", set_count), // TODO: some users are known - display those names?
+                        InlineQueryData::SetsByUserId {
+                            user_id: sticker_pack_owner_user_id,
+                        },
+                    )],
+                    open_owner_button,
+                ]
+            } else {
+                vec![open_owner_button]
+            },
             linked_tags,
         ]
         .concat()
@@ -942,7 +964,7 @@ impl Keyboard {
     #[must_use]
     pub fn owner_page(
         sticker_id: &str,
-        user_id: i64,
+        sticker_pack_owner_user_id: Option<i64>,
         set_count: i64,
         owner_username: Option<String>,
         owner_tags: Vec<Tag>,
@@ -952,7 +974,7 @@ impl Keyboard {
             vec![
                 vec![sticker_tabs(StickerTab::Owner, sticker_id)],
                 Self::owner(
-                    user_id,
+                    sticker_pack_owner_user_id,
                     set_count,
                     owner_username,
                     owner_tags,
@@ -965,14 +987,14 @@ impl Keyboard {
 
     #[must_use]
     pub fn owner_standalone(
-        user_id: i64,
+        sticker_pack_owner_user_id: Option<i64>,
         set_count: i64,
         owner_username: Option<String>,
         owner_tags: Vec<Tag>,
         channel_usernames: Vec<(i64, String)>,
     ) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(Self::owner(
-            user_id,
+            sticker_pack_owner_user_id,
             set_count,
             owner_username,
             owner_tags,
@@ -1247,10 +1269,7 @@ fn tag_to_button(
     } else {
         tag.to_owned()
     };
-    InlineKeyboardButton::callback(
-        text,
-        callback_data.to_string(),
-    )
+    InlineKeyboardButton::callback(text, callback_data.to_string())
 }
 
 fn favorite_button(is_favorite: bool, sticker_id: &str) -> InlineKeyboardButton {

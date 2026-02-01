@@ -80,7 +80,9 @@ async fn handle_sticker_tag_action(
 
     match operation {
         Some(TagOperation::Tag(tag)) => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             if let Some(implications) = request_context.tag_manager.get_implications(&tag) {
                 let tags = implications
@@ -103,7 +105,9 @@ async fn handle_sticker_tag_action(
             }
         }
         Some(TagOperation::Untag(tag)) => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let tags = tags_that_should_be_removed(
                 tag.clone(),
@@ -210,8 +214,13 @@ pub async fn show_error(
     Ok(())
 }
 
-async fn handle_readonly(request_context: &RequestContext, q: &CallbackQuery) -> Result<bool, BotError> {
-    if !request_context.config.is_readonly { return Ok(false) }
+async fn handle_readonly(
+    request_context: &RequestContext,
+    q: &CallbackQuery,
+) -> Result<bool, BotError> {
+    if !request_context.config.is_readonly {
+        return Ok(false);
+    }
     if let Some(chat_id) = q.chat_id() {
         send_readonly_message(chat_id, request_context.clone()).await?;
     }
@@ -253,7 +262,9 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::CreateTag => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
@@ -288,7 +299,9 @@ pub async fn callback_handler(
             Ok(())
         }
         CallbackData::CreateTagForUser { user_id } => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let username = request_context
                 .database
@@ -308,7 +321,9 @@ pub async fn callback_handler(
             Ok(())
         }
         CallbackData::RemoveAlias(alias) => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
@@ -338,7 +353,9 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::ToggleExampleSticker { sticker_id } => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
@@ -377,7 +394,9 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::ApplyTags { sticker_id } => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let continuous_tag = match request_context.dialog_state() {
                 DialogState::ContinuousTag(ct) => ct,
@@ -477,21 +496,23 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::SetLock { lock, sticker_id } => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             change_sticker_locked_status(lock, &sticker_id, q, request_context).await
         }
         CallbackData::Sticker {
             sticker_id,
             operation,
-        } => {
-            handle_sticker_tag_action(operation, sticker_id, q, request_context).await
-        },
+        } => handle_sticker_tag_action(operation, sticker_id, q, request_context).await,
         CallbackData::RemoveBlacklistedTag(tag) => {
             remove_blacklist_tag(q, tag, request_context).await
         }
         CallbackData::RemoveContinuousTag(tag) => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             remove_continuous_tag(q, tag, request_context).await
         }
@@ -501,10 +522,9 @@ pub async fn callback_handler(
             moderation_task_id,
         } => {
             if !request_context.is_admin() {
-                return Err(UserError::NoPermissionForAction(
-                    "set banned status".to_string(),
-                )
-                .into());
+                return Err(
+                    UserError::NoPermissionForAction("set banned status".to_string()).into(),
+                );
             }
             let task = request_context
                 .database
@@ -722,30 +742,46 @@ pub async fn callback_handler(
                 .get_sticker_set_by_sticker_id(&sticker_id)
                 .await?
                 .required()?;
-            let owner = set.created_by_user_id.required()?;
-            let set_count = request_context
-                .database
-                .get_owned_sticker_set_count(owner)
-                .await?;
-            let owner_username = request_context
-                .database
-                .get_username(crate::database::UsernameKind::User, owner)
-                .await?;
+            let owner = set.created_by_user_id;
+            let set_count = if let Some(owner) = owner {
+                request_context
+                    .database
+                    .get_owned_sticker_set_count(owner)
+                    .await?
+            } else {
+                0
+            };
+            let owner_username = if let Some(owner) = owner {
+                request_context
+                    .database
+                    .get_username(crate::database::UsernameKind::User, owner)
+                    .await?
+            } else {
+                None
+            };
 
-            let owner_tags = request_context
-                .database
-                .get_all_tags_by_linked_user_id(owner)
-                .await?;
-            let channel_usernames = request_context
-                .database
-                .get_usernames(
-                    crate::database::UsernameKind::Channel,
-                    owner_tags
-                        .iter()
-                        .filter_map(|tag| tag.linked_channel_id)
-                        .collect_vec(),
-                )
-                .await?;
+            let owner_tags = if let Some(owner) = owner {
+                request_context
+                    .database
+                    .get_all_tags_by_linked_user_id(owner)
+                    .await?
+            } else {
+                vec![]
+            };
+            let channel_usernames = if let Some(owner) = owner {
+                request_context
+                    .database
+                    .get_usernames(
+                        crate::database::UsernameKind::Channel,
+                        owner_tags
+                            .iter()
+                            .filter_map(|tag| tag.linked_channel_id)
+                            .collect_vec(),
+                    )
+                    .await?
+            } else {
+                vec![]
+            };
 
             answer_callback_query(
                 request_context.clone(),
@@ -895,7 +931,9 @@ pub async fn callback_handler(
             merge,
         } => handle_sticker_merge(sticker_id_a, sticker_id_b, merge, q, request_context).await,
         CallbackData::RemoveLinkedUser => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
@@ -923,7 +961,9 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::LinkSelf => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,
@@ -954,7 +994,9 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::RemoveLinkedChannel => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             // TODO: method tag_creator_state() that returns Result<TagCreator, UserError>?
             let mut state = match request_context.dialog_state() {
@@ -983,7 +1025,9 @@ pub async fn callback_handler(
             .await
         }
         CallbackData::SetCategory(category) => {
-            if handle_readonly(&request_context, &q).await? { return Ok(()) }
+            if handle_readonly(&request_context, &q).await? {
+                return Ok(());
+            }
 
             let mut state = match request_context.dialog_state() {
                 DialogState::TagCreator(state) => state,

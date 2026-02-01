@@ -240,7 +240,7 @@ impl HiddenCommand {
                     )
                     .await?;
                 let keyboard = Keyboard::owner_standalone(
-                    user_id,
+                    Some(user_id),
                     set_count,
                     owner_username,
                     owner_tags,
