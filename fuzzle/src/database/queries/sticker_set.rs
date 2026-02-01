@@ -60,15 +60,13 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn upsert_sticker_set_with_title_and_creator(
+    pub async fn upsert_sticker_set_with_creator(
         &self,
         set_id: &str,
-        title: &str,
         created_by_user_id: i64,
-        added_by_user_id: Option<i64>, // only set if the set is new, not updated
+        added_by_user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
-        let title = title.to_string();
         self.pool
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
@@ -76,14 +74,12 @@ impl Database {
                     insert_into(sticker_set::table)
                         .values((
                             sticker_set::id.eq(set_id),
-                            sticker_set::title.eq(title),
                             sticker_set::created_by_user_id.eq(created_by_user_id),
                             sticker_set::added_by_user_id.eq(added_by_user_id),
                         ))
                         .on_conflict(sticker_set::id)
                         .do_update()
                         .set((
-                            sticker_set::title.eq(excluded(sticker_set::title)),
                             sticker_set::created_by_user_id.eq(created_by_user_id),
                         ))
                         .execute(conn)?;

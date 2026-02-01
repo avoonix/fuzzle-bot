@@ -35,8 +35,7 @@ pub struct DecodedStickerId {
 
 #[must_use]
 // https://github.com/LyoSU/fStikBot/blob/fca2d4b4c3433332f0f4d7a994b0f2d84d69bc0f/update-packs.js#L15
-pub fn decode_sticker_set_id(set_id: String) -> Result<DecodedStickerId, anyhow::Error> {
-    let set_id: i64 = set_id.parse()?;
+pub fn decode_sticker_set_id(set_id: i64) -> Result<DecodedStickerId, anyhow::Error> {
     let upper ;
     let lower ;
 

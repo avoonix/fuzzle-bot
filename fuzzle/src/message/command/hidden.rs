@@ -398,9 +398,16 @@ impl HiddenCommand {
 
                 request_context
                     .database
-                    .upsert_sticker_set_with_title_and_creator(
+                    .upsert_sticker_set_with_title(
                         &set_id,
                         &set_title,
+                        Some(request_context.user.id),
+                    )
+                    .await?;
+                request_context
+                    .database
+                    .upsert_sticker_set_with_creator(
+                        &set_id,
                         request_context.user.id,
                         Some(request_context.user.id),
                     )

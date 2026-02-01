@@ -13,6 +13,7 @@ mod sticker;
 mod web;
 mod inference;
 mod fmetrics;
+mod services;
 
 pub use bot::{Config, UpdateListener};
 pub use fmetrics::setup_observability;

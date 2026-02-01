@@ -26,7 +26,7 @@ use crate::fmetrics::system_metrics::start_system_metrics_task;
 
 use self::{metrics_explorer_otel::OpenTelemetryRecorder};
 
-trait TracedRequest {
+pub trait TracedRequest {
     async fn send_traced(self, span_name: &str) -> reqwest::Result<reqwest::Response>;
 }
 

@@ -5,11 +5,7 @@ use itertools::Itertools;
 use teloxide::types::UserId;
 
 use crate::{
-    bot::{report_periodic_task_error, Bot, InternalError},
-    database::Database,
-    qdrant::VectorDatabase,
-    sticker::import_all_stickers_from_set,
-    Config,
+    Config, bot::{Bot, InternalError, report_periodic_task_error}, database::Database, qdrant::VectorDatabase, services::ExternalTelegramService, sticker::import_all_stickers_from_set
 };
 
 #[derive(Clone)]
@@ -19,6 +15,7 @@ pub struct StickerImportService {
     bot: Bot,
     vector_db: VectorDatabase,
     tx: Sender<StickerSetFetchRequest>,
+    tg_service: ExternalTelegramService,
 }
 
 struct StickerSetFetchRequest {
@@ -28,12 +25,13 @@ struct StickerSetFetchRequest {
 }
 
 impl StickerImportService {
-    #[tracing::instrument(skip(database, config))]
+    #[tracing::instrument(skip(database, config, tg_service, bot, vector_db))]
     pub async fn new(
         database: Database,
         config: Arc<Config>,
         bot: Bot,
         vector_db: VectorDatabase,
+        tg_service: ExternalTelegramService,
     ) -> Result<Self, InternalError> {
         let (tx, rx) = flume::unbounded();
         let service = Self {
@@ -42,6 +40,7 @@ impl StickerImportService {
             bot,
             vector_db,
             tx,
+            tg_service,
         };
         {
             let service = service.clone();
@@ -60,6 +59,7 @@ impl StickerImportService {
                         service.config.clone(),
                         service.vector_db.clone(),
                         user_id,
+                        service.tg_service.clone(),
                     )
                     .await;
                     report_periodic_task_error(result);

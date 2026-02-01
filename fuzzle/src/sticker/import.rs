@@ -11,6 +11,7 @@ use crate::{
     bot::{Bot, BotError, InternalError, RequestContext, UserError},
     database::Database,
     qdrant::VectorDatabase,
+    services::{ExternalTelegramService, StickerPackResponse},
     util::{decode_sticker_set_id, is_wrong_file_id_error, Emoji},
     Config,
 };
@@ -21,7 +22,7 @@ use super::{
     hash::calculate_sticker_file_hash,
 };
 
-#[tracing::instrument(skip(database, bot, config, vector_db), err(Debug))]
+#[tracing::instrument(skip(database, bot, config, vector_db, tg_service), err(Debug))]
 pub async fn import_all_stickers_from_set(
     set_id: &str,
     ignore_last_fetched: bool,
@@ -30,6 +31,7 @@ pub async fn import_all_stickers_from_set(
     config: Arc<Config>,
     vector_db: VectorDatabase,
     user_id: Option<UserId>,
+    tg_service: ExternalTelegramService,
 ) -> Result<(), InternalError> {
     if !ignore_last_fetched {
         let fetched_recently = database
@@ -70,7 +72,7 @@ pub async fn import_all_stickers_from_set(
         return Ok(()); // ignore custom emojis as the bot is unable to send those
     }
 
-    fetch_sticker_set_and_save_to_db(set, bot, database, config, vector_db, user_id).await?;
+    fetch_sticker_set_and_save_to_db(set, bot, database, config, vector_db, user_id, tg_service).await?;
 
     Ok(())
 }
@@ -90,7 +92,10 @@ pub async fn import_individual_sticker_and_queue_set(
     sticker: teloxide::types::Sticker,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
-    let set_id = sticker.set_name.clone().ok_or_else(|| UserError::StickerNotPartOfSet)?;
+    let set_id = sticker
+        .set_name
+        .clone()
+        .ok_or_else(|| UserError::StickerNotPartOfSet)?;
 
     if !sticker.is_regular() {
         return Err(UserError::UnsupportedStickerType.into());
@@ -103,7 +108,10 @@ pub async fn import_individual_sticker_and_queue_set(
         .is_some();
     if sticker_in_database {
         if !request_context.importer.is_busy() {
-            request_context.importer.queue_sticker_set_import(&set_id, false, Some(request_context.user_id())).await;
+            request_context
+                .importer
+                .queue_sticker_set_import(&set_id, false, Some(request_context.user_id()))
+                .await;
         }
         return Ok(());
     }
@@ -115,7 +123,9 @@ pub async fn import_individual_sticker_and_queue_set(
         .await?;
     info!("sticker not in database");
 
-    if request_context.config.is_readonly { return Ok(()); }
+    if request_context.config.is_readonly {
+        return Ok(());
+    }
 
     fetch_sticker_and_save_to_db(
         sticker.clone(),
@@ -125,7 +135,10 @@ pub async fn import_individual_sticker_and_queue_set(
     )
     .await?;
 
-    request_context.importer.queue_sticker_set_import(&set_id, true, Some(request_context.user_id())).await;
+    request_context
+        .importer
+        .queue_sticker_set_import(&set_id, true, Some(request_context.user_id()))
+        .await;
 
     request_context
         .analyze_sticker(sticker.file.unique_id.clone())
@@ -177,7 +190,7 @@ async fn fetch_sticker_and_save_to_db(
     Ok(())
 }
 
-#[tracing::instrument(skip(database, bot, set, config, vector_db), fields(set.name = set.name))]
+#[tracing::instrument(skip(database, bot, set, config, vector_db, tg_service), fields(set.name = set.name))]
 async fn fetch_sticker_set_and_save_to_db(
     set: teloxide::types::StickerSet,
     bot: Bot,
@@ -185,17 +198,34 @@ async fn fetch_sticker_set_and_save_to_db(
     config: Arc<Config>,
     vector_db: VectorDatabase,
     user_id: Option<UserId>,
+    tg_service: ExternalTelegramService,
 ) -> Result<(), InternalError> {
     // TODO: result should be how many stickers were added/removed/updated
 
-    // let creator_id = decode_sticker_set_id(set.__custom__id.clone())?.owner_id;
-
-    // database
-    //     .upsert_sticker_set_with_title_and_creator(&set.name, &set.title, creator_id, user_id.map(|id| id.0 as i64))
-    //     .await?;
     database
         .upsert_sticker_set_with_title(&set.name, &set.title, user_id.map(|id| id.0 as i64))
         .await?;
+
+    if database
+        .get_sticker_set_by_id(&set.name)
+        .await?
+        .is_some_and(|set| set.created_by_user_id.is_none())
+    {
+        if let Some(StickerPackResponse {
+            telegram_pack_id, ..
+        }) = tg_service.get_sticker_pack_id(set.name.clone()).await
+        {
+            let creator_id = decode_sticker_set_id(telegram_pack_id)?.owner_id;
+            database
+                .upsert_sticker_set_with_creator(
+                    &set.name,
+                    creator_id,
+                    user_id.map(|id| id.0 as i64),
+                )
+                .await?;
+        }
+    }
+
     let saved_stickers = database.get_all_stickers_in_set(&set.name).await?;
 
     let re = Regex::new(r"(\W|^)@([_a-zA-Z0-9]+)\b").expect("static regex to compile");
@@ -240,7 +270,9 @@ async fn fetch_sticker_set_and_save_to_db(
     });
     // TODO: find out which stickers are missing embeddings; find out which stickers need to be updated (is_animated)?
 
-    if config.is_readonly { return Ok(()); }
+    if config.is_readonly {
+        return Ok(());
+    }
 
     // todo: tag animated?
     for sticker in stickers_not_in_database_yet {

@@ -1,6 +1,7 @@
 use crate::bot::{InternalError, UserError};
 
 pub trait Required<T> {
+    #[deprecated = "use proper error handling instead"]
     fn required(self) -> Result<T, InternalError>;
 }
 

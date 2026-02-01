@@ -6,6 +6,7 @@ use crate::message::{list_visible_admin_commands, list_visible_user_commands, me
 use crate::qdrant::VectorDatabase;
 
 use crate::background_tasks::{start_periodic_tasks, StickerImportService, TagManagerService, TfIdfService};
+use crate::services::Services;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,9 +47,10 @@ impl UpdateListener {
         let database = Database::new(config.db()).await?;
         let vector_db = VectorDatabase::new(&config.vector_db_url).await?;
         let config = Arc::new(config);
+        let services = Services::new(config.clone());
         let (tag_manager, importer) = tokio::try_join!(
             TagManagerService::new(database.clone(), config.clone()),
-            StickerImportService::new(database.clone(), config.clone(), bot.clone(), vector_db.clone()),
+            StickerImportService::new(database.clone(), config.clone(), bot.clone(), vector_db.clone(), services.telegram.clone()),
         )?;
 
         let tfidf_service = TfIdfService::new(database.clone(), tag_manager.clone()).await?;

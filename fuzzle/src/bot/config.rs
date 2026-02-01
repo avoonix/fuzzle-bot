@@ -17,6 +17,7 @@ pub struct Config {
 
     pub vector_db_url: String,
     pub inference_url: String,
+    pub external_telegram_service_base_url: String,
 
     pub domain_name: String,
     pub http_listen_address: String,
