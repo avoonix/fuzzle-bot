@@ -10,3 +10,4 @@ container-data
 .git
 rust-toolchain.toml
 **/venv
+admin-ui
