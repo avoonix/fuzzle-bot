@@ -18,3 +18,4 @@ flake.lock
 *.env
 __pycache__/**
 *.pyc
+**/.diesel_lock

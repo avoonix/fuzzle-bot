@@ -6,21 +6,23 @@ use teloxide::types::UserId;
 use tokio::time::sleep;
 use tracing::Instrument;
 
-use crate::bot::report_periodic_task_error;
 use crate::bot::Bot;
+use crate::bot::report_periodic_task_error;
 
+use crate::Config;
 use crate::bot::InternalError;
 use crate::database::Database;
 use crate::inference::text_to_clip_embedding;
 use crate::message::send_database_export_to_chat;
 use crate::qdrant::VectorDatabase;
+use crate::services::ExternalTelegramService;
+use crate::services::ImportService;
+use crate::services::Services;
 use crate::simple_bot_api;
-use crate::Config;
 
+use super::TagManagerService;
 use super::create_and_send_daily_moderation_tasks;
 use super::send_daily_report;
-use super::StickerImportService;
-use super::TagManagerService;
 
 pub fn start_periodic_tasks(
     bot: Bot,
@@ -28,14 +30,14 @@ pub fn start_periodic_tasks(
     config: Arc<Config>,
     tag_manager: TagManagerService,
     vector_db: VectorDatabase,
-    importer: StickerImportService,
+    services: Services,
 ) {
     let bot_clone = bot.clone();
     let database_clone = database;
     let admin_id = config.get_admin_user_id();
     let config_clone = config;
     let vector_db_clone = vector_db.clone();
-    let importer_clone = importer.clone();
+    let services_clone = services.clone();
 
     // TODO: make intervals and counts configurable
 
@@ -43,7 +45,7 @@ pub fn start_periodic_tasks(
     let database = database_clone.clone();
     let paths = config_clone.clone();
     let vector_db = vector_db_clone.clone();
-    let importer = importer_clone.clone();
+    let services = services_clone.clone();
     tokio::spawn(async move {
         loop {
             sleep(Duration::minutes(15).to_std().expect("no overflow")).await;
@@ -52,7 +54,7 @@ pub fn start_periodic_tasks(
             let database = database.clone();
             let paths = paths.clone();
             let vector_db = vector_db.clone();
-            let importer = importer.clone();
+            let services = services.clone();
             async move {
                 // TODO: make this configurable
                 let result = refetch_stickers(
@@ -61,10 +63,35 @@ pub fn start_periodic_tasks(
                     bot.clone(),
                     paths.clone(),
                     vector_db.clone(),
-                    importer.clone(),
+                    services.import.clone(),
                 )
                 .await;
                 report_periodic_task_error(result);
+            }
+            .instrument(span)
+            .await;
+            // span.exit();
+        }
+    });
+
+    let services = services_clone.clone();
+    let database = database_clone.clone();
+    tokio::spawn(async move {
+        let mut offset = 0;
+        loop {
+            sleep(Duration::minutes(5).to_std().expect("no overflow")).await;
+            let span = tracing::info_span!("periodic_discover_stickers");
+            let services = services.clone();
+            let database = database.clone();
+            offset = async move {
+                let result = discover_stickers(offset, services.telegram, database, services.import).await;
+                match result {
+                    Ok(new_offset) => new_offset,
+                    Err(err) => {
+                        tracing::error!("periodic task error: {err:?}");
+                        offset
+                    }
+                }
             }
             .instrument(span)
             .await;
@@ -169,6 +196,40 @@ pub fn start_periodic_tasks(
     });
 }
 
+#[tracing::instrument(skip(tg_service, importer, database))]
+async fn discover_stickers(
+    offset: usize,
+    tg_service: ExternalTelegramService,
+    database: Database,
+    importer: ImportService,
+) -> Result<usize, InternalError> {
+    let limit = 10; // TODO: with this limit, discovery will take days
+    if importer.is_busy() {
+        tracing::info!("importer is busy, skipping import");
+        return Ok(offset);
+    }
+    let Some(result) = tg_service
+        .list_discovered_sticker_packs(offset, limit)
+        .await
+    else {
+        return Ok(offset);
+    };
+    for pack in &result.packs {
+        let existing = database.get_sticker_set_by_id(&pack.short_name).await.unwrap();
+        if existing.is_none() {
+            importer
+                .queue_sticker_set_import(&pack.short_name, false, None, pack.telegram_pack_id)
+                .await;
+        }
+    }
+
+    if result.packs.len() == limit {
+        Ok(offset + limit)
+    } else {
+        Ok(offset)
+    }
+}
+
 #[tracing::instrument(skip(database))]
 async fn clean_up_sticker_files(
     database: Database,
@@ -252,7 +313,7 @@ async fn refetch_stickers(
     bot: Bot,
     config: Arc<Config>,
     vector_db: VectorDatabase,
-    importer: StickerImportService,
+    importer: ImportService,
 ) -> Result<(), InternalError> {
     if config.is_readonly {
         return Ok(());
@@ -264,7 +325,9 @@ async fn refetch_stickers(
         return Ok(());
     }
     for (i, set_name) in set_names.into_iter().enumerate() {
-        importer.queue_sticker_set_import(&set_name, false, None).await;
+        importer
+            .queue_sticker_set_import(&set_name, false, None, None)
+            .await;
     }
     let stats = database.get_stats().await?;
     let percentage_tagged = stats.tagged_stickers as f32 / stats.stickers as f32 * 100.0;

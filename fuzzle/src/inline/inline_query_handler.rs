@@ -1,4 +1,4 @@
-use crate::background_tasks::{BackgroundTaskExt, TagManagerService};
+use crate::background_tasks::{TagManagerService};
 use crate::bot::{
     report_bot_error, report_internal_error, report_internal_error_result, BotError, InternalError,
     UserError,
@@ -8,13 +8,13 @@ use crate::database::{self, min_max, DialogState, ReportReason, User};
 use crate::database::{Database, Sticker, StickerSet};
 use crate::inline::{InlineQueryData, SetOperation};
 use crate::message::{Keyboard, StartParameter};
+use crate::services::Services;
 use crate::sticker::{
-    compute_similar, find_with_text_embedding,
+    find_with_text_embedding,
     resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files, Match,
 };
 use crate::text::{Markdown, Text};
 use crate::util::{create_sticker_set_id, create_tag_id, format_relative_time, Emoji, Required};
-use crate::web::server::StickerService;
 use chrono::DateTime;
 use itertools::Itertools;
 use num_traits::ToPrimitive;
@@ -56,9 +56,9 @@ fn create_query_set(
         Text::get_set_article_link(&set.id, &set_title),
     ));
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut article = InlineQueryResultArticle::new(
-        InlineQueryResultId::Other(rng.gen::<u32>().to_string()).to_string(),
+        InlineQueryResultId::Other(rng.random::<u32>().to_string()).to_string(),
         set_title,
         content,
     )
@@ -371,24 +371,18 @@ async fn handle_similar_sticker_query(
 ) -> Result<(), BotError> {
     // TODO: cache?
     // TODO: blacklist?
-    let (result, original_len) = compute_similar(
-        request_context.clone(),
+    let (result, original_len) = request_context.services.similarity.find_similar_stickers(
         sticker_unique_id,
         aspect,
         current_offset.page_size() as u64,
         current_offset.skip() as u64,
     )
     .await?;
-    let sticker_ids = result.into_iter().map(|m| m.sticker_id).collect_vec();
-    let mut stickers = Vec::new();
-    for id in sticker_ids {
-        stickers.push(request_context.database.get_sticker_by_id(&id).await?); // TODO: single query?
-    }
+    let stickers = request_context.services.similarity.matches_to_stickers(result).await?;
 
     let sticker_result = stickers
         .into_iter()
-        .flatten()
-        .map(|sticker| {
+        .map(|(sticker, _)| {
             InlineQueryResultCachedSticker::new(
                 InlineQueryResultId::Sticker(sticker.id).to_string(),
                 sticker.telegram_file_identifier,
@@ -1183,10 +1177,10 @@ async fn handle_user_sets(
 
     let mut articles = vec![];
     for set in sets {
-        if !request_context.importer.is_busy() {
+        if !request_context.services.import.is_busy() {
             request_context
-                .importer
-                .queue_sticker_set_import(&set.id, false, Some(request_context.user_id()))
+                .services.import
+                .queue_sticker_set_import(&set.id, false, Some(request_context.user_id()), None)
                 .await;
         }
         // TODO: use futuresunordered
@@ -1209,9 +1203,9 @@ async fn handle_user_sets(
             },
         )));
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut article = InlineQueryResultArticle::new(
-            InlineQueryResultId::Other(rng.gen::<u32>().to_string()).to_string(),
+            InlineQueryResultId::Other(rng.random::<u32>().to_string()).to_string(),
             set_title,
             content,
         )
@@ -1284,8 +1278,7 @@ async fn handle_stickers_by_date(
         .await?
         .required()?;
 
-    let sticker_service = StickerService::new(request_context.database.clone());
-    let groups = sticker_service.get_sticker_set_timeline(&set.id).await?;
+    let groups = request_context.services.sticker.get_sticker_set_timeline(&set.id).await?;
 
     let r = groups
         .into_iter()

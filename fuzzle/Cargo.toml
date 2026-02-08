@@ -1,7 +1,7 @@
 [package]
 name = "fuzzle-bot"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lints.rust]
 unused = "allow"
@@ -90,74 +90,75 @@ teloxide = { version = "0.12", features = ["macros", "ctrlc_handler", "rustls", 
 
 actix-files = { version = "0.6" }
 actix-web = { version = "4", features = ["macros"] }
-anyhow = { version = "1.0.75" }
-chrono = { version = "0.4.31", features = ["serde"] }
-csv = { version = "1.3.0" }
-flate2 = { version = "1.0.28" }
-reqwest = { version = "0.11.27", default-features = false, features = ["rustls", "blocking", "hyper-rustls", "__rustls", "__tls", "rustls-tls"] }
-serde = { version = "1.0.192", features = ["derive"] }
-tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread", "tracing"] }
-futures = { version = "0.3.29" }
-serde_json = "1.0.108"
-itertools = "0.13.0"
-nom = { version = "7.1.3" }
-image = { version = "0.25.0", features = ["webp", "png", "jpeg", "rayon"], default-features = false }
-palette = { version = "0.7.3" }
+anyhow = { version = "1.0.100" }
+chrono = { version = "0.4.43", features = ["serde"] }
+csv = { version = "1.4.0" }
+flate2 = { version = "1.1.8" }
+reqwest = { version = "0.13.1", default-features = false, features = ["rustls", "blocking", "__rustls", "__tls", "json", "query"] }
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "tracing"] }
+futures = { version = "0.3.31" }
+serde_json = "1.0.149"
+itertools = "0"
+nom = { version = "8.0.0" }
+image = { version = "0.25.9", features = ["webp", "png", "jpeg", "rayon"], default-features = false }
+palette = { version = "0.7.6" }
 blake2 = { version = "0.10.6" }
-url = { version = "2.5.0" }
-base64 = { version = "0.22.0" }
-unicode-segmentation = { version = "1.10.1" }
-rand = { version = "0.8.5" }
-regex = { version = "1.10.2" }
-strsim = { version = "0.11.0" }
-diesel = { version = "2.1.0", default-features = false, features = ["sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
-emojis = { version = "0.6.1" }
-thiserror = { version = "1.0.59" }
-cached = { version = "0.51.3" }
+url = { version = "2.5.8" }
+base64 = { version = "0.22.1" }
+unicode-segmentation = { version = "1.12.0" }
+rand = { version = "0.9.2" }
+regex = { version = "1.12.2" }
+strsim = { version = "0.11.1" }
+diesel = { version = "2.3.6", default-features = false, features = ["sqlite", "chrono", "returning_clauses_for_sqlite_3_35"] }
+emojis = { version = "0.8.0" }
+thiserror = { version = "2.0.18" }
+cached = { version = "0.56.0" }
 hex = { version = "0.4.3" }
-ring = { version = "0.17.7" }
-actix-web-lab = { version = "0.20.2" }
-once_cell = { version = "1.19.0" }
-serde_repr = "0.1.18"
-qdrant-client = { version = "1.9.0" }
-uuid = { version = "1.8.0", features = ["v5"] }
+ring = { version = "0.17.14" }
+actix-web-lab = { version = "0.24.3" }
+once_cell = { version = "1.21.3" }
+serde_repr = "0.1.20"
+qdrant-client = { version = "1.16.0" }
+uuid = { version = "1.20.0", features = ["v5"] }
 duplicate_detector = { path = "../duplicate_detector" }
 tag_search_engine = { path = "../tag_search_engine" }
-prost = "0.12.6"
-config = { version = "0.14.0", default-features = false, features = ["json"] }
+prost = "0.14.3"
+config = { version = "0.15.19", default-features = false, features = ["json"] }
 enum-primitive-derive = "0.3.0"
 num-traits = "0.2.19"
-diesel_migrations = "2.2.0"
-rust-embed = "8.4.0"
-mime_guess = "2.0.4"
-maud = { version = "0.26.0", features = ["actix-web"] }
-flume = "0.11.1"
+diesel_migrations = "2.3.1"
+rust-embed = "8.11.0"
+mime_guess = "2.0.5"
+maud = { version = "0.27.0", features = ["actix-web"] }
+flume = "0.12.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
-tonic = { version = "0.10", features = ["tls", "tls-roots"]}
+tonic = { version = "0.14", features = []}
 tracing-actix-web = { version = "0.7" }
 opentelemetry = "0.31"
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-proto", "reqwest-client"] }
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-semantic-conventions = "0.31"
 pprof = { version = "0.15", features = ["prost-codec"] }
-tower-http = { version = "0.5", features = ["trace"] }
+tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32.1"
 opentelemetry-appender-tracing = "0.31.1"
 tokio-metrics = { version = "0.4.7", features = ["metrics-rs-integration"] }
 metrics = "0.24.3"
-sysinfo = "0.37.2"
+sysinfo = "0.38.0"
 metrics-util = "0.20.1"
-scc = "3.4.10"
-portable-atomic = { version = "1.13.0", features = ["float"] }
+scc = "3.5.4"
+portable-atomic = { version = "1.13.1", features = ["float"] }
 pyroscope = "0.5.8"
 pyroscope_pprofrs = "0.2.10"
+tonic-prost = "0.14.3"
 
 
 
 
 
 [build-dependencies]
-tonic-build = "0.11.0"
+tonic-prost-build = "0.14.3"
 
 # the docker build script will add the bin-target-triple option below this line

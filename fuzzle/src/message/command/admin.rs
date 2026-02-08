@@ -2,6 +2,7 @@ use crate::background_tasks::send_daily_report;
 use crate::bot::{Bot, BotError, BotExt, InternalError, RequestContext, SendDocumentExt};
 use crate::database::{export_database, Database, StickerIdStickerFileId};
 use crate::message::Keyboard;
+use crate::services::{ Services};
 use crate::sticker::generate_merge_image;
 use crate::text::Markdown;
 use crate::util::Required;
@@ -21,6 +22,9 @@ use super::user::RegularCommand;
 pub enum AdminCommand {
     #[command(description = "ADMIN ban a set (set name is case sensitive)")]
     BanSet { set_name: String },
+
+    #[command(description = "ADMIN unban a set (set name is case sensitive)")]
+    UnbanSet { set_name: String },
 
     #[command(description = "ADMIN get pending moderation tasks")]
     Tasks,
@@ -45,14 +49,24 @@ impl AdminCommand {
         request_context: RequestContext,
     ) -> Result<(), BotError> {
         match self {
+            Self::UnbanSet { set_name } => {
+                let set_name = set_name.trim();
+                if set_name.is_empty() {
+                    request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("missing set name"))
+                        .await?;
+                } else {
+                    request_context.services.import.unban_sticker_set(&set_name).await?;
+                    request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("unbanned set"))
+                        .await?;
+                }
+            }
             Self::BanSet { set_name } => {
                 let set_name = set_name.trim();
                 if set_name.is_empty() {
                     request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("missing set name"))
                         .await?;
                 } else {
-                    request_context.database.delete_sticker_set(set_name).await?;
-                    request_context.database.ban_set(set_name, None).await?;
+                    request_context.services.import.ban_sticker_set(&set_name).await?;
                     request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("banned set"))
                         .await?;
                 }

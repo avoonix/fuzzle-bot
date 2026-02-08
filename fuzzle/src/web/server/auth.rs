@@ -1,5 +1,4 @@
-use super::AppState;
-use crate::{bot::{get_or_create_user, InternalError}, database::User, util::Required};
+use crate::{bot::{InternalError, get_or_create_user}, database::User, util::Required, web::shared::AppState};
 use actix_web::{
     error::{ErrorInternalServerError, ErrorUnauthorized},
     web, FromRequest, HttpRequest,

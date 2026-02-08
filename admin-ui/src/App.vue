@@ -3,6 +3,7 @@
     <v-navigation-drawer v-model="drawer">
       <RouterLink to="/">Home</RouterLink>
       <RouterLink to="/about">About</RouterLink>
+      <RouterLink to="/banned-stickers">Banned Stickers</RouterLink>
     </v-navigation-drawer>
 
     <v-app-bar>

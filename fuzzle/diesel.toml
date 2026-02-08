@@ -4,6 +4,8 @@
 [print_schema]
 file = "src/database/schema.rs"
 custom_type_derives = ["diesel::query_builder::QueryId"]
+sqlite_integer_primary_key_is_bigint = true
+import_types = ["crate::database::sqlite_mapping::*"]
 
 [migrations_directory]
 dir = "migrations"

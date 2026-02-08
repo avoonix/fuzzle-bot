@@ -9,7 +9,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::tags::Category;
+use crate::{database::BanReason, tags::Category};
 
 use super::{schema, DatabaseError, DialogState, ModerationTaskDetails, ModerationTaskStatus, StickerType, StringVec, UserSettings};
 
@@ -22,6 +22,21 @@ pub struct StickerFile {
     pub tags_locked_by_user_id: Option<i64>,
     pub thumbnail_file_id: Option<String>,
     pub sticker_type: StickerType,
+}
+
+#[derive(Queryable, QueryableByName, Selectable, Debug, Clone)]
+#[diesel(table_name = schema::banned_sticker)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct BannedSticker {
+    pub id: String,
+    pub sticker_set_id: String,
+    pub telegram_file_identifier: String,
+    pub sticker_file_id: String,
+    pub thumbnail_file_id: Option<String>,
+    pub sticker_type: StickerType,
+    pub clip_max_match_distance: f32,
+    pub ban_reason: BanReason,
+    pub created_at: chrono::NaiveDateTime,
 }
 
 #[derive(Queryable, Selectable, QueryableByName)]

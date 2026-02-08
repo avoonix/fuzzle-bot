@@ -23,6 +23,7 @@ use crate::sticker::{cosine_similarity, vec_u8_to_f32};
 const TAG_COLLECTION_NAME: &str = "tag_v0";
 
 const STICKER_COLLECTION_NAME: &str = "sticker_v0";
+const BANNED_STICKER_COLLECTION_NAME: &str = "banned_sticker_v0";
 const STICKER_COLLECTION_SIZE: u64 = 768;
 const STICKER_COLLECTION_DISTANCE: Distance = Distance::Cosine;
 
@@ -61,6 +62,7 @@ impl VectorDatabase {
         };
         client.init_sticker_collection().await?;
         client.init_tag_collection().await?;
+        client.init_banned_sticker_collection().await?;
         Ok(client)
     }
 
@@ -137,6 +139,38 @@ impl VectorDatabase {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), err(Debug))]
+    async fn init_banned_sticker_collection(&self) -> Result<(), VectorDatabaseError> {
+        let exists = self
+            .client
+            .collection_exists(BANNED_STICKER_COLLECTION_NAME)
+            .await?;
+        if !exists {
+            self.client
+                .create_collection(&CreateCollection {
+                    collection_name: BANNED_STICKER_COLLECTION_NAME.to_string(),
+                    vectors_config: Some(VectorsConfig {
+                        config: Some(Config::ParamsMap(VectorParamsMap {
+                            map: [
+                                (
+                                    "clip".to_string(),
+                                    VectorParams {
+                                        size: STICKER_COLLECTION_SIZE,
+                                        distance: STICKER_COLLECTION_DISTANCE.into(),
+                                        ..Default::default()
+                                    },
+                                ),
+                            ]
+                            .into(),
+                        })),
+                    }),
+                    ..Default::default()
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self, clip_vector), err(Debug))]
     pub async fn insert_tag(
         &self,
@@ -192,13 +226,38 @@ impl VectorDatabase {
         )];
         self.client
             .upsert_points_blocking(STICKER_COLLECTION_NAME, None, points, None)
-            // .upsert_points_blocking(STICKER_COLLECTION_NAME, None, points, None)
             .await?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, clip_vector), err(Debug))]
+    pub async fn insert_banned_sticker(
+        &self,
+        clip_vector: Vec<f32>,
+        file_hash: String,
+    ) -> Result<(), VectorDatabaseError> {
+        let id = file_hash_to_uuid(&file_hash);
+        let payload: Payload = json!( { "file_hash": file_hash, }).try_into().expect("valid conversion");
+        let points = vec![PointStruct::new(
+            id,
+            HashMap::from([ ("clip".to_string(), clip_vector), ]),
+            payload,
+        )];
+        self.client.upsert_points_blocking(BANNED_STICKER_COLLECTION_NAME, None, points, None).await?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn delete_stickers(&self, file_ids: Vec<String>) -> Result<(), VectorDatabaseError> {
+        self.delete_stickers_from_collection(file_ids, STICKER_COLLECTION_NAME).await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn delete_banned_stickers(&self, file_ids: Vec<String>) -> Result<(), VectorDatabaseError> {
+        self.delete_stickers_from_collection(file_ids, BANNED_STICKER_COLLECTION_NAME).await
+    }
+
+    async fn delete_stickers_from_collection(&self, file_ids: Vec<String>, collection_name: &str) -> Result<(), VectorDatabaseError> {
         let ids = file_ids
             .into_iter()
             .map(|id| file_hash_to_uuid(&id).into())
@@ -206,7 +265,7 @@ impl VectorDatabase {
         let points = PointsIdsList { ids };
         self.client
             .delete_points(
-                STICKER_COLLECTION_NAME,
+                collection_name,
                 None,
                 &qdrant_client::qdrant::PointsSelector {
                     points_selector_one_of: Some(
@@ -296,66 +355,107 @@ impl VectorDatabase {
         Ok(convert_tag_recommend_response(search_result.result))
     }
 
-    // #[tracing::instrument(skip(self), err(Debug))]
-    // pub async fn scroll_stickers(
-    //     &self,
-    // ) -> Result<Vec<(Vec<f32>, Vec<u8>, String)>, VectorDatabaseError> {
-    //     let result = self
-    //         .client
-    //         .scroll(&ScrollPoints {
-    //             collection_name: STICKER_COLLECTION_NAME.into(),
-    //             limit: Some(999999),
-    //             with_payload: Some(true.into()),
-    //             with_vectors: Some(true.into()),
-    //             ..Default::default()
-    //         })
-    //         .await?;
-    //     Ok(result
-    //         .result
-    //         .into_iter()
-    //         .map(|scored_point| {
-    //             (
-    //                 scored_point
-    //                     .vectors
-    //                     .clone()
-    //                     .map(|v| match v.vectors_options {
-    //                         Some(options) => match options.clone() {
-    //                             qdrant_client::qdrant::vectors::VectorsOptions::Vector(v) => {
-    //                                 todo!()
-    //                             }
-    //                             qdrant_client::qdrant::vectors::VectorsOptions::Vectors(v) => {
-    //                                 v.vectors["clip"].data.clone()
-    //                             }
-    //                         },
-    //                         None => todo!(),
-    //                     })
-    //                     .unwrap(),
-    //                 scored_point
-    //                     .vectors
-    //                     .map(|v| match v.vectors_options {
-    //                         Some(options) => match options.clone() {
-    //                             qdrant_client::qdrant::vectors::VectorsOptions::Vector(v) => {
-    //                                 todo!()
-    //                             }
-    //                             qdrant_client::qdrant::vectors::VectorsOptions::Vectors(v) => v
-    //                                 .vectors["histogram"]
-    //                                 .data
-    //                                 .clone()
-    //                                 .into_iter()
-    //                                 .map(|entry| entry.round().min(255.0) as u8)
-    //                                 .collect_vec(),
-    //                         },
-    //                         None => todo!(),
-    //                     })
-    //                     .unwrap(),
-    //                 scored_point.payload["file_hash"]
-    //                     .as_str()
-    //                     .unwrap()
-    //                     .to_string(),
-    //             )
-    //         })
-    //         .collect_vec())
-    // }
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_sticker_clip_vector(
+        &self,
+        file_hash: String,
+    ) -> Result<Vec<f32>, VectorDatabaseError> {
+        let point_uuid = file_hash_to_uuid(&file_hash).into();
+        let search_result = self
+            .client
+            .get_points(
+                STICKER_COLLECTION_NAME,
+                None,
+                &[point_uuid],
+                Some(true),
+                Some(false),
+                None,
+            )
+            .await?;
+
+        let Some(result) = search_result.result.first() else {
+            return Err(VectorDatabaseError::Other(anyhow::anyhow!("not found"))); // TODO: better error
+        };
+
+        let clip_vector = result
+            .vectors
+            .clone()
+            .map(|v| match v.vectors_options {
+                Some(options) => match options.clone() {
+                    qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(v) => {
+                        todo!()
+                    }
+                    qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => {
+                        v.vectors["clip"].data.clone()
+                    }
+                },
+                None => todo!(),
+            }).unwrap();
+        
+        Ok(clip_vector)
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn scroll_stickers(
+        &self,
+    ) -> Result<Vec<(Vec<f32>, Vec<u8>, String)>, VectorDatabaseError> {
+        // TODO: this would probably be better as "stream"?
+        let result = self
+            .client
+            .scroll(&ScrollPoints {
+                collection_name: STICKER_COLLECTION_NAME.into(),
+                limit: Some(99999999),
+                with_payload: Some(true.into()),
+                with_vectors: Some(true.into()),
+                ..Default::default()
+            })
+            .await?;
+        Ok(result
+            .result
+            .into_iter()
+            .map(|scored_point| {
+                (
+                    scored_point
+                        .vectors
+                        .clone()
+                        .map(|v| match v.vectors_options {
+                            Some(options) => match options.clone() {
+                                qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(v) => {
+                                    todo!()
+                                }
+                                qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => {
+                                    v.vectors["clip"].data.clone()
+                                }
+                            },
+                            None => todo!(),
+                        })
+                        .unwrap(),
+                    scored_point
+                        .vectors
+                        .map(|v| match v.vectors_options {
+                            Some(options) => match options.clone() {
+                                qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(v) => {
+                                    todo!()
+                                }
+                                qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => v
+                                    .vectors["histogram"]
+                                    .data
+                                    .clone()
+                                    .into_iter()
+                                    .map(|entry| entry.round().min(255.0) as u8)
+                                    .collect_vec(),
+                            },
+                            None => todo!(),
+                        })
+                        .unwrap(),
+                    scored_point.payload["file_hash"]
+                        .as_str()
+                        .unwrap()
+                        .to_string(),
+                )
+            })
+            .collect_vec())
+    }
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn find_stickers_given_vector(
@@ -364,10 +464,28 @@ impl VectorDatabase {
         limit: u64,
         offset: u64,
     ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
+        self.find_stickers_given_vector_using_collection(clip_vector, limit, offset, STICKER_COLLECTION_NAME).await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn find_banned_stickers_given_vector(
+        &self,
+        clip_vector: Vec<f32>,
+    ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
+        self.find_stickers_given_vector_using_collection(clip_vector, 50, 0, BANNED_STICKER_COLLECTION_NAME).await
+    }
+
+    async fn find_stickers_given_vector_using_collection(
+        &self,
+        clip_vector: Vec<f32>,
+        limit: u64,
+        offset: u64,
+        collection_name: &str
+    ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
         let search_result = self
             .client
             .search_points(&SearchPoints {
-                collection_name: STICKER_COLLECTION_NAME.into(),
+                collection_name: collection_name.into(),
                 vector: clip_vector.into(),
                 vector_name: Some("clip".to_string()),
                 limit,
@@ -389,7 +507,6 @@ impl VectorDatabase {
         score_threshold: f32,
         limit: u64,
         offset: u64,
-        // vector: Vec<f32>
     ) -> Result<Option<Vec<StickerMatch>>, VectorDatabaseError> {
         let vector_name = match similarity_aspect {
             SimilarityAspect::Color => "histogram".to_string(),

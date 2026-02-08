@@ -57,6 +57,7 @@ impl ExternalTelegramService {
         Self::handle_res(py_result).await
     }
 
+    // TODO: use this feature somewhere
     #[tracing::instrument(skip(self))]
     pub async fn resolve_user_id_to_username(&self, user_id: i64) -> Option<UserResolveResponse> {
         let py_result = self
@@ -70,6 +71,8 @@ impl ExternalTelegramService {
         Self::handle_res(py_result).await
     }
 
+    // TODO: use this feature somewhere (and add heavy rate limiting)
+    /// can be channel or user name
     #[tracing::instrument(skip(self))]
     pub async fn resolve_username_to_id(&self, name: String) -> Option<EntityResolveResponse> {
         let py_result = self

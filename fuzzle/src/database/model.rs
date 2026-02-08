@@ -224,6 +224,13 @@ pub enum StickerType {
     Static = 2,
 }
 
+#[derive(PartialEq, Debug, Copy, Clone, Primitive, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::BigInt)]
+pub enum BanReason {
+    Manual = 0,
+    Automatic = 1,
+}
+
 
 #[derive(PartialEq, Debug, Copy, Clone, Primitive, AsExpression, FromSqlRow)]
 #[diesel(sql_type = diesel::sql_types::BigInt)]
@@ -267,6 +274,7 @@ impl_enum!(StickerType);
 impl_enum!(Category);
 impl_enum!(ModerationTaskStatus);
 impl_enum!(UsernameKind);
+impl_enum!(BanReason);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub enum DialogState {

@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use actix_files::Files;
 use actix_web::{web::route, middleware, web, App, HttpServer};
+use crate::services::Services;
+use crate::web::shared::AppState;
 
 use crate::{
     background_tasks::{TagManagerService, TfIdfService}, bot::Bot, database::Database, qdrant::VectorDatabase, web::server::page, Config
@@ -9,17 +11,7 @@ use crate::{
 
 use super::service;
 
-pub struct AppState {
-    pub config: Arc<Config>,
-    pub database: Database,
-    pub tag_manager: TagManagerService,
-    pub bot: Bot,
-    pub tfidf_service: TfIdfService,
-    // pub tag_worker: TagWorker,
-    pub vector_db: VectorDatabase,
-}
-
-pub fn setup(
+pub fn setup_public_server(
     config: Arc<Config>,
     database: Database,
     tag_manager: TagManagerService,
@@ -27,6 +19,7 @@ pub fn setup(
     tfidf_service: TfIdfService,
     // tag_worker: TagWorker,
     vector_db: VectorDatabase,
+    services: Services,
 ) {
     tokio::spawn(async move {
         let addr = config.http_listen_address.clone();
@@ -42,6 +35,7 @@ pub fn setup(
                     tfidf_service: tfidf_service.clone(),
                     // tag_worker: tag_worker.clone(),
                     vector_db: vector_db.clone(),
+                    services: services.clone(),
                 }))
                 // .service(Files::new("/pkg", format!("{site_root}/pkg")))
                 // .service(Files::new("/assets", site_root))

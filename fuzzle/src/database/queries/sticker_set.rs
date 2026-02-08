@@ -95,7 +95,7 @@ impl Database {
     pub async fn upsert_sticker_set(
         &self,
         set_id: &str,
-        added_by_user_id: i64,
+        added_by_user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
         self.pool
@@ -153,12 +153,12 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn unban_set(&self, set_id: &str) -> Result<(), DatabaseError> {
+    pub async fn unban_set(&self, set_id: &str) -> Result<Option<i64>, DatabaseError> {
         let set_id = set_id.to_string();
         self.pool
             .exec(move |conn| {
-                delete(removed_set::table.filter(removed_set::id.eq(set_id))).execute(conn)?;
-                Ok(())
+                let original_adder: Option<i64> = delete(removed_set::table.filter(removed_set::id.eq(set_id))).returning(removed_set::added_by_user_id).get_result(conn)?;
+                Ok(original_adder)
             })
             .await
     }
@@ -338,6 +338,25 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_pending_sticker_sets(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<StickerSet>, DatabaseError> {
+        self.pool
+            .exec(move |conn| {
+                Ok(sticker_set::table
+                    .select(StickerSet::as_select())
+                    .filter((sticker_set::is_pending.eq(true)))
+                    .order_by(sticker_set::id)
+                    .limit(limit)
+                    .offset(offset)
+                    .load(conn)?)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_owned_sticker_set_count(&self, user_id: i64) -> Result<i64, DatabaseError> {
         self.pool
             .exec(move |conn| {
@@ -383,6 +402,20 @@ impl Database {
                     .filter(sticker_set::id.eq_any(set_ids))
                     .select(sticker_set::id)
                     .load(conn)?)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn set_sticker_set_pending(&self, set_id: &str, is_pending: bool) -> Result<(), DatabaseError> {
+        let set_id = set_id.to_string();
+        self.pool
+            .exec(move |conn| {
+        let changed = update(sticker_set::table)
+            .filter(sticker_set::id.eq(set_id))
+            .set((sticker_set::is_pending.eq(is_pending)))
+            .execute(conn)?;
+        Ok(())
             })
             .await
     }

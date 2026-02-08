@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import BanSetView from '@/views/BanSetView.vue'
 import BanSimilarView from '@/views/BanSimilarView.vue'
+import BannedStickersView from '@/views/BannedStickersView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -10,6 +11,11 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: HomeView,
+    },
+    {
+      path: '/banned-stickers',
+      name: 'bannedStickers',
+      component: BannedStickersView,
     },
     {
       path: '/bans',

@@ -11,8 +11,12 @@ use crate::{
     text::{Markdown, Text},
 };
 
-pub async fn create_and_send_daily_moderation_tasks(database: Database, bot: Bot, admin_id: UserId) -> Result<(), InternalError> {
-    create_moderation_tasks_for_new_sets(&database).await?;
+pub async fn create_and_send_daily_moderation_tasks(
+    database: Database,
+    bot: Bot,
+    admin_id: UserId,
+) -> Result<(), InternalError> {
+    create_moderation_tasks_for_new_sets(&database, admin_id).await?;
     send_daily_report(database, bot, admin_id).await?;
     Ok(())
 }
@@ -38,7 +42,10 @@ pub async fn send_daily_report(
     Ok(())
 }
 
-pub async fn create_moderation_tasks_for_new_sets(database: &Database) -> Result<(), InternalError> {
+pub async fn create_moderation_tasks_for_new_sets(
+    database: &Database,
+    admin_id: UserId,
+) -> Result<(), InternalError> {
     let new_sticker_sets = database.get_sticker_sets_added_24_hours().await?;
     let new_sticker_sets = new_sticker_sets
         .into_iter()
@@ -55,14 +62,16 @@ pub async fn create_moderation_tasks_for_new_sets(database: &Database) -> Result
 
     for (user_id, set_names) in new_sticker_sets {
         for set_names in set_names.chunks(10) {
-            let Some(user_id) = user_id else {
-                tracing::error!("some sets were added without setting added_by_user_id");
-                continue;
+            let user_id = if let Some(user_id) = user_id {
+                user_id
+            } else {
+                tracing::warn!("some sets were added without setting added_by_user_id");
+                admin_id
             };
-                database
+            database
                 .create_moderation_task(
-                    &crate::database::ModerationTaskDetails::ReviewNewSets { 
-                        set_ids: set_names.into_iter().cloned().collect_vec()
+                    &crate::database::ModerationTaskDetails::ReviewNewSets {
+                        set_ids: set_names.into_iter().cloned().collect_vec(),
                     },
                     user_id.0 as i64,
                 )
@@ -104,20 +113,22 @@ pub async fn get_moderation_task_data(
             implications,
         } => {
             let user_username = if let Some(linked_user) = linked_user {
-                database.get_username(crate::database::UsernameKind::User, linked_user).await?
-            } else { None };
+                database
+                    .get_username(crate::database::UsernameKind::User, linked_user)
+                    .await?
+            } else {
+                None
+            };
             let channel_username = if let Some(linked_channel) = linked_channel {
-                database.get_username(crate::database::UsernameKind::Channel, linked_channel).await?
-            } else { None };
+                database
+                    .get_username(crate::database::UsernameKind::Channel, linked_channel)
+                    .await?
+            } else {
+                None
+            };
             let tag = database.get_tag_by_id(&tag_id).await?;
             Ok((
-                Text::create_tag_task(
-                    &tag_id,
-                    category,
-                    &aliases,
-                    &implications,
-                    tag,
-                ),
+                Text::create_tag_task(&tag_id, category, &aliases, &implications, tag),
                 // todo! add buttons to show example stickers (or inline query)
                 Keyboard::create_tag_task(
                     moderation_task.completion_status,
@@ -135,12 +146,13 @@ pub async fn get_moderation_task_data(
                 moderation_task.created_by_user_id,
                 moderation_task.id,
                 &set_id,
-                database.get_set_ids_by_set_ids(&[set_id.clone()]).await?.is_empty(),
+                database
+                    .get_set_ids_by_set_ids(&[set_id.clone()])
+                    .await?
+                    .is_empty(),
             )?,
         )),
-        crate::database::ModerationTaskDetails::ReviewNewSets {
-            set_ids,
-        } => Ok((
+        crate::database::ModerationTaskDetails::ReviewNewSets { set_ids } => Ok((
             Text::review_new_sets_task(),
             Keyboard::review_new_sets_task(
                 moderation_task.completion_status,

@@ -64,7 +64,7 @@ pub fn create_sticker_set_id(set_title: &str, bot_username: &str) -> String {
     let consecutive_underscores = Regex::new(r"(__+)").expect("hardcoded regex to compile");
     let set_title = consecutive_underscores.replace_all(&set_title, "_");
 
-    let mut rng = rand::thread_rng();
-    let number: u32 = rng.gen_range(100_000..=999_999);
+    let mut rng = rand::rng();
+    let number: u32 = rng.random_range(100_000..=999_999);
     format!("pack{set_title}{number}_by_{bot_username}")
 }

@@ -7,7 +7,7 @@ use tracing::warn;
 
 use crate::{
     database::{
-        min_max, query_builder::StickerTagQuery, MergeStatus, Order, Sticker, StickerFile, StickerIdStickerFileId, StickerSet, StickerType, StickerUser
+        BanReason, BannedSticker, MergeStatus, Order, Sticker, StickerFile, StickerIdStickerFileId, StickerSet, StickerType, StickerUser, min_max, query_builder::StickerTagQuery
     },
     util::Emoji,
 };
@@ -90,6 +90,8 @@ impl Database {
         let sticker_file_id = sticker_file_id.to_string();
         self.pool
             .exec(move |conn| {
+                conn.immediate_transaction(|conn| {
+                    Self::check_removed_sticker(&sticker_file_id, conn)?;
         let q = insert_into(sticker_file::table)
             .values((
                 sticker_file::id.eq(sticker_file_id),
@@ -105,6 +107,7 @@ impl Database {
             q.do_nothing().execute(conn)?;
         }
         Ok(())
+                })
             })
             .await
     }
@@ -773,6 +776,119 @@ impl Database {
             .load(conn)?;
 
         Ok(result.into_iter().filter_map(|res| res.0.map(|emoji| (Emoji::new_from_string_single(emoji), res.1))).collect_vec())
+            })
+            .await
+    }
+
+    /// returns the set id of the now unbanned sticker; error if it was not banned
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn unban_sticker(&self, sticker_id: &str) -> Result<(String, String), DatabaseError> {
+        let sticker_id = sticker_id.to_string();
+        self.pool
+            .exec(move |conn| {
+                let res = delete(banned_sticker::table.filter(banned_sticker::id.eq(sticker_id))).returning((banned_sticker::sticker_set_id, banned_sticker::sticker_file_id)).get_result(conn)?;
+                Ok(res)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn ban_sticker(
+        &self,
+        sticker_id: &str,
+        telegram_file_identifier: &str,
+        sticker_set_id: &str,
+        sticker_file_id: &str,
+        thumbnail_file_id: &Option<String>,
+        sticker_type: StickerType,
+        clip_max_match_distance: f32,
+        ban_reason: BanReason,
+    ) -> Result<(), DatabaseError> {
+        let sticker_id = sticker_id.to_string();
+        let telegram_file_identifier = telegram_file_identifier.to_string();
+        let sticker_set_id = sticker_set_id.to_string();
+        let sticker_file_id = sticker_file_id.to_string();
+        let thumbnail_file_id = thumbnail_file_id.clone();
+        self.pool
+            .exec(move |conn| {
+                insert_into(banned_sticker::table)
+                    .values((
+                        banned_sticker::id.eq(sticker_id),
+                        banned_sticker::telegram_file_identifier.eq(telegram_file_identifier),
+                        banned_sticker::sticker_set_id.eq(sticker_set_id),
+                        banned_sticker::sticker_file_id.eq(sticker_file_id),
+                        banned_sticker::thumbnail_file_id.eq(thumbnail_file_id),
+                        banned_sticker::sticker_type.eq(sticker_type),
+                        banned_sticker::clip_max_match_distance.eq(clip_max_match_distance),
+                        banned_sticker::ban_reason.eq(ban_reason),
+                    ))
+                    .on_conflict_do_nothing()
+                    .execute(conn)?;
+                Ok(())
+            })
+            .await
+    }
+
+    fn check_removed_sticker(sticker_file_id: &str, conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
+        let removed: Option<String> = banned_sticker::table
+            .filter(banned_sticker::sticker_file_id.eq(sticker_file_id))
+            .select((banned_sticker::id))
+            .first(conn)
+            .optional()?;
+        if removed.is_some() {
+            Err(DatabaseError::TryingToInsertRemovedSticker)
+        } else {
+            Ok(())
+        }
+    }
+    
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_banned_sticker_max_match_distance(
+        &self,
+        file_id: &str
+    ) -> Result<Option<f32>, DatabaseError> {
+        let file_id = file_id.to_string();
+        self.pool
+            .exec(move |conn| {
+        let result = banned_sticker::table
+            .filter((banned_sticker::sticker_file_id.eq(file_id)))
+            .select((banned_sticker::clip_max_match_distance))
+            .first(conn).optional()?;
+                Ok(result)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_banned_sticker(
+        &self,
+        sticker_id: &str,
+    ) -> Result<Option<BannedSticker>, DatabaseError> {
+        let sticker_id = sticker_id.to_string();
+        self.pool
+            .exec(move |conn| {
+        Ok(banned_sticker::table
+            .filter(banned_sticker::id.eq(sticker_id))
+            .select(BannedSticker::as_select())
+            .first(conn).optional()?)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_banned_stickers(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<BannedSticker>, DatabaseError> {
+        self.pool
+            .exec(move |conn| {
+        Ok(banned_sticker::table
+            .order_by(banned_sticker::created_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .select(BannedSticker::as_select())
+            .load(conn)?)
             })
             .await
     }

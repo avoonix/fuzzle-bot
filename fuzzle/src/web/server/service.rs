@@ -17,12 +17,12 @@ use crate::{
     sticker::{
         create_historgram_image, create_sticker_thumbnail, fetch_sticker_file, generate_merge_image,
     },
-    util::Required, web::server::WebAppInitData,
+    util::Required, web::{server::WebAppInitData, shared::{AppState, HOUR, thumbnail_cache_control_header}},
 };
 use web::Data;
 
 use crate::web::server::auth::AUTH_COOKIE_NAME;
-use crate::web::server::{AppState, AuthData, AuthenticatedUser};
+use crate::web::server::{AuthData, AuthenticatedUser};
 
 // TODO: serve static files like robots.txt and favicon.ico
 
@@ -113,26 +113,6 @@ async fn sticker_comparison_thumbnail(
         .insert_header(thumbnail_cache_control_header())
         .insert_header(header::ContentType::png())
         .body(buf))
-}
-
-const MINUTE: u32 = 60;
-const HOUR: u32 = MINUTE * 60;
-const DAY: u32 = HOUR * 24;
-
-fn thumbnail_cache_control_header() -> CacheControl {
-    CacheControl(if cfg!(debug_assertions) {
-        vec![
-            CacheDirective::Public,
-            CacheDirective::StaleWhileRevalidate,
-            CacheDirective::StaleIfError,
-            CacheDirective::MaxAge(10 * MINUTE),
-        ]
-    } else { vec![
-        CacheDirective::Public,
-        CacheDirective::StaleWhileRevalidate,
-        CacheDirective::StaleIfError,
-        CacheDirective::MaxAge(10 * HOUR),
-    ]})
 }
 
 fn assets_cache_control_header() -> CacheControl {

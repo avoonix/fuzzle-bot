@@ -8,15 +8,9 @@ pub use measures::{Match, Measures};
 use qdrant_client::qdrant::Vector;
 
 use crate::{
-    background_tasks::BackgroundTaskExt,
-    bot::{
-        report_bot_error, report_internal_error_result, report_periodic_task_error, Bot, BotError,
-        InternalError, RequestContext, UserError,
-    },
-    database::{Database, StickerType},
-    inference::{image_to_clip_embedding, text_to_clip_embedding},
-    util::Required,
-    Config,
+    Config, bot::{
+        Bot, BotError, InternalError, RequestContext, UserError, report_bot_error, report_internal_error_result, report_periodic_task_error
+    }, database::{Database, StickerType}, inference::{image_to_clip_embedding, text_to_clip_embedding}, util::Required
 };
 
 use crate::inline::SimilarityAspect;
@@ -90,95 +84,4 @@ pub async fn resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
     }
 
     Ok(result)
-}
-
-#[tracing::instrument(skip(request_context))]
-pub async fn compute_similar(
-    request_context: RequestContext,
-    sticker_id: String,
-    aspect: SimilarityAspect,
-    limit: u64,
-    offset: u64,
-) -> Result<(Vec<Match>, usize), BotError> {
-    let sticker = request_context
-        .database
-        .get_sticker_by_id(&sticker_id)
-        .await?
-        .required()?;
-    let score_threshold = 0.0;
-
-    // let result = vector_db.find_similar_stickers(query_embedding.clone().into()).await?;
-    let file_hashes = request_context
-        .vector_db
-        .find_similar_stickers(
-            &[sticker.sticker_file_id.clone()],
-            &[],
-            aspect,
-            score_threshold,
-            limit,
-            offset,
-        )
-        .await?;
-    let file_hashes = match file_hashes {
-        Some(hashes) => hashes,
-        None => {
-            // dispatch in background - otherwise the query would take too long if the set is large
-            request_context.importer.queue_sticker_set_import(&sticker.sticker_set_id, false, Some(request_context.user_id())).await;
-            return Err(UserError::VectorNotFound.into());
-        }
-    };
-
-    let len = file_hashes.len();
-    Ok((
-        resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
-            request_context.database.clone(),
-            request_context.vector_db.clone(),
-            file_hashes,
-        )
-        .await?,
-        len,
-    ))
-}
-
-#[tracing::instrument(skip(database, bot, config, vector_db), err(Debug))]
-pub async fn analyze_sticker(
-    sticker_unique_id: String,
-    database: Database,
-    bot: Bot,
-    config: Arc<Config>,
-    vector_db: VectorDatabase,
-) -> Result<bool, InternalError> {
-    use super::download::fetch_sticker_file;
-
-    let file_info = database
-        .get_sticker_file_by_sticker_id(&sticker_unique_id)
-        .await?;
-    let Some(file_info) = file_info else {
-        return Ok(false);
-    };
-    let buf = if file_info.sticker_type == StickerType::Static {
-        let sticker = database
-            .get_sticker_by_id(&sticker_unique_id)
-            .await?
-            .required()?;
-
-        let (buf, _) =
-            fetch_sticker_file(sticker.telegram_file_identifier.clone(), bot.clone()).await?; // this should always be an image
-        buf
-    } else {
-        let Some(thumbnail_file_id) = file_info.thumbnail_file_id else {
-            return Ok(false);
-        };
-
-        let (buf, _) = fetch_sticker_file(thumbnail_file_id.clone(), bot.clone()).await?; // this should always be an image
-        buf
-    };
-
-    let buf_2 = buf.clone();
-    let histogram = tokio::task::spawn_blocking(move || calculate_color_histogram(buf)).await??;
-    let embedding = image_to_clip_embedding(buf_2, config.inference_url.clone()).await?;
-    vector_db
-        .insert_sticker(embedding, histogram.into(), file_info.id.clone())
-        .await?;
-    return Ok(true);
 }

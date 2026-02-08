@@ -13,7 +13,7 @@ impl QueryPage {
         page_size: usize,
     ) -> Result<Self, anyhow::Error> {
         let mut value = query_offset.split(';');
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         match (value.next(), value.next()) {
             (Some(offset), Some(seed)) => Ok(Self {
@@ -24,7 +24,7 @@ impl QueryPage {
             _ => Ok(Self {
                 page_size,
                 current_offset: 0,
-                seed: rng.gen(),
+                seed: rng.random(),
             }),
         }
     }

@@ -5,8 +5,8 @@ use crate::inline::{inline_query_handler_wrapper, inline_result_handler_wrapper}
 use crate::message::{list_visible_admin_commands, list_visible_user_commands, message_handler_wrapper};
 use crate::qdrant::VectorDatabase;
 
-use crate::background_tasks::{start_periodic_tasks, StickerImportService, TagManagerService, TfIdfService};
-use crate::services::Services;
+use crate::background_tasks::{start_periodic_tasks, TagManagerService, TfIdfService};
+use crate::services::{ExternalTelegramService, Services};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,7 +29,7 @@ pub struct UpdateListener {
     config: Arc<Config>,
     database: Database,
     vector_db: VectorDatabase,
-    importer: StickerImportService,
+    services: Services,
     tfidf_service: TfIdfService,
 }
 
@@ -47,11 +47,8 @@ impl UpdateListener {
         let database = Database::new(config.db()).await?;
         let vector_db = VectorDatabase::new(&config.vector_db_url).await?;
         let config = Arc::new(config);
-        let services = Services::new(config.clone());
-        let (tag_manager, importer) = tokio::try_join!(
-            TagManagerService::new(database.clone(), config.clone()),
-            StickerImportService::new(database.clone(), config.clone(), bot.clone(), vector_db.clone(), services.telegram.clone()),
-        )?;
+        let services = Services::new(config.clone(), database.clone(), vector_db.clone(), bot.clone());
+        let tag_manager = TagManagerService::new(database.clone(), config.clone()).await?;
 
         let tfidf_service = TfIdfService::new(database.clone(), tag_manager.clone()).await?;
 
@@ -62,7 +59,7 @@ impl UpdateListener {
             database,
             vector_db,
             tfidf_service,
-            importer,
+            services,
         })
     }
 
@@ -93,10 +90,10 @@ impl UpdateListener {
             self.config.clone(),
             self.tag_manager.clone(),
             self.vector_db.clone(),
-            self.importer.clone(),
+            self.services.clone(),
         );
 
-        crate::web::server::setup(
+        crate::web::server::setup_public_server(
             self.config.clone(),
             self.database.clone(),
             self.tag_manager.clone(),
@@ -104,6 +101,17 @@ impl UpdateListener {
             self.tfidf_service.clone(),
             // tag_worker.clone(),
             self.vector_db.clone(),
+            self.services.clone(),
+        );
+        
+        crate::web::admin::setup_admin_server(
+            self.config.clone(),
+            self.database.clone(),
+            self.tag_manager.clone(),
+            self.bot.clone(),
+            self.tfidf_service.clone(),
+            self.vector_db.clone(),
+            self.services.clone(),
         );
 
         let handler: Handler<'_, _, Result<(), ()>, _> = dptree::entry()
@@ -141,7 +149,7 @@ impl UpdateListener {
                 self.tfidf_service.clone(),
                 // tag_worker,
                 self.vector_db.clone(),
-                self.importer.clone()
+                self.services.clone()
             ])
             .default_handler(|upd| async move {
                 let span = tracing::error_span!("default_handler").entered();

@@ -243,7 +243,7 @@ fn parse_tags(input: &str) -> IResult<&str, Vec<String>> {
             multispace0,
         ),
         |tags| tags.into_iter().map(|s| s.to_string()).collect_vec(),
-    )(input)
+    ).parse(input)
 }
 
 pub fn parse_comma_separated_tags(input: &str) -> IResult<&str, Vec<Vec<String>>> {
@@ -254,7 +254,7 @@ pub fn parse_comma_separated_tags(input: &str) -> IResult<&str, Vec<Vec<String>>
             multispace0,
         ),
         |tags| tags.into_iter().filter(|t| !t.is_empty()).collect_vec(),
-    )(input)
+    ).parse(input)
 }
 
 enum EmojiOrTag {
@@ -286,7 +286,7 @@ fn parse_tags_and_emojis(input: &str) -> IResult<&str, (Vec<String>, Vec<Emoji>)
             }
             (tags, emojis)
         },
-    )(input)
+    ).parse(input)
 }
 
 // let (input, emoji) = opt(parse_emoji)(input)?;
@@ -465,7 +465,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
             )),
         )),
         tuple((multispace0, eof)),
-    )(input)
+    ).parse(input)
 }
 
 impl TryFrom<String> for InlineQueryData {

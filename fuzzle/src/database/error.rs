@@ -8,6 +8,8 @@ pub enum DatabaseError {
     UniqueConstraintViolated(String),
     #[error("trying to insert removed set")]
     TryingToInsertRemovedSet,
+    #[error("trying to insert removed sticker")]
+    TryingToInsertRemovedSticker,
     #[error("other")]
     Anyhow(anyhow::Error),
     #[error("serde")]

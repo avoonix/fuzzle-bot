@@ -1,7 +1,6 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::background_tasks::BackgroundTaskExt;
 use crate::bot::{BotError, BotExt, InternalError, RequestContext, UserError};
 use crate::callback::{exit_mode, sticker_explore_keyboard, TagOperation};
 
@@ -25,7 +24,7 @@ use nom::bytes::complete::take_while1;
 use nom::character::complete::{i64, multispace1};
 use nom::combinator::{eof, map, map_res};
 use nom::sequence::tuple;
-use nom::Finish;
+use nom::{Finish, Parser};
 use num_traits::FromPrimitive;
 use rand::Rng;
 use teloxide::dispatching::dialogue::GetChatId;
@@ -129,7 +128,7 @@ fn report_set_custom_parser(input: String) -> Result<(ReportReason, String), Par
                 set_id.to_string(),
             ))
         },
-    )(&input))
+    ).parse(&input))
     .map_err(|err| {
         ParseError::Custom(Box::new(UserError::ParseError(
             input.len() - err.input.len(),
@@ -143,7 +142,7 @@ fn new_sticker_set_custom_parser(input: String) -> Result<(String, String), Pars
     Ok(Finish::finish(map(
         tuple((sticker_id_literal, multispace1, take_while1(|_| true), eof)),
         |(sticker_id, _, set_title, _)| (sticker_id.to_string(), set_title.to_string()),
-    )(&input))
+    ).parse(&input))
     .map_err(|err| {
         ParseError::Custom(Box::new(UserError::ParseError(
             input.len() - err.input.len(),
@@ -329,7 +328,7 @@ impl HiddenCommand {
                 )
                 .await?;
 
-                request_context.importer.queue_sticker_set_import(&set_id, true, Some(request_context.user_id())).await;
+                request_context.services.import.queue_sticker_set_import(&set_id, true, Some(request_context.user_id()), None).await;
 
                 request_context
                     .bot
@@ -413,7 +412,7 @@ impl HiddenCommand {
                     )
                     .await?;
 
-                request_context.importer.queue_sticker_set_import(&set_id, true, Some(request_context.user_id())).await;
+                request_context.services.import.queue_sticker_set_import(&set_id, true, Some(request_context.user_id()), None).await;
 
                 request_context
                     .bot
@@ -606,7 +605,7 @@ async fn suggest_sticker(
     vector_db: VectorDatabase,
 ) -> Result<Sticker, BotError> {
     // TODO: also use selected_tags + excluded_tags in a vector_db query directly
-    let seed = { rand::thread_rng().gen() };
+    let seed = { rand::rng().random() };
 
     // TODO: limit stickers to only ones tagged by the current user?
     // TODO: also use excluded tags to find stickers and exclude those

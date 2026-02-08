@@ -3,11 +3,11 @@ fn main() {
     println!("cargo:rerun-if-changed=migrations");
 
     let proto_file = "../inference/inference.proto";
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(false)
         .build_client(true)
         .out_dir("./src/inference")
-        .compile(&[proto_file], &[".."])
+        .compile_protos(&[proto_file], &[".."])
         .unwrap_or_else(|e| panic!("protobuf compile error: {}", e));
     println!("cargo:rerun-if-changed={}", proto_file);
 }

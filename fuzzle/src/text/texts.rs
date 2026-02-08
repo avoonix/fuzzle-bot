@@ -191,7 +191,7 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
     }
 
     #[must_use]
-    pub fn get_sticker_text(emoji: Option<Emoji>, set_is_new: bool) -> Markdown {
+    pub fn get_sticker_text(emoji: Option<Emoji>, set_is_new: bool, is_admin: bool, set_id: Option<String>) -> Markdown {
         let value = if let Some(emoji) = emoji {
             if let Some(name) = emoji.name() {
                 format!(" {} {} ", name, emoji.to_string_with_variant())
@@ -206,11 +206,15 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
         } else {
             ""
         };
+        let admin_text = if is_admin && let Some(set_id) = set_id {
+            format!("\n\n/banset\\_{} /unbanset\\_{}", escape(&set_id), escape(&set_id))
+        } else {"".to_string()};
 
         Markdown::new(format!(
-            "UwU you sent a{}sticker :3{}",
+            "UwU you sent a{}sticker :3{}{}",
             escape(&value),
-            new_set_text
+            new_set_text,
+            admin_text
         ))
     }
 

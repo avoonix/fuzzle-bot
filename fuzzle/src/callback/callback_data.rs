@@ -5,7 +5,7 @@ use nom::combinator::{eof, fail, map};
 
 use nom::sequence::{preceded, terminated, tuple};
 
-use nom::IResult;
+use nom::{IResult, Parser};
 
 use nom::{branch::alt, character::complete::u64, combinator::opt};
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -22,7 +22,7 @@ fn parse_tag_operation(input: &str) -> IResult<&str, TagOperation> {
     alt((
         map(preceded(tag("t"), parse_tag), TagOperation::Tag),
         map(preceded(tag("u"), parse_tag), TagOperation::Untag),
-    ))(input)
+    )).parse(input)
 }
 
 fn parse_tag(input: &str) -> IResult<&str, String> {
@@ -216,7 +216,7 @@ fn parse_callback_data(input: &str) -> IResult<&str, CallbackData> {
             )),
         )),
         eof,
-    )(input)
+    ).parse(input)
 }
 
 fn parse_simple(input: &str) -> IResult<&str, CallbackData> {
@@ -239,7 +239,7 @@ fn parse_simple(input: &str) -> IResult<&str, CallbackData> {
         map(tag("linkself"), |_| CallbackData::LinkSelf),
         map(tag("createtag"), |_| CallbackData::CreateTag),
         map(tag("removechannel"), |_| CallbackData::RemoveLinkedChannel),
-    ))(input)
+    )).parse(input)
 }
 
 fn parse_merge_data(input: &str) -> IResult<&str, CallbackData> {
@@ -257,11 +257,11 @@ fn parse_merge_data(input: &str) -> IResult<&str, CallbackData> {
             sticker_id_b: sticker_id_b.to_string(),
             merge,
         },
-    )(input)
+    ).parse(input)
 }
 
 fn parse_create_tag_for_user(input: &str) -> IResult<&str, CallbackData> {
-    map( tuple(( tag("ctfu;"), i64,)), |(_, user_id)| CallbackData::CreateTagForUser { user_id },)(input)
+    map( tuple(( tag("ctfu;"), i64,)), |(_, user_id)| CallbackData::CreateTagForUser { user_id },).parse(input)
 }
 
 fn parse_tag_list_action(input: &str) -> IResult<&str, CallbackData> {
@@ -279,7 +279,7 @@ fn parse_tag_list_action(input: &str) -> IResult<&str, CallbackData> {
             action,
             moderation_task_id
         },
-    )(input)
+    ).parse(input)
 }
 
 fn parse_favorite_sticker_data(input: &str) -> IResult<&str, CallbackData> {
@@ -297,7 +297,7 @@ fn parse_favorite_sticker_data(input: &str) -> IResult<&str, CallbackData> {
             sticker_id: sticker_id.to_string(),
             operation,
         },
-    )(input)
+    ).parse(input)
 }
 
 fn parse_owner_page(input: &str) -> IResult<&str, CallbackData> {
@@ -379,7 +379,7 @@ fn parse_recommend_sticker(input: &str) -> IResult<&str, CallbackData> {
             positive: false,
             sticker_id: sticker_id.to_string(),
         }),
-    ))(input)
+    )).parse(input)
 }
 
 fn parse_lock_data(input: &str) -> IResult<&str, CallbackData> {
@@ -395,14 +395,14 @@ fn parse_lock_data(input: &str) -> IResult<&str, CallbackData> {
             lock: false,
             sticker_id: sticker_id.to_string(),
         }),
-    ))(input)
+    )).parse(input)
 }
 
 fn parse_order_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("order;")(input)?;
     let order = serde_json::from_str(input);
     match order {
-        Err(err) => fail(input),
+        Err(err) => fail().parse(input),
         Ok(order) => Ok(("", CallbackData::SetOrder(order))),
     }
 }
@@ -413,20 +413,20 @@ fn parse_set_category(input: &str) -> IResult<&str, CallbackData> {
             CallbackData::SetCategory(Category::from_u8(cat))
         }),
         map(tag("cat;none"), |_| CallbackData::SetCategory(None)),
-    ))(input)
+    )).parse(input)
 }
 
 fn parse_privacy_policy(input: &str) -> IResult<&str, CallbackData> {
     
         map(preceded(tag("ppolicy;"), u8), |p| {
             CallbackData::Privacy(PrivacyPolicy::from_u8(p))
-        })(input)
+        }).parse(input)
 }
 
 fn parse_remove_alias(input: &str) -> IResult<&str, CallbackData> {
     map(preceded(tag("ras;"), tag_literal), |tag| {
         CallbackData::RemoveAlias(tag.to_string())
-    })(input)
+    }).parse(input)
 }
 
 fn parse_user_info_data(input: &str) -> IResult<&str, CallbackData> {
@@ -439,7 +439,7 @@ fn parse_user_info_data(input: &str) -> IResult<&str, CallbackData> {
 fn parse_remove_set_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag("b")(input)?;
     let (input, task_id) = i64(input)?;
-    let (input, banned) = alt((map(tag("b"), |_| true), map(tag("u"), |_| false)))(input)?;
+    let (input, banned) = alt((map(tag("b"), |_| true), map(tag("u"), |_| false))).parse(input)?;
     let (input, set_name) = tag_literal(input)?; // TODO: add separate set_name parser
     Ok((
         input,
@@ -457,7 +457,7 @@ fn parse_moderation_task_tatus(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag(";")(input)?;
     let (input, status) = i64(input)?;
     let Some(status) = ModerationTaskStatus::from_i64(status) else {
-        return fail(input);
+        return fail().parse(input);
     };
     Ok((
         input,
@@ -470,13 +470,13 @@ fn parse_moderation_task_tatus(input: &str) -> IResult<&str, CallbackData> {
 fn parse_remove_blacklist_data(input: &str) -> IResult<&str, CallbackData> {
     map(preceded(tag("removebl;"), tag_literal), |tag| {
         CallbackData::RemoveBlacklistedTag(tag.to_string())
-    })(input)
+    }).parse(input)
 }
 
 fn parse_remove_continuous_tag(input: &str) -> IResult<&str, CallbackData> {
     map(preceded(tag("removec;"), tag_literal), |tag| {
         CallbackData::RemoveContinuousTag(tag.to_string())
-    })(input)
+    }).parse(input)
 }
 
 fn parse_sticker_data(input: &str) -> IResult<&str, CallbackData> {
@@ -484,7 +484,7 @@ fn parse_sticker_data(input: &str) -> IResult<&str, CallbackData> {
     let (input, _) = tag(";")(input)?;
     let (input, sticker_id) = sticker_id_literal(input)?;
     let (input, _) = tag(";")(input)?;
-    let (input, operation) = opt(parse_tag_operation)(input)?;
+    let (input, operation) = opt(parse_tag_operation).parse(input)?;
     Ok((
         input,
         CallbackData::Sticker {

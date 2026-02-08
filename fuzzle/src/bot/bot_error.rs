@@ -40,6 +40,9 @@ pub enum InternalError {
     // TODO: get rid of anyhow?
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+
+    #[error("operation failed, actual error is logged")]
+    OperationFailed,
 }
 
 #[derive(PartialEq)]

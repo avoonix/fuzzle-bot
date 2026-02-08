@@ -1,10 +1,11 @@
 use std::{future::IntoFuture, time::Duration};
 
 use itertools::Itertools;
+use nom::Parser;
 use nom::combinator::eof;
 use nom::combinator::map;
 use nom::sequence::tuple;
-use nom::{character::complete::multispace0, Finish};
+use nom::{Finish, character::complete::multispace0};
 use regex::Regex;
 use teloxide::types::ChatId;
 use teloxide::{
@@ -17,27 +18,29 @@ use teloxide::{
     },
     utils::command::{BotCommands, ParseError},
 };
-use tracing::{info, Instrument};
+use tracing::{Instrument, info};
 use url::Url;
 
 use crate::{
-    background_tasks::BackgroundTaskExt,
     bot::{
-        report_bot_error, report_internal_error, report_internal_error_result, Bot, BotError,
-        BotExt, RequestContext, UserError,
+        Bot, BotError, BotExt, RequestContext, UserError, report_bot_error, report_internal_error,
+        report_internal_error_result,
     },
     callback::TagOperation,
     database::DialogState,
-    sticker::{fetch_sticker_file, import_individual_sticker_and_queue_set},
+    sticker::fetch_sticker_file,
     tags::suggest_tags,
     text::{Markdown, Text},
-    util::{parse_emoji, Emoji, Required},
+    util::{Emoji, Required, parse_emoji},
 };
 
 use super::send_database_export_to_chat;
 use super::{
-    command::{fix_underline_command_separator_and_normalize, AdminCommand, HiddenCommand, RegularCommand},
-    send_sticker_with_tag_input, Keyboard,
+    Keyboard,
+    command::{
+        AdminCommand, HiddenCommand, RegularCommand, fix_underline_command_separator_and_normalize,
+    },
+    send_sticker_with_tag_input,
 };
 
 const fn is_unknown_command(err: &ParseError) -> bool {
@@ -107,10 +110,16 @@ async fn handle_sticker_sets(
     }
     for set_name in &potential_sticker_set_names {
         // TODO: this causes potential loss of sticker packs if bot is restarted before queue is empty
-        request_context.importer.queue_sticker_set_import(set_name, false, Some(request_context.user_id())).await;
+        request_context
+            .services
+            .import
+            .queue_sticker_set_import(set_name, false, Some(request_context.user_id()), None)
+            .await;
     }
 
-    if handle_readonly(&request_context, msg).await? { return Ok(()); }
+    if handle_readonly(&request_context, msg).await? {
+        return Ok(());
+    }
 
     request_context
         .bot
@@ -124,10 +133,13 @@ async fn handle_sticker_sets(
 }
 
 fn emoji_search_command(input: &str) -> Option<Emoji> {
-    Finish::finish(map(
-        tuple((multispace0, parse_emoji, multispace0, eof)),
-        |(_, emoji, _, _)| emoji,
-    )(input))
+    Finish::finish(
+        map(
+            tuple((multispace0, parse_emoji, multispace0, eof)),
+            |(_, emoji, _, _)| emoji,
+        )
+        .parse(input),
+    )
     .map(|(_, emoji)| emoji)
     .ok()
 }
@@ -139,7 +151,13 @@ async fn emoji_search_command_execute(
 ) -> Result<(), BotError> {
     request_context
         .bot
-        .send_markdown(msg.chat.id, Markdown::escaped(format!("You sent a {} emoji", emoji.to_string_with_variant())))
+        .send_markdown(
+            msg.chat.id,
+            Markdown::escaped(format!(
+                "You sent a {} emoji",
+                emoji.to_string_with_variant()
+            )),
+        )
         .reply_markup(Keyboard::emoji_article(emoji))
         .await?;
     Ok(())
@@ -158,7 +176,7 @@ async fn handle_text_message(
     }
 
     if !text.starts_with("/") {
-        return Ok(())
+        return Ok(());
     }
 
     match RegularCommand::parse(text, &request_context.config.telegram_bot_username) {
@@ -240,23 +258,35 @@ pub async fn message_handler(
 ) -> Result<(), BotError> {
     for user in msg.mentioned_users() {
         if let Some(username) = &user.username {
-            request_context.database.add_username_details(username, crate::database::UsernameKind::User, user.id.0 as i64).await?;
+            request_context
+                .database
+                .add_username_details(
+                    username,
+                    crate::database::UsernameKind::User,
+                    user.id.0 as i64,
+                )
+                .await?;
         }
     }
-    if let Some (forward) = msg.forward_from_chat() {
+    if let Some(forward) = msg.forward_from_chat() {
         let username = match forward.kind.clone() {
-            teloxide::types::ChatKind::Public(chat) => {
-                match chat.kind {
-                    teloxide::types::PublicChatKind::Channel(channel) => channel.username,
-                    teloxide::types::PublicChatKind::Group(group) => None,
-                    teloxide::types::PublicChatKind::Supergroup(supergroup) => supergroup.username,
-                }
+            teloxide::types::ChatKind::Public(chat) => match chat.kind {
+                teloxide::types::PublicChatKind::Channel(channel) => channel.username,
+                teloxide::types::PublicChatKind::Group(group) => None,
+                teloxide::types::PublicChatKind::Supergroup(supergroup) => supergroup.username,
             },
             teloxide::types::ChatKind::Private(chat) => chat.username,
         };
 
         if let Some(username) = username {
-            request_context.database.add_username_details(&username, crate::database::UsernameKind::Channel, forward.id.0 as i64).await?;
+            request_context
+                .database
+                .add_username_details(
+                    &username,
+                    crate::database::UsernameKind::Channel,
+                    forward.id.0 as i64,
+                )
+                .await?;
         }
     }
     for entity in get_all_entities_from_message(&msg) {
@@ -265,14 +295,15 @@ pub async fn message_handler(
             match url.host_str() {
                 Some("t.me") | Some("telegram.me") => {
                     let path = url.path();
-                    let path = path.trim_start_matches("/")
-                        .trim_end_matches('/');
-                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$").expect("hardcoded url to compile").is_match(path);
+                    let path = path.trim_start_matches("/").trim_end_matches('/');
+                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$")
+                        .expect("hardcoded url to compile")
+                        .is_match(path);
                     if matched {
                         request_context.database.add_username(path).await?;
                     }
                 }
-                _ => {},
+                _ => {}
             }
         }
         match entity.kind() {
@@ -280,12 +311,14 @@ pub async fn message_handler(
                 let text = entity.text();
                 if text.starts_with("@") {
                     let text = text.trim_start_matches("@");
-                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$").expect("hardcoded url to compile").is_match(text);
+                    let matched = Regex::new(r"^[_a-zA-Z0-9]+$")
+                        .expect("hardcoded url to compile")
+                        .is_match(text);
                     if matched {
                         request_context.database.add_username(text).await?;
                     }
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -298,13 +331,27 @@ pub async fn message_handler(
         handle_sticker_message(sticker, request_context, msg.clone()).await
     } else if let Some(shared_chat) = msg.shared_chat() {
         if let Some(username) = &shared_chat.username {
-            request_context.database.add_username_details(&username, crate::database::UsernameKind::Channel, shared_chat.chat_id.0 as i64).await?;
+            request_context
+                .database
+                .add_username_details(
+                    &username,
+                    crate::database::UsernameKind::Channel,
+                    shared_chat.chat_id.0 as i64,
+                )
+                .await?;
         }
         handle_shared_chat(&request_context, &msg, shared_chat).await
     } else if let Some(shared_users) = msg.shared_users() {
         for user in &shared_users.users {
             if let Some(username) = &user.username {
-                request_context.database.add_username_details(username, crate::database::UsernameKind::User, user.user_id.0 as i64).await?;
+                request_context
+                    .database
+                    .add_username_details(
+                        username,
+                        crate::database::UsernameKind::User,
+                        user.user_id.0 as i64,
+                    )
+                    .await?;
             }
         }
         handle_shared_users(&request_context, &msg, shared_users).await
@@ -313,13 +360,18 @@ pub async fn message_handler(
     }
 }
 
-pub async fn handle_readonly(request_context: &RequestContext, msg: &Message) -> Result<bool, BotError> {
-    if !request_context.config.is_readonly { return Ok(false) }
+pub async fn handle_readonly(
+    request_context: &RequestContext,
+    msg: &Message,
+) -> Result<bool, BotError> {
+    if !request_context.config.is_readonly {
+        return Ok(false);
+    }
     if let Some(sticker) = msg.sticker() {
         if let Some(ref set_id) = sticker.set_name {
             request_context
                 .database
-                .upsert_sticker_set(set_id, request_context.user.id)
+                .upsert_sticker_set(set_id, Some(request_context.user.id))
                 .await?;
         }
     }
@@ -328,7 +380,10 @@ pub async fn handle_readonly(request_context: &RequestContext, msg: &Message) ->
     Ok(true)
 }
 
-pub async fn send_readonly_message(id: ChatId, request_context: RequestContext) -> Result<(), BotError> {
+pub async fn send_readonly_message(
+    id: ChatId,
+    request_context: RequestContext,
+) -> Result<(), BotError> {
     request_context
         .bot
         .send_markdown(
@@ -339,7 +394,7 @@ Thanks to everyone who submitted their sticker packs or helped tagging <3. All p
         )
         .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
         .await?;
-        Ok(())
+    Ok(())
 }
 
 #[tracing::instrument(skip(request_context, msg))]
@@ -434,7 +489,7 @@ async fn handle_sticker_message(
 ) -> Result<(), BotError> {
     // TODO: tell the user how many tags exist for the set/sticker already
     let result =
-        import_individual_sticker_and_queue_set(sticker.clone(), request_context.clone()).await?;
+        request_context.services.import.import_individual_sticker_and_queue_set(sticker.clone(), request_context.user_id()).await?;
     // TODO: notify user that the set can't be added
     // match result {
     //     Err(BotError::Database(crate::database::DatabaseError::TryingToInsertRemovedSet)) => {
@@ -456,7 +511,7 @@ async fn handle_sticker_message(
 
     match request_context.dialog_state() {
         DialogState::Normal => handle_sticker_1(msg, sticker, request_context, false).await?,
-        DialogState::ContinuousTag (continuous_tag) => {
+        DialogState::ContinuousTag(continuous_tag) => {
             let file = request_context
                 .database
                 .get_sticker_file_by_sticker_id(&sticker.file.unique_id)
@@ -464,12 +519,20 @@ async fn handle_sticker_message(
                 .required()?;
             request_context
                 .database
-                .tag_file(&file.id, &continuous_tag.add_tags, Some(request_context.user.id))
+                .tag_file(
+                    &file.id,
+                    &continuous_tag.add_tags,
+                    Some(request_context.user.id),
+                )
                 .await?;
 
             request_context
                 .database
-                .untag_file(&file.id, &continuous_tag.remove_tags, request_context.user.id)
+                .untag_file(
+                    &file.id,
+                    &continuous_tag.remove_tags,
+                    request_context.user.id,
+                )
                 .await?;
             request_context.tfidf.request_recompute().await;
             handle_sticker_1(msg, sticker, request_context, true).await?;
@@ -555,7 +618,10 @@ async fn handle_sticker_1(
         .database
         .get_sticker_tags(&sticker.file.unique_id)
         .await?;
-    let set = request_context.database.get_sticker_set_by_sticker_id(&sticker.file.unique_id).await?;
+    let set = request_context
+        .database
+        .get_sticker_set_by_sticker_id(&sticker.file.unique_id)
+        .await?;
     let suggested_tags = suggest_tags(
         &sticker.file.unique_id,
         request_context.bot.clone(),
@@ -582,7 +648,12 @@ async fn handle_sticker_1(
             if is_continuous_tag {
                 Text::continuous_tag_success()
             } else {
-                Text::get_sticker_text(emojis, set.is_some_and(|set| set.last_fetched.is_none()))
+                Text::get_sticker_text(
+                    emojis,
+                    set.as_ref().is_some_and(|set| set.last_fetched.is_none()),
+                    request_context.is_admin(),
+                    set.as_ref().map(|s| s.id.clone()),
+                )
             },
         )
         .reply_markup(Keyboard::tagging(
@@ -591,8 +662,8 @@ async fn handle_sticker_1(
             &suggested_tags,
             is_locked,
             is_continuous_tag,
-        request_context.tag_manager.clone(),
-    )?)
+            request_context.tag_manager.clone(),
+        )?)
         .allow_sending_without_reply(true)
         .reply_to_message_id(msg.id)
         .into_future()

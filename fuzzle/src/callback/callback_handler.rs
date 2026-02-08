@@ -15,7 +15,7 @@ use teloxide::types::{
     ReplyMarkup,
 };
 
-use crate::background_tasks::{get_moderation_task_data, BackgroundTaskExt, TagManagerService};
+use crate::background_tasks::{get_moderation_task_data, TagManagerService};
 use crate::bot::{
     report_bot_error, report_internal_error, report_internal_error_result, BotError, BotExt,
     InternalError, RequestContext, UserError, UserErrorSeverity,
@@ -25,6 +25,7 @@ use crate::callback::TagOperation;
 use crate::database::{ContinuousTag, Database, MergeStatus};
 use crate::database::{DialogState, TagCreator};
 use crate::message::{send_merge_queue, send_readonly_message, set_tag_id, Keyboard};
+use crate::services::{ Services};
 use crate::sticker::{determine_canonical_sticker_and_merge, fetch_sticker_file, FileKind};
 use crate::tags::{suggest_tags, Category};
 use crate::text::{Markdown, Text};
@@ -532,19 +533,9 @@ pub async fn callback_handler(
                 .await?
                 .required()?;
             if banned {
-                let set = request_context
-                    .database
-                    .get_sticker_set_by_id(&set_name)
-                    .await?;
-                ban_set(
-                    set_name,
-                    set.and_then(|set| set.added_by_user_id),
-                    request_context.clone(),
-                )
-                .await?
+                request_context.services.import.ban_sticker_set(&set_name).await?;
             } else {
-                unban_set(set_name, request_context.clone()).await?
-                // TODO: re-insert added_by_user_id; or leave in table and only add is_banned column?
+                request_context.services.import.unban_sticker_set(&set_name).await?;
             }
 
             let (text, keyboard) =
@@ -1378,46 +1369,6 @@ async fn remove_blacklist_tag(
         None,
     )
     .await?;
-    Ok(())
-}
-
-#[tracing::instrument(skip(request_context), err(Debug))]
-async fn unban_set(set_name: String, request_context: RequestContext) -> Result<(), BotError> {
-    if !request_context.is_admin() {
-        return Err(UserError::NoPermissionForAction("unban set".to_string()).into());
-    }
-    request_context.database.unban_set(&set_name).await?;
-    request_context
-        .database
-        .upsert_sticker_set(&set_name, request_context.user.id)
-        .await?;
-    // TODO: add original user's user id?
-    request_context
-        .importer
-        .queue_sticker_set_import(&set_name, true, Some(request_context.user_id()))
-        .await;
-    Ok(())
-}
-
-#[tracing::instrument(skip(request_context), err(Debug))]
-async fn ban_set(
-    set_name: String,
-    added_by_user_id: Option<i64>,
-    request_context: RequestContext,
-) -> Result<(), BotError> {
-    if !request_context.is_admin() {
-        return Err(UserError::NoPermissionForAction("ban set".to_string()).into());
-    }
-    // TODO: maybe require additional confirmation?
-
-    request_context
-        .database
-        .delete_sticker_set(&set_name)
-        .await?;
-    request_context
-        .database
-        .ban_set(&set_name, added_by_user_id)
-        .await?;
     Ok(())
 }
 

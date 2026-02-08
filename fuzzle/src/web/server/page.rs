@@ -18,9 +18,10 @@ use crate::database::{Database, Order, Sticker, StickerSet};
 use crate::inline::{
     get_last_input_match_list_and_other_input_closest_matches, parse_comma_separated_tags,
 };
+use crate::services::Services;
 use crate::sticker::resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files;
 use crate::util::{format_relative_time, parse_first_emoji, Emoji, Required};
-use crate::web::server::AppState;
+use crate::web::shared::AppState;
 
 use super::OptionalAuthenticatedUser;
 
@@ -335,64 +336,14 @@ async fn sticker_page(
     };
 
     let similar_color = {
-        let file_hashes = data
-            .vector_db
-            .find_similar_stickers(
-                &[sticker.sticker_file_id.clone()],
-                &[],
-                crate::inline::SimilarityAspect::Color,
-                0.0,
-                20,
-                0,
-            )
-            .await?
-            .required()?;
-        let result = resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
-            data.database.clone(),
-            data.vector_db.clone(),
-            file_hashes,
-        )
-        .await?;
-
-        let sticker_ids = result.into_iter().map(|m| m.sticker_id).collect_vec();
-        let mut stickers = Vec::new();
-        for id in sticker_ids {
-            if let Some(sticker) = data.database.get_sticker_by_id(&id).await? {
-                stickers.push(sticker);
-            }
-            // TODO: single query?
-        }
-        stickers
+        let (matches, _) = data.services.similarity.find_similar_stickers(sticker_id.clone(), crate::inline::SimilarityAspect::Color, 20, 0).await?;
+        let stickers = data.services.similarity.matches_to_stickers(matches).await?;
+        stickers.into_iter().map(|(s, _)| s).collect_vec()
     };
     let similar_embedding = {
-        let file_hashes = data
-            .vector_db
-            .find_similar_stickers(
-                &[sticker.sticker_file_id.clone()],
-                &[],
-                crate::inline::SimilarityAspect::Embedding,
-                0.0,
-                20,
-                0,
-            )
-            .await?
-            .required()?;
-        let result = resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
-            data.database.clone(),
-            data.vector_db.clone(),
-            file_hashes,
-        )
-        .await?;
-
-        let sticker_ids = result.into_iter().map(|m| m.sticker_id).collect_vec();
-        let mut stickers = Vec::new();
-        for id in sticker_ids {
-            if let Some(sticker) = data.database.get_sticker_by_id(&id).await? {
-                stickers.push(sticker);
-            }
-            // TODO: single query?
-        }
-        stickers
+        let (matches, _) = data.services.similarity.find_similar_stickers(sticker_id.clone(), crate::inline::SimilarityAspect::Embedding, 20, 0).await?;
+        let stickers = data.services.similarity.matches_to_stickers(matches).await?;
+        stickers.into_iter().map(|(s, _)| s).collect_vec()
     };
     let emoji = Emoji::new_from_string_single(sticker.emoji.required()?);
 
@@ -874,8 +825,7 @@ async fn sticker_set_timeline_page(
             .get_sticker_set_by_id(&set_id)
             .await?
             .required()?;
-    let sticker_service = StickerService::new(data.database.clone());
-    let groups = sticker_service
+    let groups = data.services.sticker
         .get_sticker_set_timeline(&set_id)
         .await?;
     let r = groups
@@ -964,75 +914,6 @@ pub fn timeline(
     }
 }
 
-pub struct StickerService {
-    database: Database,
-}
-
-impl StickerService {
-    pub fn new(database: Database) -> Self {
-        Self { database }
-    }
-
-
-    pub async fn get_sticker_set_timeline(
-        &self,
-        set_id: &str,
-    ) -> Result<Vec<(String, Vec<Sticker>)>, InternalError> {
-        let stickers = self.database.get_all_stickers_in_set(set_id).await?;
-
-    let groups = stickers
-        .into_iter()
-        .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
-        .rev()
-        .chunk_by(|s| format_relative_time(s.created_at))
-        .into_iter()
-        .map(|(relative_time, stickers)| (format!("{}", relative_time), stickers.collect_vec()))
-        .collect_vec();
-
-        Ok(groups)
-    }
-
-    pub async fn get_all_sticker_timeline(
-        &self,
-        limit: i64,
-        before: NaiveDateTime,
-    ) -> Result<(NaiveDateTime, Vec<(String, Vec<Sticker>)>), InternalError> {
-        let stickers = self.database.get_latest_stickers(limit, before).await?;
-        let after = stickers.last().required()?.created_at; // TODO: is reaching the end really an error?
-
-        let groups = stickers
-            .into_iter()
-            .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
-            .rev()
-            .chunk_by(|s| format!("{}", s.created_at.format("%B %-d, %Y ~%l %P")))
-            .into_iter()
-            .map(|(relative_time, stickers)| (format!("{}", relative_time), stickers.collect_vec()))
-            .collect_vec();
-
-        Ok((after, groups))
-    }
-
-    pub async fn get_all_sticker_set_timeline(
-        &self,
-        limit: i64,
-        before: NaiveDateTime,
-    ) -> Result<(NaiveDateTime, Vec<(String, Vec<StickerSet>)>), InternalError> {
-        let sets = self.database.get_latest_sticker_sets(limit, before).await?;
-        let after = sets.last().required()?.created_at; // TODO: is reaching the end really an error?
-
-        let groups = sets
-            .into_iter()
-            .sorted_by_key(|s| s.created_at) // TODO: should we use the sticker_file created_at here?
-            .rev()
-            .chunk_by(|s| format!("{}", s.created_at.format("%B %-d, %Y")))
-            .into_iter()
-            .map(|(relative_time, sets)| (format!("{}", relative_time), sets.collect_vec()))
-            .collect_vec();
-
-        Ok((after, groups))
-    }
-}
-
 pub fn sticker_set_grid(sets: Vec<StickerSet>) -> Markup {
     html! {
 
@@ -1066,10 +947,16 @@ async fn sticker_timeline_page(
     data: Data<AppState>,
     req: HttpRequest,
 ) -> actix_web::Result<impl Responder> {
-    let sticker_service = StickerService::new(data.database.clone());
-    let (after, groups) = sticker_service
+    let host = format!("{}", req.uri());
+    let title = "fuzzle bot";
+    let desc = "Hi there";
+    let lang = "en";
+
+    let Some((after, groups)) = data.services.sticker
         .get_all_sticker_timeline(100, chrono::Utc::now().naive_utc())
-        .await?;
+        .await? else {
+            return Ok(page(&host, title, desc, lang, html! {"End"}))
+        };
     let r = groups
         .into_iter()
         .map(|(header, stickers)| TimelineItem {
@@ -1077,11 +964,6 @@ async fn sticker_timeline_page(
             content: sticker_grid(stickers),
         })
         .collect_vec();
-
-    let host = format!("{}", req.uri());
-    let title = "fuzzle bot";
-    let desc = "Hi there";
-    let lang = "en";
 
     let content = html! {
             h1 { " Timeline" }
@@ -1101,12 +983,13 @@ async fn sticker_timeline_page_fragment(
     data: Data<AppState>,
     req: HttpRequest,
 ) -> actix_web::Result<impl Responder> {
-    let sticker_service = StickerService::new(data.database.clone());
     let after = DateTime::from_timestamp(after, 0).required()?.naive_utc();
     // TODO: fragments should be served with noindex header
-    let (after, groups) = sticker_service
+    let Some((after, groups)) = data.services.sticker
         .get_all_sticker_timeline(100, after)
-        .await?;
+        .await? else {
+            return Ok(html! {"End"})
+        };
     let r = groups
         .into_iter()
         .map(|(header, stickers)| TimelineItem {
@@ -1183,10 +1066,9 @@ async fn set_timeline_page(
     data: Data<AppState>,
     req: HttpRequest,
 ) -> actix_web::Result<impl Responder> {
-    let sticker_service = StickerService::new(data.database.clone());
-    let (after, groups) = sticker_service
+    let Some((after, groups)) = data.services.sticker
         .get_all_sticker_set_timeline(100, chrono::Utc::now().naive_utc())
-        .await?;
+        .await? else { return Ok(html!{"End"})};
     let r = groups
         .into_iter()
         .map(|(header, stickers)| TimelineItem {
@@ -1218,12 +1100,11 @@ async fn set_timeline_page_fragment(
     data: Data<AppState>,
     req: HttpRequest,
 ) -> actix_web::Result<impl Responder> {
-    let sticker_service = StickerService::new(data.database.clone());
     let after = DateTime::from_timestamp(after, 0).required()?.naive_utc();
     // TODO: fragments should be served with noindex header
-    let (after, groups) = sticker_service
+    let Some((after, groups)) = data.services.sticker
         .get_all_sticker_set_timeline(100, after)
-        .await?;
+        .await? else {return Ok(html!{"End"})};
     let r = groups
         .into_iter()
         .map(|(header, stickers)| TimelineItem {

@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use nom::Parser;
 use nom::bytes::streaming::tag;
 use nom::character::complete::{alphanumeric1, i64};
 use nom::combinator::{eof, map};
@@ -48,7 +49,7 @@ fn parse_result(input: &str) -> IResult<&str, InlineQueryResultId> {
             preceded(tag("u:"), i64),
             |user_id: i64| InlineQueryResultId::User(user_id),
         ),
-    )), eof)(input)
+    )), eof).parse(input)
 }
 
 impl Display for InlineQueryResultId {

@@ -1,10 +1,10 @@
 [package]
 name = "tag_search_engine"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 itertools = "0"
-rayon = "1.10.0"
-regex = "1.11.1"
+rayon = "1.11.0"
+regex = "1.12.2"
 trie-rs = "0.4.2"

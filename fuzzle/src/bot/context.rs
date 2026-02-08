@@ -1,7 +1,7 @@
 use teloxide::types::UserId;
 
 use super::{Bot, BotError};
-use crate::{background_tasks::{StickerImportService, TagManagerService, TfIdfService}, database::{Database, DialogState, User}, qdrant::VectorDatabase, util::Required, Config};
+use crate::{Config, background_tasks::{ TagManagerService, TfIdfService}, database::{Database, DialogState, User}, qdrant::VectorDatabase, services::Services, util::Required};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -14,7 +14,7 @@ pub struct RequestContext {
     pub tfidf: TfIdfService,
     // pub tag_worker: TagWorker,
     pub vector_db: VectorDatabase,
-    pub importer: StickerImportService,
+    pub services: Services,
 }
 
 impl RequestContext {
