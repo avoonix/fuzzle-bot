@@ -10,7 +10,7 @@ interface StickerPub {
   set_id: string,
 }
 
-const url = computed(() => `http://localhost:3002/api/sets/${route.params.setId}/stickers`)
+const url = computed(() => `/api/sets/${route.params.setId}/stickers`)
 
 const { data, error, execute: refetch } = useFetch<StickerPub[]>(url, { refetch: true, updateDataOnError: true }).json()
 
@@ -26,7 +26,7 @@ watch(url, () => {
 })
 
 const approve = async () => {
-    const { data, error } = await useFetch(`http://localhost:3002/api/sets/${route.params.setId}/approve`).post()
+    const { data, error } = await useFetch(`/api/sets/${route.params.setId}/approve`).post()
     console.log(data, error)
     if (error.value) {
       alert(error.value)
@@ -35,13 +35,13 @@ const approve = async () => {
 
 const toggleBan = async () => {
   if (isBanned.value) {
-    const { data, error } = await useFetch(`http://localhost:3002/api/sets/${route.params.setId}/unban`).post()
+    const { data, error } = await useFetch(`/api/sets/${route.params.setId}/unban`).post()
     console.log(data, error)
     if (!error.value) {
       isBanned.value = false;
     }
   } else {
-    const { data, error } = await useFetch(`http://localhost:3002/api/sets/${route.params.setId}/ban`).post()
+    const { data, error } = await useFetch(`/api/sets/${route.params.setId}/ban`).post()
     console.log(data, error)
     if (!error.value) {
       isBanned.value = true;
@@ -73,7 +73,7 @@ const toggleBan = async () => {
 
     <div v-if="data">
       <div v-for="sticker of data">
-        <img :src="`http://localhost:3001/files/stickers/${sticker.id}/thumbnail.png`" loading="lazy" width="128"
+        <img :src="`/files/stickers/${sticker.id}/thumbnail.png`" loading="lazy" width="128"
           height="128" />
         {{ sticker }}
         <v-btn :to="{ name: 'banSimilarView', params: { stickerId: sticker.id } }">

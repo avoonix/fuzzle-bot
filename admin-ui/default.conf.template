@@ -8,5 +8,17 @@ server {
 
     location /api/ {
         proxy_pass http://${BACKEND_ADDR};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /files/ {
+        proxy_pass http://${BACKEND_PUBLIC_ADDR};
+        proxy_set_header Host $host;
+    }
+
+    location /thumbnails/ {
+        proxy_pass http://${BACKEND_PUBLIC_ADDR};
+        proxy_set_header Host $host;
     }
 }

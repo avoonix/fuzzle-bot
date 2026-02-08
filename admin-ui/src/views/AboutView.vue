@@ -4,7 +4,7 @@ import { useFetch } from '@vueuse/core';
 
 
 const scanBans = async () => {
-    const { data, error } = await useFetch(`http://localhost:3002/api/scan-all-stickers-for-bans`).post()
+    const { data, error } = await useFetch(`/api/scan-all-stickers-for-bans`).post()
     console.log(data, error)
     if (error.value) {
       alert(error.value)

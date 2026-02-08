@@ -11,7 +11,7 @@ interface StickerPub {
   similarity: number
 }
 
-const url = computed(() => `http://localhost:3002/api/stickers/${route.params.stickerId}/similar`)
+const url = computed(() => `/api/stickers/${route.params.stickerId}/similar`)
 
 const { data, error, execute: refetch } = useFetch(url, { refetch: true, updateDataOnError: true }).json<StickerPub[]>()
 
@@ -27,13 +27,13 @@ const isBanned = ref(false)
 
 const toggleBan = async () => {
   if (isBanned.value) {
-    const { data, error } = await useFetch(`http://localhost:3002/api/stickers/${route.params.stickerId}/unban`).post()
+    const { data, error } = await useFetch(`/api/stickers/${route.params.stickerId}/unban`).post()
     console.log(data, error)
     if (!error.value) {
       isBanned.value = false;
     }
   } else {
-    const { data, error } = await useFetch(`http://localhost:3002/api/stickers/${route.params.stickerId}/ban`).post({
+    const { data, error } = await useFetch(`/api/stickers/${route.params.stickerId}/ban`).post({
       clip_max_match_distance: maxSimilarity.value
     })
     console.log(data, error)
@@ -69,7 +69,7 @@ const toggleBan = async () => {
 
       <div v-if="data">
         <div v-for="sticker of filteredSticker">
-          <img :src="`http://localhost:3001/files/stickers/${sticker.id}/thumbnail.png`" loading="lazy" width="128" height="128" />
+          <img :src="`/files/stickers/${sticker.id}/thumbnail.png`" loading="lazy" width="128" height="128" />
           {{ sticker }}
           <v-btn :to="{name: 'banSimilarView', params: {setId: sticker.set_id, stickerId: sticker.id }}">
             ban similar view

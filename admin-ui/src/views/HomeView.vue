@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import { useFetch } from '@vueuse/core';
 import { useCounterStore } from '@/stores/counter';
 
-const url = ref('http://localhost:3002/api/pending-sets')
+const url = ref('/api/pending-sets')
 
 interface StickerSetPub {
     id: string,
@@ -35,7 +35,7 @@ const counter = useCounterStore();
     <v-text-field v-model="url" />
       <div v-if="data">
         <div v-for="set of data">
-          <img :src="`http://localhost:3001/thumbnails/sticker-set/${set.id}/image.png`" loading="lazy" width="128" height="128" />
+          <img :src="`/thumbnails/sticker-set/${set.id}/image.png`" loading="lazy" width="128" height="128" />
           {{ set }}
           <v-btn :to="{name: 'banSetView', params: {setId: set.id}}">
             ban set view
