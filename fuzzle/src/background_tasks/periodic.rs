@@ -215,7 +215,7 @@ async fn discover_stickers(
         return Ok(offset);
     };
     for pack in &result.packs {
-        let existing = database.get_sticker_set_by_id(&pack.short_name).await.unwrap();
+        let existing = database.get_sticker_set_by_id(&pack.short_name).await?;
         if existing.is_none() {
             importer
                 .queue_sticker_set_import(&pack.short_name, false, None, pack.telegram_pack_id)
