@@ -1,7 +1,8 @@
 pkg
 /target/
 *.db
-*sqlite*
+**/*.sqlite
+**/*.sqlite-*
 *.sqb*
 config.json
 config.toml
