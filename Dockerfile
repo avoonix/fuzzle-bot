@@ -15,7 +15,7 @@ RUN cargo build --release -vv
 
 FROM debian:trixie-slim as runtime
 RUN apt-get update && apt-get install -y \
-    libopenblas0 libsqlite3-0 \
+    libopenblas0 libsqlite3-0 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /wd/target/release/fuzzle-bot /
 EXPOSE 3000
