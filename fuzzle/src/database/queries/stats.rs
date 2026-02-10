@@ -75,10 +75,15 @@ impl Database {
                         .first(conn)
                         .optional()?
                         .flatten();
+                let pending_set_count = sticker_set::table
+                    .select(count_star())
+                    .filter(sticker_set::is_pending.eq(true))
+                    .get_result(conn)?;
                 Ok(AdminStats {
                     least_recently_fetched_set_age: least_recently_fetched_set_time
                         .map(|time| now - time),
                     number_of_sets_fetched_in_24_hours,
+                    pending_set_count,
                 })
             })
             .await

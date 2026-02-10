@@ -53,8 +53,9 @@ pub async fn generate_merge_image(
     let thread_span =
         tracing::info_span!("spawn_blocking_generate_merge_image").or_current();
     let img = tokio::task::spawn_blocking(move || {
-        let _entered = thread_span.entered();
-        duplicate_detector::generate_merge_image(image_a, image_b, &Default::default())
+        thread_span.in_scope(|| {
+            duplicate_detector::generate_merge_image(image_a, image_b, &Default::default())
+        })
     })
     .await?;
 
@@ -161,8 +162,12 @@ pub async fn automerge(
         }
         let buf_b = get_sticker_file(database.clone(), bot.clone(), &sticker_id_b).await?;
         let buf_a = buf_a.clone();
-        let within_thresholds =
-            tokio::task::spawn_blocking(move || within_threshold(buf_a, buf_b)).await??;
+        
+
+        let thread_span =
+            tracing::info_span!("spawn_blocking_within_threshold").or_current();
+        let within_thresholds = tokio::task::spawn_blocking(move || thread_span.in_scope(|| within_threshold(buf_a, buf_b))).await??;
+        
         if within_thresholds {
             return determine_canonical_sticker_and_merge(
                 sticker_id.to_string(),

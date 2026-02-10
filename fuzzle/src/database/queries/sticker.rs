@@ -38,7 +38,6 @@ impl Database {
             .filter(sticker_set::id.eq(set_id))
             .set((sticker_set::last_fetched.eq(now)))
             .execute(conn)?;
-        assert_eq!(changed, 1);
         Ok(())
             })
             .await
@@ -74,7 +73,6 @@ impl Database {
             .filter(sticker::id.eq(sticker_id))
             .set((sticker::telegram_file_identifier.eq(file_id)))
             .execute(conn)?;
-        assert_eq!(changed, 1);
         Ok(())
             })
             .await
@@ -704,21 +702,6 @@ impl Database {
             QueryResult::Ok(())
         })?)
 
-            })
-            .await
-    }
-
-    #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_sticker_sets_added_24_hours(
-        &self,
-    ) -> Result<Vec<(String, Option<i64>)>, DatabaseError> {
-        self.pool
-            .exec(move |conn| {
-        let utc_now = chrono::Utc::now().naive_utc(); // TODO: pass time as parameter?
-        Ok(sticker_set::table
-            .select((sticker_set::id, sticker_set::added_by_user_id))
-            .filter(sticker_set::created_at.ge(utc_now - chrono::Duration::hours(24)))
-            .load(conn)?)
             })
             .await
     }

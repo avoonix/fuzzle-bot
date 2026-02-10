@@ -16,7 +16,7 @@ use itertools::Itertools;
 use serde::Deserialize;
 
 use crate::{
-    bot::InternalError,
+    bot::{BotError, InternalError},
     database::{BanReason, BannedSticker, Sticker, StickerSet},
     services::Services,
     sticker::{
@@ -171,6 +171,10 @@ async fn get_stickers_in_set(
     Path(set_id): Path<String>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
+    let sticker_set = data.database.get_sticker_set_by_id(&set_id).await?;
+    if sticker_set.is_none() {
+        return Err(InternalError::UnexpectedNone { type_name: "sticker set".to_string() }.into()) // TODO: do not use that error
+    }
     let stickers = data.database.get_all_stickers_in_set(&set_id).await?;
     Ok(actix_web::web::Json(
         stickers
@@ -205,7 +209,7 @@ async fn scan_all_stickers_for_bans(data: Data<AppState>) -> actix_web::Result<i
                 if let Some(sticker) = sticker {
                     data.services
                         .import
-                        .possibly_auto_ban_sticker(clip_vec, &sticker.id)
+                        .possibly_auto_ban_sticker(clip_vec, &sticker.id, &sticker.sticker_set_id)
                         .await?;
                 }
             }

@@ -21,7 +21,6 @@ use crate::services::Services;
 use crate::simple_bot_api;
 
 use super::TagManagerService;
-use super::create_and_send_daily_moderation_tasks;
 use super::send_daily_report;
 
 pub fn start_periodic_tasks(
@@ -108,7 +107,7 @@ pub fn start_periodic_tasks(
             let database = database.clone();
             async move {
                 let result =
-                    create_and_send_daily_moderation_tasks(database.clone(), bot.clone(), admin_id)
+                    send_daily_report(database.clone(), bot.clone(), admin_id)
                         .await;
                 report_periodic_task_error(result);
             }
@@ -203,7 +202,7 @@ async fn discover_stickers(
     database: Database,
     importer: ImportService,
 ) -> Result<usize, InternalError> {
-    let limit = 10; // TODO: with this limit, discovery will take days
+    let limit = 50; // TODO: with this limit, discovery will take days
     if importer.is_busy() {
         tracing::info!("importer is busy, skipping import");
         return Ok(offset);

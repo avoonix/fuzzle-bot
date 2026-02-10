@@ -11,16 +11,6 @@ use crate::{
     text::{Markdown, Text},
 };
 
-pub async fn create_and_send_daily_moderation_tasks(
-    database: Database,
-    bot: Bot,
-    admin_id: UserId,
-) -> Result<(), InternalError> {
-    create_moderation_tasks_for_new_sets(&database, admin_id).await?;
-    send_daily_report(database, bot, admin_id).await?;
-    Ok(())
-}
-
 pub async fn send_daily_report(
     database: Database,
     bot: Bot,
@@ -39,45 +29,6 @@ pub async fn send_daily_report(
 
     send_moderation_tasks(database, bot, admin_id).await?;
 
-    Ok(())
-}
-
-pub async fn create_moderation_tasks_for_new_sets(
-    database: &Database,
-    admin_id: UserId,
-) -> Result<(), InternalError> {
-    let new_sticker_sets = database.get_sticker_sets_added_24_hours().await?;
-    let new_sticker_sets = new_sticker_sets
-        .into_iter()
-        .sorted_by_key(|(_, user)| user.clone())
-        .chunk_by(|(_, user)| user.clone())
-        .into_iter()
-        .map(|(user_id, chunk)| {
-            (
-                user_id.map(|user_id| UserId(user_id as u64)),
-                chunk.map(|(set_name, _)| set_name).collect_vec(),
-            )
-        })
-        .collect_vec();
-
-    for (user_id, set_names) in new_sticker_sets {
-        for set_names in set_names.chunks(10) {
-            let user_id = if let Some(user_id) = user_id {
-                user_id
-            } else {
-                tracing::warn!("some sets were added without setting added_by_user_id");
-                admin_id
-            };
-            database
-                .create_moderation_task(
-                    &crate::database::ModerationTaskDetails::ReviewNewSets {
-                        set_ids: set_names.into_iter().cloned().collect_vec(),
-                    },
-                    user_id.0 as i64,
-                )
-                .await?;
-        }
-    }
     Ok(())
 }
 

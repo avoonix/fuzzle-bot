@@ -286,6 +286,7 @@ DB: {}
 - {} stickers ({} tagged, {} sets) with {} taggings
 - {} sets fetched within 24 hours
 - least recently fetched set age: {}
+- {} pending sets
 - merge queue: /mergequeue
 
 user taggings (24 hours):",
@@ -294,7 +295,8 @@ user taggings (24 hours):",
             counts.sets,
             counts.taggings,
             stats.number_of_sets_fetched_in_24_hours,
-            age
+            age,
+            stats.pending_set_count,
         ));
 
         let user_taggings = taggings

@@ -419,4 +419,10 @@ impl Database {
             })
             .await
     }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_banned_sticker_count_for_set_id(&self, set_id: &str) -> Result<i64, DatabaseError> {
+        let set_id = set_id.to_string();
+        self.pool.exec(move |conn| Ok(banned_sticker::table.filter(banned_sticker::sticker_set_id.eq(set_id)).count().get_result(conn)?)).await
+    }
 }

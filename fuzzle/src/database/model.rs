@@ -51,6 +51,7 @@ pub struct PersonalStats {
 pub struct AdminStats {
     pub number_of_sets_fetched_in_24_hours: i64,
     pub least_recently_fetched_set_age: Option<Duration>,
+    pub pending_set_count: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +177,7 @@ pub enum ModerationTaskDetails {
         set_id: String,
         reason: ReportReason,
     },
+    #[deprecated]
     ReviewNewSets {
         set_ids: Vec<String>,
     },

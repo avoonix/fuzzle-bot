@@ -262,8 +262,9 @@ impl ImportService {
         let thread_span =
             tracing::info_span!("spawn_blocking_calculate_sticker_file_hash").or_current();
         let file_hash = task::spawn_blocking(move || {
-            let _entered = thread_span.entered();
-            calculate_sticker_file_hash(buf)
+            thread_span.in_scope(|| {
+                calculate_sticker_file_hash(buf)
+            })
         })
         .await??;
 
@@ -444,6 +445,8 @@ impl ImportService {
                 other => other?,
             }
         }
+        
+        self.possibly_auto_ban_set(&set.name, set.stickers.len()).await?;
 
         self.database.update_last_fetched(set.name.clone()).await?;
 
@@ -461,12 +464,11 @@ impl ImportService {
     let Some(file_info) = file_info else {
         return Ok(false);
     };
+    let sticker = self.database
+        .get_sticker_by_id(&sticker_unique_id)
+        .await?
+        .required()?;
     let buf = if file_info.sticker_type == StickerType::Static {
-        let sticker = self.database
-            .get_sticker_by_id(&sticker_unique_id)
-            .await?
-            .required()?;
-
         let (buf, _) =
             fetch_sticker_file(sticker.telegram_file_identifier.clone(), self.bot.clone()).await?; // this should always be an image
         buf
@@ -483,7 +485,7 @@ impl ImportService {
     let histogram = tokio::task::spawn_blocking(move || calculate_color_histogram(buf)).await??;
     let embedding = image_to_clip_embedding(buf_2, self.config.inference_url.clone()).await?;
     
-    if self.possibly_auto_ban_sticker(embedding.clone(), &sticker_unique_id).await? {
+    if self.possibly_auto_ban_sticker(embedding.clone(), &sticker_unique_id, &sticker.sticker_set_id).await? {
         return Ok(false);
     }
 
@@ -494,8 +496,26 @@ impl ImportService {
     return Ok(true);
 }
 
-pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id: &str) -> Result<bool, InternalError> {
-    let matches = self.vector_db.find_banned_stickers_given_vector(clip_vector).await?;
+#[tracing::instrument(skip(self), err(Debug))]
+async fn possibly_auto_ban_set(&self, sticker_set_id: &str, set_sticker_count: usize) -> Result<bool, InternalError> {
+    let banned_sticker_count = self.database.get_banned_sticker_count_for_set_id(sticker_set_id).await?;
+    if banned_sticker_count > 10 || banned_sticker_count as f32 > set_sticker_count as f32 * 0.3 {
+        // more than 10 stickers banned or set consists of more than 30% of banned stickers
+        self.ban_sticker_set(sticker_set_id).await?;
+        return Ok(true)
+    }
+    Ok(false)
+}
+
+/// the given sticker might exist in the main sticker table or not
+#[tracing::instrument(skip(self, clip_vector), err(Debug))]
+pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id: &str, sticker_set_id: &str) -> Result<bool, InternalError> {
+    // do not auto ban already tagged stickers
+    let has_tags = !self.database.get_sticker_tags(sticker_id).await?.is_empty();
+    if has_tags {
+        return Ok(false);
+    }
+    let matches = self.vector_db.find_banned_stickers_given_vector(clip_vector.clone()).await?;
     for m in matches {
         if let Some(threshold) = self.database.get_banned_sticker_max_match_distance(&m.file_hash).await? {
             if m.score >= threshold {
@@ -503,6 +523,33 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
                 tracing::info!(%reduced_threshold, %sticker_id, "auto banning sticker");
                 self.ban_sticker(sticker_id, reduced_threshold, crate::database::BanReason::Automatic).await?;
                 return Ok(true);
+            }
+            if m.score > 0.8 {
+                let score_banned_sticker = m.score;
+                // TODO: get rid of the magic number; goal is to not call this too often; also move the vector db call outside the loop?
+
+                // if the sticker under consideration for a ban matches a banned sticker closer than 
+                // the best match from a different set, also ban
+                let best_regular_matches = self.vector_db.find_stickers_given_vector(clip_vector.clone(), 10, 0).await?;
+                for m in best_regular_matches {
+                    let score_non_banned_sticker = m.score;
+                    if let Some(matched_sticker) = self.database.get_some_sticker_by_file_id(&m.file_hash).await? {
+                        let has_tags = !self.database.get_sticker_tags_by_file_id(&m.file_hash).await?.is_empty();
+                        if matched_sticker.sticker_set_id != sticker_set_id || has_tags {
+                            // only consider stickers from other sets
+                            // or consider stickers from same set if they are already tagged
+                            if score_banned_sticker > score_non_banned_sticker {
+                                tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, "auto banning sticker");
+                                self.ban_sticker(sticker_id, 0.95, crate::database::BanReason::Automatic).await?;
+                                // TODO: get rid of magic number
+                                return Ok(true);
+                            }
+                            break;
+                        }
+                    } else {
+                        tracing::warn!(%m.file_hash, "could not find sticker");
+                    }
+                }
             }
         }
     }

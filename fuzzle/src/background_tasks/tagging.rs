@@ -41,11 +41,18 @@ impl TfIdfService {
             .iter()
             .map(|(a, b, c)| (b.clone(), a.clone(), *c))
             .collect_vec();
+
+        let tfidf_span =
+            tracing::info_span!("spawn_blocking_tfidf").or_current();
         let tfidf = tokio::task::spawn_blocking(move || {
-            Arc::new(RwLock::new(Tfidf::generate(all_used_tags)))
+            tfidf_span.in_scope(|| {
+                Arc::new(RwLock::new(Tfidf::generate(all_used_tags)))
+            })
         });
+        let inverse_tfidf_span =
+            tracing::info_span!("spawn_blocking_inverse_tfidf").or_current();
         let inverse_tfidf =
-            tokio::task::spawn_blocking(move || Arc::new(RwLock::new(Tfidf::generate(inverse))));
+            tokio::task::spawn_blocking(move || inverse_tfidf_span.in_scope(|| Arc::new(RwLock::new(Tfidf::generate(inverse)))));
         let (tfidf, inverse_tfidf) = tokio::try_join!(tfidf, inverse_tfidf)?;
 
         let last_computed = Arc::new(RwLock::new(chrono::Utc::now()));
@@ -85,7 +92,9 @@ impl TfIdfService {
                 };
 
                 // TODO: also recompute inverse
-                let res = tokio::task::spawn_blocking(move || Tfidf::generate(all_used_tags))
+                let tfidf_span =
+                    tracing::info_span!("spawn_blocking_regenerate_tfidf").or_current();
+                let res = tokio::task::spawn_blocking(move || tfidf_span.in_scope(|| Tfidf::generate(all_used_tags)))
                     .await
                     .unwrap();
                 {
