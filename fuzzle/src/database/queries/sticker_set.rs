@@ -130,6 +130,23 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn is_sticker_set_banned(
+        &self,
+        sticker_set_id: &str,
+    ) -> Result<bool, DatabaseError> {
+        let sticker_set_id = sticker_set_id.to_string();
+        self.pool
+            .exec(move |conn| {
+                let res: i64 = removed_set::table
+                    .filter(removed_set::id.eq(sticker_set_id))
+                    .select(count_star())
+                    .get_result(conn)?;
+                Ok(res != 0)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_set_by_sticker_id(
         &self,
         sticker_id: &str,

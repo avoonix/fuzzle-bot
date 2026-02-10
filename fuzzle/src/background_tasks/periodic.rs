@@ -78,23 +78,27 @@ pub fn start_periodic_tasks(
     tokio::spawn(async move {
         let mut offset = 0;
         loop {
-            sleep(Duration::minutes(5).to_std().expect("no overflow")).await;
             let span = tracing::info_span!("periodic_discover_stickers");
             let services = services.clone();
             let database = database.clone();
-            offset = async move {
+            let (new_offset, result_len, should_wait_longer) = async move {
                 let result = discover_stickers(offset, services.telegram, database, services.import).await;
                 match result {
-                    Ok(new_offset) => new_offset,
+                    Ok((new_offset, result_len)) => (new_offset, result_len, false),
                     Err(err) => {
                         tracing::error!("periodic task error: {err:?}");
-                        offset
+                        (offset, 0, true)
                     }
                 }
             }
             .instrument(span)
             .await;
-            // span.exit();
+            if result_len == 0 && new_offset != offset && !should_wait_longer {
+                sleep(Duration::seconds(10).to_std().expect("no overflow")).await;
+            } else {
+                sleep(Duration::minutes(20).to_std().expect("no overflow")).await;
+            }
+            offset = new_offset;
         }
     });
 
@@ -201,31 +205,36 @@ async fn discover_stickers(
     tg_service: ExternalTelegramService,
     database: Database,
     importer: ImportService,
-) -> Result<usize, InternalError> {
+) -> Result<(usize, usize), InternalError> {
     let limit = 50; // TODO: with this limit, discovery will take days
     if importer.is_busy() {
         tracing::info!("importer is busy, skipping import");
-        return Ok(offset);
+        return Ok((offset, 0));
     }
     let Some(result) = tg_service
         .list_discovered_sticker_packs(offset, limit)
         .await
     else {
-        return Ok(offset);
+        return Ok((offset, 0));
     };
+    let mut new_packs = 0;
     for pack in &result.packs {
         let existing = database.get_sticker_set_by_id(&pack.short_name).await?;
         if existing.is_none() {
-            importer
-                .queue_sticker_set_import(&pack.short_name, false, None, pack.telegram_pack_id)
-                .await;
+            let banned = database.is_sticker_set_banned(&pack.short_name).await?;
+            if !banned {
+                importer
+                    .queue_sticker_set_import(&pack.short_name, false, None, pack.telegram_pack_id)
+                    .await;
+                new_packs += 1;
+            }
         }
     }
 
     if result.packs.len() == limit {
-        Ok(offset + limit)
+        Ok((offset + limit, new_packs))
     } else {
-        Ok(offset)
+        Ok((offset, new_packs))
     }
 }
 

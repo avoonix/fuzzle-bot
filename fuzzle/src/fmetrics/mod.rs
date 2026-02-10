@@ -194,7 +194,7 @@ pub async fn setup_observability(
     tracing_subscriber::registry()
         .with(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=info,opentelemetry=warn")),
+                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=info,opentelemetry=warn,Pyroscope=warn")),
         )
         .with(tracing_subscriber::fmt::layer().with_target(true))
         .with(tracing_opentelemetry::layer().with_tracer(tracer))
