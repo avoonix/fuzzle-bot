@@ -3,8 +3,8 @@ use itertools::Itertools;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex, PoisonError, RwLock,
+        atomic::{AtomicBool, Ordering},
     },
 };
 use tracing::warn;
@@ -25,8 +25,8 @@ pub struct TfIdfService {
     tag_manager: TagManagerService,
     database: Database,
     last_computed: Arc<RwLock<DateTime<Utc>>>,
-    tfidf: Arc<RwLock<Tfidf<String, Emoji>>>,
-    inverse_tfidf: Arc<RwLock<Tfidf<Emoji, String>>>,
+    tfidf: Arc<RwLock<Option<Tfidf<String, Emoji>>>>,
+    inverse_tfidf: Arc<RwLock<Option<Tfidf<Emoji, String>>>>,
     is_computing: Arc<AtomicBool>,
 }
 
@@ -42,28 +42,16 @@ impl TfIdfService {
             .map(|(a, b, c)| (b.clone(), a.clone(), *c))
             .collect_vec();
 
-        let tfidf_span =
-            tracing::info_span!("spawn_blocking_tfidf").or_current();
-        let tfidf = tokio::task::spawn_blocking(move || {
-            tfidf_span.in_scope(|| {
-                Arc::new(RwLock::new(Tfidf::generate(all_used_tags)))
-            })
-        });
-        let inverse_tfidf_span =
-            tracing::info_span!("spawn_blocking_inverse_tfidf").or_current();
-        let inverse_tfidf =
-            tokio::task::spawn_blocking(move || inverse_tfidf_span.in_scope(|| Arc::new(RwLock::new(Tfidf::generate(inverse)))));
-        let (tfidf, inverse_tfidf) = tokio::try_join!(tfidf, inverse_tfidf)?;
-
-        let last_computed = Arc::new(RwLock::new(chrono::Utc::now()));
+        let last_computed = Arc::new(RwLock::new(chrono::DateTime::<chrono::Utc>::MIN_UTC));
         let service = Self {
             tag_manager,
             database,
             last_computed,
-            tfidf,
-            inverse_tfidf,
+            tfidf: Arc::new(RwLock::new(None)),
+            inverse_tfidf: Arc::new(RwLock::new(None)),
             is_computing: Arc::new(false.into()),
         };
+        service.request_recompute().await;
         Ok(service)
     }
 
@@ -90,17 +78,35 @@ impl TfIdfService {
                         return;
                     }
                 };
+                let inverse = all_used_tags
+                    .iter()
+                    .map(|(a, b, c)| (b.clone(), a.clone(), *c))
+                    .collect_vec();
 
-                // TODO: also recompute inverse
                 let tfidf_span =
                     tracing::info_span!("spawn_blocking_regenerate_tfidf").or_current();
-                let res = tokio::task::spawn_blocking(move || tfidf_span.in_scope(|| Tfidf::generate(all_used_tags)))
-                    .await
-                    .unwrap();
+                let res = tokio::task::spawn_blocking(move || {
+                    tfidf_span.in_scope(|| Tfidf::generate(all_used_tags))
+                })
+                .await
+                .unwrap();
                 {
                     let mut t = val.tfidf.write().unwrap();
-                    *t = res;
+                    *t = Some(res);
                 }
+
+                let inverse_tfidf_span =
+                    tracing::info_span!("spawn_blocking_inverse_tfidf").or_current();
+                let inverse_tfidf = tokio::task::spawn_blocking(move || {
+                    inverse_tfidf_span.in_scope(|| Tfidf::generate(inverse))
+                })
+                .await
+                .unwrap();
+                {
+                    let mut t = val.inverse_tfidf.write().unwrap();
+                    *t = Some(inverse_tfidf);
+                }
+
                 {
                     let mut last_computed = val.last_computed.write().unwrap();
                     *last_computed = chrono::Utc::now();
@@ -122,7 +128,13 @@ impl TfIdfService {
                 sticker
                     .emoji
                     .map(|e| Emoji::new_from_string_single(e))
-                    .map(|emoji| self.tfidf.read().unwrap().suggest(emoji))
+                    .map(|emoji| match *self.tfidf.read().unwrap() {
+                        Some(ref t) => t.suggest(emoji),
+                        None => {
+                            tracing::warn!("tfidf is (not yet?) set");
+                            vec![]
+                        }
+                    })
             })
             .unwrap_or_default())
     }
@@ -131,13 +143,25 @@ impl TfIdfService {
         &self,
         tag: String,
     ) -> Result<Vec<ScoredTagSuggestion<Emoji>>, InternalError> {
-        Ok(self.inverse_tfidf.read().unwrap().suggest(tag))
+        Ok(match *self.inverse_tfidf.read().unwrap() {
+            Some(ref t) => t.suggest(tag),
+            None => {
+                tracing::warn!("inverse tfidf is (not yet?) set");
+                vec![]
+            }
+        })
     }
 
     pub async fn suggest_tags_for_emoji(
         &self,
         emoji: Emoji,
     ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
-        Ok(self.tfidf.read().unwrap().suggest(emoji))
+        Ok(match *self.tfidf.read().unwrap() {
+            Some(ref t) => t.suggest(emoji),
+            None => {
+                tracing::warn!("tfidf is (not yet?) set");
+                vec![]
+            }
+        })
     }
 }
