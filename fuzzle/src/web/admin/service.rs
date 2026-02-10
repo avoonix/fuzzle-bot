@@ -14,6 +14,7 @@ use actix_web_lab::{
 };
 use itertools::Itertools;
 use serde::Deserialize;
+use tracing::Instrument;
 
 use crate::{
     bot::{BotError, InternalError},
@@ -173,7 +174,10 @@ async fn get_stickers_in_set(
 ) -> actix_web::Result<impl Responder> {
     let sticker_set = data.database.get_sticker_set_by_id(&set_id).await?;
     if sticker_set.is_none() {
-        return Err(InternalError::UnexpectedNone { type_name: "sticker set".to_string() }.into()) // TODO: do not use that error
+        return Err(InternalError::UnexpectedNone {
+            type_name: "sticker set".to_string(),
+        }
+        .into()); // TODO: do not use that error
     }
     let stickers = data.database.get_all_stickers_in_set(&set_id).await?;
     Ok(actix_web::web::Json(
@@ -199,34 +203,42 @@ async fn approve_set(
 #[actix_web::post("/api/scan-all-stickers-for-bans")]
 #[tracing::instrument(skip(data))]
 async fn scan_all_stickers_for_bans(data: Data<AppState>) -> actix_web::Result<impl Responder> {
-    tokio::task::spawn(async move {
-        let result: Result<(), InternalError> = async {
-            let mut next_offset = None;
-            loop {
-                let (stickers, new_next_offset) = data.vector_db.scroll_stickers(500, next_offset).await?;
-                for (clip_vec, histogram_vec, file_id) in stickers {
-                    let sticker = data.database.get_some_sticker_by_file_id(&file_id).await?;
-                    if let Some(sticker) = sticker {
-                        data.services
-                            .import
-                            .possibly_auto_ban_sticker(clip_vec, &sticker.id, &sticker.sticker_set_id)
-                            .await?;
+    tokio::task::spawn(
+        async move {
+            let result: Result<(), InternalError> = async {
+                let mut next_offset = None;
+                loop {
+                    let (stickers, new_next_offset) =
+                        data.vector_db.scroll_stickers(500, next_offset).await?;
+                    for (clip_vec, histogram_vec, file_id) in stickers {
+                        let sticker = data.database.get_some_sticker_by_file_id(&file_id).await?;
+                        if let Some(sticker) = sticker {
+                            data.services
+                                .import
+                                .possibly_auto_ban_sticker(
+                                    clip_vec,
+                                    &sticker.id,
+                                    &sticker.sticker_set_id,
+                                )
+                                .await?;
+                        }
+                    }
+                    if new_next_offset == None {
+                        break;
+                    } else {
+                        next_offset = new_next_offset;
                     }
                 }
-                if new_next_offset == None {
-                    break;
-                } else {
-                    next_offset = new_next_offset;
-                }
+                Ok(())
             }
-            Ok(())
+            .await;
+            match result {
+                Ok(_) => tracing::info!("finished scan"),
+                Err(err) => tracing::error!(error = %err, "periodic task error: {err:?}"),
+            }
         }
-        .await;
-        match result {
-            Ok(_) => tracing::info!("finished scan"),
-            Err(err) => tracing::error!(error = %err, "periodic task error: {err:?}"),
-        }
-    });
+        .instrument(tracing::info_span!("scan_all_stickers_task")),
+    );
     Ok(HttpResponse::Ok().finish())
 }
 
