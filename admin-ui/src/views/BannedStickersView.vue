@@ -12,6 +12,14 @@ const url = computed(() => `/api/banned-stickers`)
 
 const { data: stickers, error, execute: refetch } = useFetch(url, { refetch: true, updateDataOnError: true }).json<StickerPub[]>()
 
+const unbanSticker = async (stickerId: string) => {
+    const { data, error } = await useFetch(`/api/stickers/${stickerId}/unban`).post()
+    console.log(data, error)
+    if (error.value) {
+      alert(error.value)
+    }
+}
+
 </script>
 
 <template>
@@ -40,6 +48,13 @@ const { data: stickers, error, execute: refetch } = useFetch(url, { refetch: tru
         <div v-for="sticker of stickers">
           <img :src="`/api/banned-sticker/${sticker.id}/thumbnail.png`" loading="lazy" width="128" height="128" />
           {{ sticker }}
+          <v-btn @click="unbanSticker(sticker.id)">
+            unban sticker
+          </v-btn>
+          <!-- TODO: both sticker and set ban views should recognize if the entity is already banned and offer to unban -->
+          <v-btn :to="{name: 'banSimilarView', params: {setId: sticker.set_id, stickerId: sticker.id }}">
+            ban similar view
+          </v-btn>
         </div>
       </div>
   </div>
