@@ -407,6 +407,7 @@ impl VectorDatabase {
                 limit: Some(99999999),
                 with_payload: Some(true.into()),
                 with_vectors: Some(true.into()),
+                timeout: Some(300),
                 ..Default::default()
             })
             .await?;

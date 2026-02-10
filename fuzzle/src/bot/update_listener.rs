@@ -48,9 +48,12 @@ impl UpdateListener {
         let vector_db = VectorDatabase::new(&config.vector_db_url).await?;
         let config = Arc::new(config);
         let services = Services::new(config.clone(), database.clone(), vector_db.clone(), bot.clone());
+        tracing::info!("set up services");
         let tag_manager = TagManagerService::new(database.clone(), config.clone()).await?;
+        tracing::info!("set up tag manager");
 
         let tfidf_service = TfIdfService::new(database.clone(), tag_manager.clone()).await?;
+        tracing::info!("set up tfidf");
 
         Ok(Self {
             tag_manager,

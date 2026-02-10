@@ -9,13 +9,13 @@ use tracing::warn;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
+    Config,
     bot::InternalError,
     database::Database,
     tags::{
         Category, DatabaseTags, E621Tags, ScoredTagSuggestion, TagManager2, TagRepository, Tfidf,
     },
     util::Emoji,
-    Config,
 };
 
 #[derive(Clone)]
@@ -32,8 +32,7 @@ impl TagManagerService {
         let db = DatabaseTags::new(database.clone()).await?;
         let e6 = E621Tags::new(config.tag_cache()).await?;
 
-        let thread_span =
-            tracing::info_span!("spawn_blocking_new_tag_manager").or_current();
+        let thread_span = tracing::info_span!("spawn_blocking_new_tag_manager").or_current();
         let tag_manager = tokio::task::spawn_blocking(move || {
             thread_span.in_scope(|| {
                 Arc::new(RwLock::new(TagManager2::new(vec![
@@ -57,8 +56,7 @@ impl TagManagerService {
     pub async fn recompute(&self) -> Result<(), InternalError> {
         let db = DatabaseTags::new(self.database.clone()).await?;
         let e6 = E621Tags::new(self.config.tag_cache()).await?;
-        let thread_span =
-            tracing::info_span!("spawn_blocking_new_tag_manager").or_current();
+        let thread_span = tracing::info_span!("spawn_blocking_new_tag_manager").or_current();
         let mut tag_manager = tokio::task::spawn_blocking(move || {
             thread_span.in_scope(|| {
                 TagManager2::new(vec![
@@ -80,11 +78,12 @@ impl TagManagerService {
     pub async fn find_tags(&self, query: &[String]) -> Vec<String> {
         let tag_manager = self.tag_manager.clone();
         let query = query.to_vec();
-        let thread_span =
-            tracing::info_span!("spawn_blocking_find_tags").or_current();
-        tokio::task::spawn_blocking(move || thread_span.in_scope(|| tag_manager.read().unwrap().find_tags(&query)))
-            .await
-            .unwrap()
+        let thread_span = tracing::info_span!("spawn_blocking_find_tags").or_current();
+        tokio::task::spawn_blocking(move || {
+            thread_span.in_scope(|| tag_manager.read().unwrap().find_tags(&query))
+        })
+        .await
+        .unwrap()
     }
 
     #[must_use]
@@ -118,12 +117,9 @@ impl TagManagerService {
     pub async fn closest_matching_tags(&self, query: &[String]) -> Vec<(String, Option<String>)> {
         let tag_manager = self.tag_manager.clone();
         let query = query.to_vec();
-        let thread_span =
-            tracing::info_span!("spawn_blocking_closest_matching_tags").or_current();
+        let thread_span = tracing::info_span!("spawn_blocking_closest_matching_tags").or_current();
         tokio::task::spawn_blocking(move || {
-            thread_span.in_scope(|| {
-                tag_manager.read().unwrap().closest_matching_tags(&query)
-            })
+            thread_span.in_scope(|| tag_manager.read().unwrap().closest_matching_tags(&query))
         })
         .await
         .unwrap()
@@ -134,12 +130,9 @@ impl TagManagerService {
     pub async fn closest_matching_tag(&self, query: &str) -> Option<String> {
         let tag_manager = self.tag_manager.clone();
         let query = query.to_string();
-        let thread_span =
-            tracing::info_span!("spawn_blocking_closest_matching_tag").or_current();
+        let thread_span = tracing::info_span!("spawn_blocking_closest_matching_tag").or_current();
         tokio::task::spawn_blocking(move || {
-            thread_span.in_scope(|| {
-                tag_manager.read().unwrap().closest_matching_tag(&query)
-            })
+            thread_span.in_scope(|| tag_manager.read().unwrap().closest_matching_tag(&query))
         })
         .await
         .unwrap()
