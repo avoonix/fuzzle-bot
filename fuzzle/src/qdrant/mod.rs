@@ -10,9 +10,7 @@ use itertools::Itertools;
 use qdrant_client::prelude::*;
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
-    Condition, CreateCollection, Datatype, Filter, LookupLocation, PayloadIncludeSelector,
-    PointsIdsList, RecommendPoints, RecommendResponse, RecommendStrategy, ScoredPoint,
-    ScrollPoints, SearchPoints, VectorParams, VectorParamsMap, VectorsConfig, WithPayloadSelector,
+    Condition, CreateCollection, Datatype, Filter, LookupLocation, PayloadIncludeSelector, PointId, PointsIdsList, RecommendPoints, RecommendResponse, RecommendStrategy, ScoredPoint, ScrollPoints, SearchPoints, VectorParams, VectorParamsMap, VectorsConfig, WithPayloadSelector
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -398,20 +396,23 @@ impl VectorDatabase {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn scroll_stickers(
         &self,
-    ) -> Result<Vec<(Vec<f32>, Vec<u8>, String)>, VectorDatabaseError> {
+        limit: u64,
+        next_offset: Option<PointId>,
+    ) -> Result<(Vec<(Vec<f32>, Vec<u8>, String)>, Option<PointId>), VectorDatabaseError> {
         // TODO: this would probably be better as "stream"?
         let result = self
             .client
             .scroll(&ScrollPoints {
                 collection_name: STICKER_COLLECTION_NAME.into(),
-                limit: Some(99999999),
+                limit: Some(limit as u32),
+                offset: next_offset,
                 with_payload: Some(true.into()),
                 with_vectors: Some(true.into()),
                 timeout: Some(300),
                 ..Default::default()
             })
             .await?;
-        Ok(result
+        let r = result
             .result
             .into_iter()
             .map(|scored_point| {
@@ -455,7 +456,8 @@ impl VectorDatabase {
                         .to_string(),
                 )
             })
-            .collect_vec())
+            .collect_vec();
+        Ok((r, result.next_page_offset))
     }
 
     #[tracing::instrument(skip(self), err(Debug))]

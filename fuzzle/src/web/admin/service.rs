@@ -201,16 +201,22 @@ async fn approve_set(
 async fn scan_all_stickers_for_bans(data: Data<AppState>) -> actix_web::Result<impl Responder> {
     tokio::task::spawn(async move {
         let result: Result<(), InternalError> = async {
-            let stickers = data.vector_db.scroll_stickers().await?;
-            dbg!(stickers.len());
-            dbg!(stickers.first());
-            for (clip_vec, histogram_vec, file_id) in stickers {
-                let sticker = data.database.get_some_sticker_by_file_id(&file_id).await?;
-                if let Some(sticker) = sticker {
-                    data.services
-                        .import
-                        .possibly_auto_ban_sticker(clip_vec, &sticker.id, &sticker.sticker_set_id)
-                        .await?;
+            let mut next_offset = None;
+            loop {
+                let (stickers, new_next_offset) = data.vector_db.scroll_stickers(500, next_offset).await?;
+                for (clip_vec, histogram_vec, file_id) in stickers {
+                    let sticker = data.database.get_some_sticker_by_file_id(&file_id).await?;
+                    if let Some(sticker) = sticker {
+                        data.services
+                            .import
+                            .possibly_auto_ban_sticker(clip_vec, &sticker.id, &sticker.sticker_set_id)
+                            .await?;
+                    }
+                }
+                if new_next_offset == None {
+                    break;
+                } else {
+                    next_offset = new_next_offset;
                 }
             }
             Ok(())
