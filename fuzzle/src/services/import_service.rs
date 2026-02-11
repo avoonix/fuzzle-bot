@@ -424,6 +424,7 @@ impl ImportService {
                 sticker.file.unique_id.clone(),
             )
             .await?;
+            self.possibly_auto_ban_set(&set.name, set.stickers.len()).await?;
         }
         for sticker in saved_stickers.clone() {
             let Some(s) = set.stickers.iter().find(|s| s.file.unique_id == sticker.id) else {
@@ -523,7 +524,7 @@ impl ImportService {
 #[tracing::instrument(skip(self), err(Debug))]
 async fn possibly_auto_ban_set(&self, sticker_set_id: &str, set_sticker_count: usize) -> Result<bool, InternalError> {
     let banned_sticker_count = self.database.get_banned_sticker_count_for_set_id(sticker_set_id).await?;
-    if banned_sticker_count > 10 || banned_sticker_count as f32 > set_sticker_count as f32 * 0.3 {
+    if banned_sticker_count > 20 || banned_sticker_count as f32 > set_sticker_count as f32 * 0.3 {
         // more than 10 stickers banned or set consists of more than 30% of banned stickers
         self.ban_sticker_set(sticker_set_id).await?;
         return Ok(true)

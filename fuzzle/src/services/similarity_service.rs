@@ -59,9 +59,11 @@ impl SimilarityService {
             Some(hashes) => hashes,
             None => {
                 // dispatch in background - otherwise the query would take too long if the set is large
-                self.import
-                    .queue_sticker_set_import(&sticker.sticker_set_id, false, None, None)
-                    .await;
+                if !self.import.is_busy() {
+                    self.import
+                        .queue_sticker_set_import(&sticker.sticker_set_id, false, None, None)
+                        .await;
+                }
                 return Err(UserError::VectorNotFound.into());
             }
         };
