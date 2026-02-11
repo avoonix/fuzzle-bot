@@ -24,6 +24,7 @@ use crate::callback::TagOperation;
 
 use crate::database::{ContinuousTag, Database, MergeStatus};
 use crate::database::{DialogState, TagCreator};
+use crate::fmetrics::TracedMessage;
 use crate::message::{send_merge_queue, send_readonly_message, set_tag_id, Keyboard};
 use crate::services::{ Services};
 use crate::sticker::{determine_canonical_sticker_and_merge, fetch_sticker_file, FileKind};
@@ -185,16 +186,22 @@ async fn send_tagging_keyboard(
 #[tracing::instrument(skip(request_context, q))]
 pub async fn callback_handler_wrapper(
     q: CallbackQuery,
-    request_context: RequestContext,
+    request_context: TracedMessage<RequestContext>,
 ) -> Result<(), ()> {
-    match callback_handler(q.clone(), request_context.clone()).await {
-        Ok(_) => {}
-        Err(error) => {
-            report_bot_error(&error);
-            report_internal_error_result(show_error(q, request_context, error).await);
+    let span = tracing::info_span!(
+        parent: request_context.span, 
+        "callback_handler",
+    );
+    async move {
+        match callback_handler(q.clone(), request_context.message.clone()).await {
+            Ok(_) => {}
+            Err(error) => {
+                report_bot_error(&error);
+                report_internal_error_result(show_error(q, request_context.message, error).await);
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    }.instrument(span).await
 }
 
 #[tracing::instrument(skip(request_context, q), err(Debug))]

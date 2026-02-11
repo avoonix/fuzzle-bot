@@ -1,19 +1,31 @@
 use teloxide::prelude::*;
+use tracing::Instrument;
 
-use crate::bot::{BotError, InternalError, RequestContext, report_internal_error};
+use crate::{
+    bot::{BotError, InternalError, RequestContext, report_internal_error},
+    fmetrics::TracedMessage,
+};
 
 use super::result_id::InlineQueryResultId;
 
 #[tracing::instrument(skip(request_context))]
 pub async fn inline_result_handler_wrapper(
     q: ChosenInlineResult,
-    request_context: RequestContext,
+    request_context: TracedMessage<RequestContext>,
 ) -> Result<(), ()> {
-    match inline_result_handler(q, request_context).await {
-        Ok(_) => {}
-        Err(error) => report_internal_error(&error),
+    let span = tracing::info_span!(
+        parent: request_context.span,
+        "inline_result_handler",
+    );
+    async move {
+        match inline_result_handler(q, request_context.message).await {
+            Ok(_) => {}
+            Err(error) => report_internal_error(&error),
+        }
+        Ok(())
     }
-    Ok(())
+    .instrument(span)
+    .await
 }
 
 #[tracing::instrument(skip(request_context, q), err(Debug))]

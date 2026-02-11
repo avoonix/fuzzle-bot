@@ -6,6 +6,7 @@ use crate::bot::{
 use crate::bot::{BotExt, RequestContext};
 use crate::database::{self, min_max, DialogState, ReportReason, User};
 use crate::database::{Database, Sticker, StickerSet};
+use crate::fmetrics::TracedMessage;
 use crate::inline::{InlineQueryData, SetOperation};
 use crate::message::{Keyboard, StartParameter};
 use crate::services::Services;
@@ -543,16 +544,22 @@ async fn handle_continuous_tag_query(
 #[tracing::instrument(skip(request_context))]
 pub async fn inline_query_handler_wrapper(
     q: InlineQuery,
-    request_context: RequestContext,
+    request_context: TracedMessage<RequestContext>,
 ) -> Result<(), ()> {
-    match inline_query_handler(q.clone(), request_context.clone()).await {
-        Ok(_) => {}
-        Err(error) => {
-            report_bot_error(&error);
-            report_internal_error_result(show_error(q, request_context, error).await);
+    let span = tracing::info_span!(
+        parent: request_context.span, 
+        "inline_query_handler",
+    );
+    async move {
+        match inline_query_handler(q.clone(), request_context.message.clone()).await {
+            Ok(_) => {}
+            Err(error) => {
+                report_bot_error(&error);
+                report_internal_error_result(show_error(q, request_context.message, error).await);
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    }.instrument(span).await
 }
 
 #[tracing::instrument(skip(request_context, q), err(Debug))]

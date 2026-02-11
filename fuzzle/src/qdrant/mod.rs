@@ -357,7 +357,7 @@ impl VectorDatabase {
     pub async fn get_sticker_clip_vector(
         &self,
         file_hash: String,
-    ) -> Result<Vec<f32>, VectorDatabaseError> {
+    ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
         let point_uuid = file_hash_to_uuid(&file_hash).into();
         let search_result = self
             .client
@@ -369,10 +369,13 @@ impl VectorDatabase {
                 Some(false),
                 None,
             )
-            .await?;
+            .await
+            .convert_to_sensible_error()?;
+        let Some(search_result) = search_result else {return Ok(None)};
 
         let Some(result) = search_result.result.first() else {
-            return Err(VectorDatabaseError::Other(anyhow::anyhow!("not found"))); // TODO: better error
+            tracing::info!("retrieved points are empty");
+            return Ok(None);
         };
 
         let clip_vector = result
@@ -390,7 +393,7 @@ impl VectorDatabase {
                 None => todo!(),
             }).unwrap();
         
-        Ok(clip_vector)
+        Ok(Some(clip_vector))
     }
 
     #[tracing::instrument(skip(self), err(Debug))]

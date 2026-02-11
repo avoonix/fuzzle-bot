@@ -2,7 +2,7 @@ mod histogram;
 mod measures;
 mod util;
 
-pub use histogram::{calculate_color_histogram, create_historgram_image};
+pub use histogram::{calculate_color_histogram, create_historgram_image, Histogram};
 use itertools::Either;
 pub use measures::{Match, Measures};
 use qdrant_client::qdrant::Vector;

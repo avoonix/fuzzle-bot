@@ -21,6 +21,7 @@ use teloxide::{
 use tracing::{Instrument, info};
 use url::Url;
 
+use crate::fmetrics::TracedMessage;
 use crate::{
     bot::{
         Bot, BotError, BotExt, RequestContext, UserError, report_bot_error, report_internal_error,
@@ -212,19 +213,24 @@ async fn handle_text_message(
     }
 }
 
-#[tracing::instrument(skip(request_context, msg))]
 pub async fn message_handler_wrapper(
     msg: Message,
-    request_context: RequestContext,
+    request_context: TracedMessage<RequestContext>,
 ) -> Result<(), ()> {
-    match message_handler(msg.clone(), request_context.clone()).await {
-        Ok(_) => {}
-        Err(error) => {
-            report_bot_error(&error);
-            report_internal_error_result(show_error(msg, request_context, error).await);
+    let span = tracing::info_span!(
+        parent: request_context.span, 
+        "message_handler",
+    );
+    async move {
+        match message_handler(msg.clone(), request_context.message.clone()).await {
+            Ok(_) => {}
+            Err(error) => {
+                report_bot_error(&error);
+                report_internal_error_result(show_error(msg, request_context.message, error).await);
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    }.instrument(span).await
 }
 
 #[tracing::instrument(skip(request_context, msg), err(Debug))]

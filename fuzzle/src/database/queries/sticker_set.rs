@@ -365,7 +365,7 @@ impl Database {
                 Ok(sticker_set::table
                     .select(StickerSet::as_select())
                     .filter((sticker_set::is_pending.eq(true)))
-                    .order_by(sticker_set::id)
+                    .order_by(sticker_set::created_at.desc())
                     .limit(limit)
                     .offset(offset)
                     .load(conn)?)

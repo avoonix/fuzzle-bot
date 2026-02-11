@@ -20,7 +20,7 @@ use tracing::{info, warn};
 use url::Url;
 
 use super::error_handler::ErrorHandler;
-use super::user_meta::inject_context;
+use super::user_meta::handle_incoming_telegram_update;
 use super::{Bot, InternalError};
 
 pub struct UpdateListener {
@@ -118,7 +118,7 @@ impl UpdateListener {
         );
 
         let handler: Handler<'_, _, Result<(), ()>, _> = dptree::entry()
-            .chain(dptree::filter_map_async(inject_context))
+            .chain(dptree::filter_map_async(handle_incoming_telegram_update))
             .branch(Update::filter_message().endpoint(message_handler_wrapper))
             .branch(Update::filter_callback_query().endpoint(callback_handler_wrapper))
             .branch(Update::filter_inline_query().endpoint(inline_query_handler_wrapper))

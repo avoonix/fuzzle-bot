@@ -26,6 +26,14 @@ use crate::fmetrics::system_metrics::start_system_metrics_task;
 
 use self::{metrics_explorer_otel::OpenTelemetryRecorder};
 
+use tracing::Span;
+
+#[derive(Clone)]
+pub struct TracedMessage<T> {
+    pub message: T,
+    pub span: Span,
+}
+
 pub trait TracedRequest {
     async fn send_traced(self, span_name: &str) -> reqwest::Result<reqwest::Response>;
 }
@@ -60,8 +68,6 @@ impl TracedRequest for reqwest::RequestBuilder {
                 Ok(resp) => {
                     let code = resp.status().as_u16();
                     tracing::Span::current().record("http.status_code", code);
-
-                    tracing::info!(status = code, "Response received");
 
                     if !resp.status().is_success() {
                         tracing::Span::current().record("otel.status_code", "ERROR");

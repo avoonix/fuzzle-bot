@@ -3,16 +3,18 @@ use std::sync::Arc;
 use crate::background_tasks::{TagManagerService, TfIdfService};
 use crate::bot::config::Config;
 use crate::database::{Database, User};
+use crate::fmetrics::TracedMessage;
 use crate::qdrant::VectorDatabase;
 use crate::services::Services;
 use itertools::Itertools;
 use teloxide::prelude::*;
 use teloxide::types::ChatKind;
+use tracing::Instrument;
 
 use super::{Bot, BotError, RequestContext};
 
-#[tracing::instrument(skip(update, config, database, tag_manager, bot, tfidf_service, vector_db, services))]
-pub async fn inject_context(
+// TODO: this should be refactored; we dont need that many separate service structs
+pub async fn handle_incoming_telegram_update(
     update: Update,
     config: Arc<Config>,
     database: Database,
@@ -21,30 +23,42 @@ pub async fn inject_context(
     tfidf_service: TfIdfService,
     vector_db: VectorDatabase,
     services: Services,
-) -> Option<RequestContext> {
-    match get_user(
-        update.clone(),
-        config.clone(),
-        database.clone(),
-        bot.clone(),
-    )
-    .await
-    {
-        Ok(user) => Some(RequestContext {
-            bot,
-            config,
-            database,
-            tag_manager,
-            user: Arc::new(user),
-            tfidf: tfidf_service,
-            vector_db,
-            services,
-        }),
-        Err(err) => {
-            tracing::error!("error during inject: {err}");
-            None
+) -> Option<TracedMessage<RequestContext>> {
+    let root_span = tracing::info_span!("handle_incoming_telegram_update");
+    let span = tracing::info_span!(
+        parent: root_span.clone(),
+        "inject_request_context",
+    );
+    async move {
+        match get_user(
+            update.clone(),
+            config.clone(),
+            database.clone(),
+            bot.clone(),
+        )
+        .await
+        {
+            Ok(user) => Some(TracedMessage {
+                message: RequestContext {
+                    bot,
+                    config,
+                    database,
+                    tag_manager,
+                    user: Arc::new(user),
+                    tfidf: tfidf_service,
+                    vector_db,
+                    services,
+                },
+                span: root_span,
+            }),
+            Err(err) => {
+                tracing::error!("error during inject: {err}");
+                None
+            }
         }
     }
+    .instrument(span)
+    .await
 }
 
 #[tracing::instrument(skip(config, database, bot, update), err(Debug))]

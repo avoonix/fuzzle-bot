@@ -8,7 +8,7 @@ use tokio::task;
 use tracing::Instrument;
 
 use crate::{
-    Config, bot::{Bot, BotError, InternalError, UserError, report_periodic_task_error}, database::{BanReason, Database, DatabaseError, StickerType}, inference::image_to_clip_embedding, qdrant::VectorDatabase, services::ExternalTelegramService, sticker::{automerge, calculate_color_histogram, calculate_sticker_file_hash, fetch_sticker_file}, util::{Emoji, Required, decode_sticker_set_id, is_wrong_file_id_error}
+    Config, bot::{Bot, BotError, InternalError, UserError, report_periodic_task_error}, database::{BanReason, Database, DatabaseError, StickerType}, fmetrics::TracedMessage, inference::image_to_clip_embedding, qdrant::VectorDatabase, services::ExternalTelegramService, sticker::{Histogram, automerge, calculate_color_histogram, calculate_sticker_file_hash, fetch_sticker_file}, util::{Emoji, Required, decode_sticker_set_id, is_wrong_file_id_error}
 };
 
 #[derive(Clone)]
@@ -17,7 +17,7 @@ pub struct ImportService {
     config: Arc<Config>,
     bot: Bot,
     vector_db: VectorDatabase,
-    tx: Sender<StickerSetFetchRequest>,
+    tx: Sender<TracedMessage<StickerSetFetchRequest>>,
     tg_service: ExternalTelegramService,
 }
 
@@ -56,27 +56,35 @@ impl ImportService {
             tokio::spawn(async move {
                 while let Ok(received) = rx.recv_async().await {
                     metrics::gauge!("fuzzle_sticker_import_queue_length").set(rx.len() as f64);
-                    let StickerSetFetchRequest {
-                        set_id,
-                        ignore_last_fetched,
-                        added_by_user_id,
-                        numeric_set_id,
-                    } = received;
-                    let result = service
-                        .import_all_stickers_from_set(
-                            &set_id,
+                    let span = tracing::info_span!(
+                        parent: &received.span,
+                        "import_sticker_queue_iteration"
+                    );
+                    let service = service.clone();
+                    async move {
+                        let StickerSetFetchRequest {
+                            set_id,
                             ignore_last_fetched,
                             added_by_user_id,
                             numeric_set_id,
-                        )
-                        .await;
-                    report_periodic_task_error(result);
+                        } = received.message;
+                        let result = service
+                            .import_all_stickers_from_set(
+                                &set_id,
+                                ignore_last_fetched,
+                                added_by_user_id,
+                                numeric_set_id,
+                            )
+                            .await;
+                        report_periodic_task_error(result);
+                    }.instrument(span).await
                 }
             });
         }
         service
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn queue_sticker_set_import(
         &self,
         set_id: &str,
@@ -85,11 +93,14 @@ impl ImportService {
         numeric_set_id: Option<i64>,
     ) {
         self.tx
-            .send_async(StickerSetFetchRequest {
-                set_id: set_id.to_string(),
-                ignore_last_fetched,
-                added_by_user_id,
-                numeric_set_id,
+            .send_async(TracedMessage {
+                message: StickerSetFetchRequest {
+                    set_id: set_id.to_string(),
+                    ignore_last_fetched,
+                    added_by_user_id,
+                    numeric_set_id,
+                },
+                span: tracing::Span::current()
             })
             .await
             .expect("channel must be open");
@@ -225,6 +236,8 @@ impl ImportService {
     #[tracing::instrument(skip(self))]
     async fn analyze_sticker_background(&self, sticker_unique_id: String) {
         let service = self.clone();
+        let background_span = tracing::info_span!(parent: tracing::Span::none(), "analyze_sticker_background_task");
+        background_span.follows_from(tracing::Span::current());
         tokio::spawn(async move {
             let result = service.database.get_sticker_file_by_sticker_id(&sticker_unique_id).await;
             let file = match result {
@@ -247,7 +260,7 @@ impl ImportService {
                 let result = service.analyze_sticker(sticker_unique_id).await;
                 report_periodic_task_error(result);
             }
-        }.instrument(tracing::info_span!(parent: tracing::Span::none(), "analyze_sticker_background_task")));
+        }.instrument(background_span));
     }
 
     #[tracing::instrument(skip(self, sticker))]
@@ -453,6 +466,28 @@ impl ImportService {
         Ok(())
     }
     
+    
+    #[tracing::instrument(skip(self), err(Debug))]
+    async fn get_clip_embedding(&self, sticker_type: StickerType, telegram_file_identifier: &str, thumbnail_file_id: &Option<String>) -> Result<(Histogram, Vec<f32>), InternalError> {
+    let buf = if sticker_type == StickerType::Static {
+        let (buf, _) =
+            fetch_sticker_file(telegram_file_identifier.to_string(), self.bot.clone()).await?; // this should always be an image
+        buf
+    } else {
+        let Some(thumbnail_file_id) = thumbnail_file_id else {
+            tracing::error!("thumbnail file id does not exist but is required to get the embedding");
+            return Err(InternalError::OperationFailed);
+        };
+
+        let (buf, _) = fetch_sticker_file(thumbnail_file_id.clone(), self.bot.clone()).await?; // this should always be an image
+        buf
+    };
+
+    let buf_2 = buf.clone();
+    let histogram = tokio::task::spawn_blocking(move || calculate_color_histogram(buf)).await??;
+    Ok((histogram, image_to_clip_embedding(buf_2, self.config.inference_url.clone()).await?))
+    }
+    
 #[tracing::instrument(skip(self), err(Debug))]
  async fn analyze_sticker(
      &self,
@@ -468,22 +503,7 @@ impl ImportService {
         .get_sticker_by_id(&sticker_unique_id)
         .await?
         .required()?;
-    let buf = if file_info.sticker_type == StickerType::Static {
-        let (buf, _) =
-            fetch_sticker_file(sticker.telegram_file_identifier.clone(), self.bot.clone()).await?; // this should always be an image
-        buf
-    } else {
-        let Some(thumbnail_file_id) = file_info.thumbnail_file_id else {
-            return Ok(false);
-        };
-
-        let (buf, _) = fetch_sticker_file(thumbnail_file_id.clone(), self.bot.clone()).await?; // this should always be an image
-        buf
-    };
-
-    let buf_2 = buf.clone();
-    let histogram = tokio::task::spawn_blocking(move || calculate_color_histogram(buf)).await??;
-    let embedding = image_to_clip_embedding(buf_2, self.config.inference_url.clone()).await?;
+    let (histogram, embedding) = self.get_clip_embedding(file_info.sticker_type, &sticker.telegram_file_identifier, &file_info.thumbnail_file_id).await?;
     
     if self.possibly_auto_ban_sticker(embedding.clone(), &sticker_unique_id, &sticker.sticker_set_id).await? {
         return Ok(false);
@@ -587,6 +607,7 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
     }
 
     /// ban a sticker that already exists in the database
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn ban_sticker(
         &self,
         sticker_id: &str,
@@ -610,6 +631,13 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
             .vector_db
             .get_sticker_clip_vector(sticker.sticker_file_id.clone())
             .await?;
+        let clip_vector = match clip_vector {
+            Some(v) => v,
+            None => {
+                let (_, clip_vector) = self.get_clip_embedding(sticker_file.sticker_type, &sticker.telegram_file_identifier, &sticker_file.thumbnail_file_id).await?;
+                clip_vector
+            }
+        };
         self.vector_db
             .insert_banned_sticker(clip_vector, sticker.sticker_file_id.clone())
             .await?;
