@@ -51,7 +51,10 @@ pub async fn init() -> Result<()> {
     let pyroscope_url = std::env::var("PYROSCOPE_URL")
         .unwrap_or_else(|_| "http://localhost:4040".to_string());
 
-    let observability = setup_observability(otlp_endpoint, pyroscope_url).await?;
+    let service_name = std::env::var("OTEL_SERVICE_NAME")
+        .unwrap_or_else(|_| "fuzzle-bot".to_string());
+
+    let observability = setup_observability(otlp_endpoint, pyroscope_url, service_name).await?;
 
     serve_bot_command(config).await?;
     

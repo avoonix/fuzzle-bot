@@ -151,8 +151,9 @@ impl Drop for Observability {
 pub async fn setup_observability(
     otlp_endpoint: String,
     pyroscope_url: String,
+    service_name: String,
 ) -> anyhow::Result<Observability> {
-    let resource = Resource::builder().with_service_name("fuzzle-bot").build();
+    let resource = Resource::builder().with_service_name(service_name.clone()).build();
 
     let trace_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
@@ -168,7 +169,7 @@ pub async fn setup_observability(
     global::set_tracer_provider(trace_provider.clone());
     global::set_text_map_propagator(TraceContextPropagator::new());
 
-    let tracer = trace_provider.tracer("rust-alloy-demo");
+    let tracer = trace_provider.tracer(service_name.clone());
 
     let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
         .with_tonic()
@@ -207,7 +208,7 @@ pub async fn setup_observability(
         .with(otel_log_layer)
         .init();
 
-    let meter = global::meter("rust-alloy-demo");
+    let meter = global::meter(&service_name);
     let recorder = OpenTelemetryRecorder::new(meter);
     metrics::set_global_recorder(recorder).expect("failed to install recorder");
     metrics::describe_counter!(
@@ -227,9 +228,8 @@ pub async fn setup_observability(
         .sample_rate(100)
         .report_thread_id()
         .report_thread_name();
-    let agent = PyroscopeAgent::builder(pyroscope_url.clone(), "fuzzle-bot".to_string())
+    let agent = PyroscopeAgent::builder(pyroscope_url.clone(), service_name.clone())
         .backend(pprof_backend(pprof_config))
-        .tags(vec![("env", "production")]) // Optional: Add default tags
         .build()?;
 
     let profile_agent = agent.start()?;

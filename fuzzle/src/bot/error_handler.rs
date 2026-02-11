@@ -3,6 +3,7 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use teloxide::prelude::*;
 use teloxide::types::Recipient;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::{bot::BotExt, text::Markdown};
 
@@ -39,7 +40,10 @@ pub fn report_internal_error(result: &InternalError) {
 
 pub fn report_bot_error(result: &BotError) {
     match result {
-        BotError::InternalError(error) => tracing::error!("handler error: {error:?}"),
+        BotError::InternalError(error) => {
+            tracing::error!("handlererror: {error:?}");
+            tracing::Span::current().set_status(opentelemetry::trace::Status::Error { description: format!("bot error {error:?}").into() });
+},
         BotError::UserError(error) => {}
     }
 }
