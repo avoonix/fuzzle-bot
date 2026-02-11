@@ -208,7 +208,7 @@ pub async fn setup_observability(
         .with(otel_log_layer)
         .init();
 
-    let meter = global::meter(&service_name);
+    let meter = global::meter("fuzzle-bot");
     let recorder = OpenTelemetryRecorder::new(meter);
     metrics::set_global_recorder(recorder).expect("failed to install recorder");
     metrics::describe_counter!(
