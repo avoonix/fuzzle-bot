@@ -56,10 +56,14 @@ impl ImportService {
             tokio::spawn(async move {
                 while let Ok(received) = rx.recv_async().await {
                     metrics::gauge!("fuzzle_sticker_import_queue_length").set(rx.len() as f64);
+                    // let span = tracing::info_span!(
+                    //     parent: &received.span,
+                    //     "import_sticker_queue_iteration"
+                    // ); // TODO: reduce the number of operations and use the parent approach
                     let span = tracing::info_span!(
-                        parent: &received.span,
                         "import_sticker_queue_iteration"
                     );
+                    span.follows_from(received.span);
                     let service = service.clone();
                     async move {
                         let StickerSetFetchRequest {
