@@ -94,9 +94,9 @@ pub fn start_periodic_tasks(
             .instrument(span)
             .await;
             if result_len == 0 && new_offset != offset && !should_wait_longer {
-                sleep(Duration::seconds(10).to_std().expect("no overflow")).await;
+                sleep(Duration::seconds(5).to_std().expect("no overflow")).await;
             } else {
-                sleep(Duration::minutes(20).to_std().expect("no overflow")).await;
+                sleep(Duration::hours(1).to_std().expect("no overflow")).await;
             }
             offset = new_offset;
         }
@@ -206,7 +206,7 @@ async fn discover_stickers(
     database: Database,
     importer: ImportService,
 ) -> Result<(usize, usize), InternalError> {
-    let limit = 50; // TODO: with this limit, discovery will take days
+    let limit = 20;
     if importer.is_busy() {
         tracing::info!("importer is busy, skipping import");
         return Ok((offset, 0));
