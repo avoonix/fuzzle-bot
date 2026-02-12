@@ -33,7 +33,7 @@ pub async fn find_with_text_embedding(
     let query_embedding = text_to_clip_embedding(text, config.inference_url.clone()).await?;
 
     let file_hashes = vector_db
-        .find_stickers_given_vector(query_embedding.into(), limit as u64, offset as u64)
+        .find_stickers_given_vector(query_embedding.into(), limit as u64, offset as u64, None)
         .await?;
     let len = file_hashes.len();
     Ok((

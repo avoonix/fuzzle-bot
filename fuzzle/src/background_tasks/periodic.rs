@@ -96,7 +96,8 @@ pub fn start_periodic_tasks(
             if result_len == 0 && new_offset != offset && !should_wait_longer {
                 sleep(Duration::seconds(5).to_std().expect("no overflow")).await;
             } else {
-                sleep(Duration::hours(1).to_std().expect("no overflow")).await;
+                sleep(Duration::minutes(20).to_std().expect("no overflow")).await;
+                // TODO: i should really add a config for the automatic tasks
             }
             offset = new_offset;
         }

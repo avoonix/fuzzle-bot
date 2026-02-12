@@ -469,8 +469,9 @@ impl VectorDatabase {
         clip_vector: Vec<f32>,
         limit: u64,
         offset: u64,
+        score_threshold: Option<f32>,
     ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
-        self.find_stickers_given_vector_using_collection(clip_vector, limit, offset, STICKER_COLLECTION_NAME).await
+        self.find_stickers_given_vector_using_collection(clip_vector, limit, offset, STICKER_COLLECTION_NAME, score_threshold).await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -478,7 +479,7 @@ impl VectorDatabase {
         &self,
         clip_vector: Vec<f32>,
     ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
-        self.find_stickers_given_vector_using_collection(clip_vector, 50, 0, BANNED_STICKER_COLLECTION_NAME).await
+        self.find_stickers_given_vector_using_collection(clip_vector, 50, 0, BANNED_STICKER_COLLECTION_NAME, None).await
     }
 
     async fn find_stickers_given_vector_using_collection(
@@ -486,7 +487,8 @@ impl VectorDatabase {
         clip_vector: Vec<f32>,
         limit: u64,
         offset: u64,
-        collection_name: &str
+        collection_name: &str,
+        score_threshold: Option<f32>,
     ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
         let search_result = self
             .client
@@ -497,6 +499,7 @@ impl VectorDatabase {
                 limit,
                 offset: Some(offset),
                 with_payload: Some(true.into()),
+                score_threshold,
                 ..Default::default()
             })
             .await?;

@@ -543,19 +543,13 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
     let matches = self.vector_db.find_banned_stickers_given_vector(clip_vector.clone()).await?;
     for m in matches {
         if let Some(threshold) = self.database.get_banned_sticker_max_match_distance(&m.file_hash).await? {
-            if m.score >= threshold {
-                let reduced_threshold = threshold + ((1.0 - threshold) / 2.0).max(0.0);
-                tracing::info!(%reduced_threshold, %sticker_id, "auto banning sticker");
-                self.ban_sticker(sticker_id, reduced_threshold, crate::database::BanReason::Automatic).await?;
-                return Ok(true);
-            }
-            if m.score > 0.8 {
+            if m.score > 0.8 || m.score >= threshold {
                 let score_banned_sticker = m.score;
                 // TODO: get rid of the magic number; goal is to not call this too often; also move the vector db call outside the loop?
 
                 // if the sticker under consideration for a ban matches a banned sticker closer than 
                 // the best match from a different set, also ban
-                let best_regular_matches = self.vector_db.find_stickers_given_vector(clip_vector.clone(), 10, 0).await?;
+                let best_regular_matches = self.vector_db.find_stickers_given_vector(clip_vector.clone(), 30, 0, Some(m.score)).await?;
                 for m in best_regular_matches {
                     let score_non_banned_sticker = m.score;
                     if let Some(matched_sticker) = self.database.get_some_sticker_by_file_id(&m.file_hash).await? {
@@ -566,10 +560,12 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
                             if score_banned_sticker > score_non_banned_sticker {
                                 tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, "auto banning sticker");
                                 self.ban_sticker(sticker_id, 0.95, crate::database::BanReason::Automatic).await?;
-                                // TODO: get rid of magic number
+                                // TODO: get rid of magic numbers
                                 return Ok(true);
+                            } else {
+                                // ordered by score; as soon as the score is lower, the rest is not going to match
+                                break;
                             }
-                            break;
                         }
                     } else {
                         tracing::warn!(%m.file_hash, "could not find sticker");
