@@ -478,8 +478,10 @@ impl VectorDatabase {
     pub async fn find_banned_stickers_given_vector(
         &self,
         clip_vector: Vec<f32>,
+        limit: u64,
+        score_threshold: Option<f32>,
     ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
-        self.find_stickers_given_vector_using_collection(clip_vector, 50, 0, BANNED_STICKER_COLLECTION_NAME, None).await
+        self.find_stickers_given_vector_using_collection(clip_vector, limit, 0, BANNED_STICKER_COLLECTION_NAME, score_threshold).await
     }
 
     async fn find_stickers_given_vector_using_collection(

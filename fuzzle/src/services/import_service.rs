@@ -540,7 +540,8 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
     if has_tags {
         return Ok(false);
     }
-    let matches = self.vector_db.find_banned_stickers_given_vector(clip_vector.clone()).await?;
+    let matches = self.vector_db.find_banned_stickers_given_vector(clip_vector.clone(), 5, Some(0.6)).await?;
+    let mut should_ban = false;
     for m in matches {
         if let Some(threshold) = self.database.get_banned_sticker_max_match_distance(&m.file_hash).await? {
             if m.score > 0.8 || m.score >= threshold {
@@ -549,30 +550,33 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
 
                 // if the sticker under consideration for a ban matches a banned sticker closer than 
                 // the best match from a different set, also ban
-                let best_regular_matches = self.vector_db.find_stickers_given_vector(clip_vector.clone(), 30, 0, Some(m.score)).await?;
+                let best_regular_matches = self.vector_db.find_stickers_given_vector(clip_vector.clone(), 100, 0, Some(m.score)).await?;
+                let best_regular_matches_len = best_regular_matches.len();
                 for m in best_regular_matches {
                     let score_non_banned_sticker = m.score;
                     if let Some(matched_sticker) = self.database.get_some_sticker_by_file_id(&m.file_hash).await? {
+                        if matched_sticker.sticker_set_id != sticker_set_id {
+                            tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, %sticker_set_id, "sparing sticker, good match from other set");
+                            return Ok(false);
+                        }
                         let has_tags = !self.database.get_sticker_tags_by_file_id(&m.file_hash).await?.is_empty();
-                        if matched_sticker.sticker_set_id != sticker_set_id || has_tags {
-                            // only consider stickers from other sets
-                            // or consider stickers from same set if they are already tagged
-                            if score_banned_sticker > score_non_banned_sticker {
-                                tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, "auto banning sticker");
-                                self.ban_sticker(sticker_id, 0.95, crate::database::BanReason::Automatic).await?;
-                                // TODO: get rid of magic numbers
-                                return Ok(true);
-                            } else {
-                                // ordered by score; as soon as the score is lower, the rest is not going to match
-                                break;
-                            }
+                        if has_tags {
+                            tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, "sparing sticker, got match with tags");
+                            return Ok(false);
                         }
                     } else {
                         tracing::warn!(%m.file_hash, "could not find sticker");
                     }
                 }
+                tracing::info!(%threshold, %score_banned_sticker, %best_regular_matches_len, "sticker will be banned unless other matches are found");
+                should_ban = true;
             }
         }
+    }
+    if should_ban {
+        tracing::info!(%sticker_id, "auto banning sticker");
+        self.ban_sticker(sticker_id, 0.95, crate::database::BanReason::Automatic).await?; // TODO: get rid of magic number
+        return Ok(true);
     }
     Ok(false)
 }
