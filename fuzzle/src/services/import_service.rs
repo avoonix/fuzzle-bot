@@ -543,8 +543,8 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
     let matches = self.vector_db.find_banned_stickers_given_vector(clip_vector.clone(), 5, Some(0.6)).await?;
     let mut should_ban = false;
     for m in matches {
-        if let Some(threshold) = self.database.get_banned_sticker_max_match_distance(&m.file_hash).await? {
-            if m.score > 0.8 || m.score >= threshold {
+        if let Some(banned_sticker) = self.database.get_banned_sticker(&m.file_hash).await? {
+            if m.score > 0.8 || m.score >= banned_sticker.clip_max_match_distance {
                 let score_banned_sticker = m.score;
                 // TODO: get rid of the magic number; goal is to not call this too often; also move the vector db call outside the loop?
 
@@ -568,7 +568,7 @@ pub async fn possibly_auto_ban_sticker(&self, clip_vector: Vec<f32>, sticker_id:
                         tracing::warn!(%m.file_hash, "could not find sticker");
                     }
                 }
-                tracing::info!(%threshold, %score_banned_sticker, %best_regular_matches_len, "sticker will be banned unless other matches are found");
+                tracing::info!(%banned_sticker.id, %banned_sticker.sticker_set_id, %score_banned_sticker, %best_regular_matches_len, %sticker_id, "sticker will be banned unless other matches are found");
                 should_ban = true;
             }
         }
