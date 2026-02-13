@@ -111,6 +111,11 @@ pub enum UserError {
 
     #[error("no suitable sticker found")]
     NoSuitableStickerFound,
+
+    #[error("sticker is banned")]
+    StickerBanned,
+    #[error("sticker set is banned")]
+    StickerSetBanned,
 }
 
 impl InternalError {
@@ -139,6 +144,8 @@ impl UserError {
             UserError::VectorNotFound => (format!("Come back later, looks like I'm not done processing this one"), UserErrorSeverity::Error),
             UserError::AlreadyExists(name) => (format!("This {name} already exists"),UserErrorSeverity::Error),
             UserError::NoSuitableStickerFound => (format!("Couldn't find a suitable sticker."), UserErrorSeverity::Info),
+            UserError::StickerBanned => (format!("I can't or don't want to handle that sticker."), UserErrorSeverity::Error),
+            UserError::StickerSetBanned => (format!("I can't or dont want to handle that sticker set."), UserErrorSeverity::Error),
         }
     }
 }

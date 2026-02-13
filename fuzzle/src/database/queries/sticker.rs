@@ -824,6 +824,23 @@ impl Database {
             Ok(())
         }
     }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn is_sticker_banned(
+        &self,
+        sticker_id: &str,
+    ) -> Result<bool, DatabaseError> {
+        let sticker_id = sticker_id.to_string();
+        self.pool
+            .exec(move |conn| {
+        let res: i64 =banned_sticker::table
+            .filter(banned_sticker::id.eq(sticker_id))
+            .select(count_star())
+            .get_result(conn)?;
+                Ok(res != 0)
+            })
+            .await
+    }
     
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_banned_sticker_max_match_distance(
