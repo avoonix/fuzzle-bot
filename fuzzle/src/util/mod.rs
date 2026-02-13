@@ -2,6 +2,7 @@ mod bot;
 mod emoji;
 mod parsers;
 mod required;
+mod float_ext;
 
 pub use bot::*;
 use chrono::{Duration, NaiveDateTime, TimeDelta};
@@ -10,6 +11,7 @@ pub use parsers::*;
 use rand::Rng;
 use regex::Regex;
 pub use required::*;
+pub use float_ext::*;
 
 pub fn format_relative_time(time: NaiveDateTime) -> String {
     let now = chrono::Utc::now().naive_utc();

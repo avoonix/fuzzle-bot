@@ -1,6 +1,5 @@
 use std::sync::Arc;
-
-use chrono::Duration;
+use std::time::Duration;
 
 use teloxide::types::UserId;
 use tokio::time::sleep;
@@ -47,7 +46,7 @@ pub fn start_periodic_tasks(
     let services = services_clone.clone();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::minutes(15).to_std().expect("no overflow")).await;
+            sleep(Duration::from_mins(15)).await;
             let span = tracing::info_span!("periodic_refetch_stickers");
             let bot = bot.clone();
             let database = database.clone();
@@ -94,9 +93,9 @@ pub fn start_periodic_tasks(
             .instrument(span)
             .await;
             if result_len == 0 && new_offset != offset && !should_wait_longer {
-                sleep(Duration::seconds(5).to_std().expect("no overflow")).await;
+                sleep(Duration::from_secs(5)).await;
             } else {
-                sleep(Duration::minutes(20).to_std().expect("no overflow")).await;
+                sleep(Duration::from_mins(5)).await;
                 // TODO: i should really add a config for the automatic tasks
             }
             offset = new_offset;
@@ -118,7 +117,7 @@ pub fn start_periodic_tasks(
             }
             .instrument(span)
             .await;
-            sleep(Duration::hours(24).to_std().expect("no overflow")).await;
+            sleep(Duration::from_hours(24)).await;
         }
     });
 
@@ -126,7 +125,7 @@ pub fn start_periodic_tasks(
     let database = database_clone.clone();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::days(7).to_std().expect("no overflow")).await;
+            sleep(Duration::from_hours(7 * 24)).await;
             let span = tracing::info_span!("periodic_database_export");
             let bot = bot.clone();
             let database = database.clone();
@@ -156,7 +155,7 @@ pub fn start_periodic_tasks(
             }
             .instrument(span)
             .await;
-            sleep(Duration::hours(23).to_std().expect("no overflow")).await;
+            sleep(Duration::from_hours(23)).await;
         }
     });
 
@@ -165,7 +164,7 @@ pub fn start_periodic_tasks(
     let config = config_clone.clone();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::days(2).to_std().expect("no overflow")).await;
+            sleep(Duration::from_hours(24 * 2)).await;
             let span = tracing::info_span!("periodic_tag_insertion");
             // TODO: do daily; also refetch e6 tags
             let vector_db = vector_db.clone();
@@ -185,7 +184,7 @@ pub fn start_periodic_tasks(
     let vector_db = vector_db_clone.clone();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::seconds(10).to_std().expect("no overflow")).await;
+            sleep(Duration::from_secs(10)).await;
             let span = tracing::info_span!("periodic_sticker_file_cleanup");
             let database = database.clone();
             let vector_db = vector_db.clone();
@@ -195,7 +194,7 @@ pub fn start_periodic_tasks(
             }
             .instrument(span)
             .await;
-            sleep(Duration::hours(23).to_std().expect("no overflow")).await;
+            sleep(Duration::from_hours(23)).await;
         }
     });
 }
@@ -306,7 +305,7 @@ async fn fix_missing_tag_implications(
                     database
                         .tag_file(&file.id, &vec![implication.clone()], None)
                         .await?;
-                    sleep(Duration::seconds(1).to_std().expect("no overflow")).await;
+                    sleep(Duration::from_secs(1)).await;
                 }
             }
         }

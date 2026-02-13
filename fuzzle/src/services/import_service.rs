@@ -19,7 +19,7 @@ use crate::{
         Histogram, automerge, calculate_color_histogram, calculate_sticker_file_hash,
         fetch_sticker_file,
     },
-    util::{Emoji, Required, decode_sticker_set_id, is_wrong_file_id_error},
+    util::{Emoji, FloatIteratorExt, Required, decode_sticker_set_id, is_wrong_file_id_error},
 };
 
 #[derive(Clone)]
@@ -420,32 +420,7 @@ impl ImportService {
 
         // todo: tag animated?
         for sticker in stickers_not_in_database_yet {
-            let result = self
-                .fetch_sticker_and_save_to_db(sticker.clone(), set.name.clone())
-                .await;
-
-            match result {
-                Err(InternalError::Teloxide(teloxide::RequestError::Api(api_err)))
-                    if is_wrong_file_id_error(&api_err) =>
-                {
-                    tracing::warn!("invalid file_id for a sticker, continuing");
-                }
-                Err(InternalError::Database(DatabaseError::TryingToInsertRemovedSticker)) => {
-                    tracing::info!("trying to insert removed sticker")
-                }
-                Err(other) => {
-                    if other.is_timeout_error() {
-                        tracing::warn!("sticker fetch timed out, continuing");
-                    } else {
-                        return Err(other);
-                    }
-                }
-                Ok(()) => {}
-            }
-
-            self.analyze_sticker(sticker.file.unique_id.clone()).await?;
-            self.possibly_auto_ban_set(&set.name, set.stickers.len())
-                .await?;
+            self.import_new_sticker(sticker, set.clone()).await?;
         }
         for sticker in saved_stickers.clone() {
             let Some(s) = set.stickers.iter().find(|s| s.file.unique_id == sticker.id) else {
@@ -456,6 +431,16 @@ impl ImportService {
                 self.database
                     .update_sticker(sticker.id, s.file.id.clone())
                     .await?;
+            }
+            let files = self.database.get_sticker_files_by_ids(&[sticker.sticker_file_id]).await?;
+            assert!(files.len() <= 1);
+            if let Some(file) = files.first() {
+                if file.thumbnail_file_id.is_none() && s.thumb.is_some() {
+                    tracing::info!(set_id = %sticker.sticker_set_id, "found previously non-imported thumbnail");
+                    self.import_new_sticker(s.clone(), set.clone()).await?;
+                }
+            } else {
+                self.import_new_sticker(s.clone(), set.clone()).await?;
             }
         }
 
@@ -492,6 +477,40 @@ impl ImportService {
 
         Ok(())
     }
+
+        
+        async fn import_new_sticker(&self, sticker: teloxide::types::Sticker, set: teloxide::types::StickerSet) -> Result<(), InternalError> {
+            let result = self
+                .fetch_sticker_and_save_to_db(sticker.clone(), set.name.clone())
+                .await;
+
+            match result {
+                Err(InternalError::Teloxide(teloxide::RequestError::Api(api_err)))
+                    if is_wrong_file_id_error(&api_err) =>
+                {
+                    tracing::warn!("invalid file_id for a sticker, continuing");
+                }
+                Err(InternalError::Database(DatabaseError::TryingToInsertRemovedSticker)) => {
+                    tracing::info!("trying to insert removed sticker")
+                }
+                Err(other) => {
+                    if other.is_timeout_error() {
+                        tracing::warn!("sticker fetch timed out, continuing");
+                    } else {
+                        return Err(other);
+                    }
+                }
+                Ok(()) => {}
+            }
+
+            if let Err(err) = self.analyze_sticker(sticker.file.unique_id.clone()).await {
+                tracing::error!(error = %err, "error during analyze");
+            }
+            if let Err(err) = self.possibly_auto_ban_set(&set.name, set.stickers.len()).await {
+                tracing::error!(error = %err, "error during auto ban");
+            }
+            Ok(())
+        }
 
     #[tracing::instrument(skip(self), err(Debug))]
     async fn get_clip_embedding(
@@ -599,8 +618,17 @@ impl ImportService {
         }
         let matches = self
             .vector_db
-            .find_banned_stickers_given_vector(clip_vector.clone(), 5, Some(0.6))
+            .find_banned_stickers_given_vector(clip_vector.clone(), 5, Some(0.7))
             .await?;
+        let Some(worst_score) = matches.iter().map(|m| m.score).fmax() else {
+            return Ok(false);
+        };
+        let best_regular_matches = self
+            .vector_db
+            .find_stickers_given_vector(clip_vector.clone(), 100, 0, Some(worst_score))
+            .await?;
+        let best_regular_matches_len = best_regular_matches.len();
+
         let mut should_ban = false;
         for m in matches {
             if let Some(banned_sticker) = self.database.get_banned_sticker(&m.file_hash).await? {
@@ -610,13 +638,11 @@ impl ImportService {
 
                     // if the sticker under consideration for a ban matches a banned sticker closer than
                     // the best match from a different set, also ban
-                    let best_regular_matches = self
-                        .vector_db
-                        .find_stickers_given_vector(clip_vector.clone(), 100, 0, Some(m.score))
-                        .await?; // TODO: call outside loop
-                    let best_regular_matches_len = best_regular_matches.len();
-                    for m in best_regular_matches {
+                    for m in &best_regular_matches {
                         let score_non_banned_sticker = m.score;
+                        if score_non_banned_sticker < score_banned_sticker {
+                            continue;
+                        }
                         if let Some(matched_sticker) = self
                             .database
                             .get_some_sticker_by_file_id(&m.file_hash)
