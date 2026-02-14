@@ -174,6 +174,12 @@ impl ImportService {
             self.database.delete_sticker_set(&set.name).await?;
             return Ok(()); // ignore custom emojis as the bot is unable to send those
         }
+        
+        if set_id != set.name {
+            tracing::info!("set with (almost) same name got recreated");
+            self.database.upsert_sticker_set(&set.name, user_id.map(|id| id.0 as i64)).await?;
+            self.database.delete_sticker_set(set_id).await?;
+        }
 
         self.fetch_sticker_set_and_save_to_db(set, user_id, numeric_set_id)
             .await?;
@@ -355,6 +361,7 @@ impl ImportService {
             .await?
             .is_some_and(|set| set.created_by_user_id.is_none())
         {
+            // TODO: also periodically check if the owner is still the same (one user could delete a pack and another could create a new one with the same name)
             let numeric_set_id = match numeric_set_id {
                 Some(numeric_set_id) => Some(numeric_set_id),
                 None => self
