@@ -23,7 +23,7 @@ use super::super::schema::*;
 impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_personal_stats(&self, user_id: i64) -> Result<PersonalStats, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let favorites: i64 = sticker_user::table
                     .filter(sticker_user::is_favorite.eq(true))
@@ -36,7 +36,7 @@ impl Database {
     }
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_stats(&self) -> Result<Stats, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let sets: i64 = sticker_set::table.select(count_star()).first(conn)?;
                 let stickers: i64 = sticker::table
@@ -62,7 +62,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_admin_stats(&self) -> Result<AdminStats, DatabaseError> {
         let now = chrono::Utc::now().naive_utc(); // TODO: pass time as parameter?
-        self.pool
+        self
             .exec(move |conn| {
                 let number_of_sets_fetched_in_24_hours: i64 = sticker_set::table
                     .select(count_star())
@@ -94,7 +94,7 @@ impl Database {
         &self,
     ) -> Result<HashMap<Option<i64>, UserStats>, DatabaseError> {
         let now = chrono::Utc::now().naive_utc(); // TODO: pass time as parameter?
-        self.pool
+        self
             .exec(move |conn| {
                 let added_result: Vec<(Option<i64>, i64)> = sticker_file_tag::table
                     .group_by((sticker_file_tag::added_by_user_id))
@@ -128,7 +128,7 @@ impl Database {
         user_id: i64,
         start_date: Option<chrono::NaiveDateTime>,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let removed =
                     sticker_file_tag_history::table
@@ -155,7 +155,7 @@ impl Database {
         user_id: i64,
         start_date: Option<chrono::NaiveDateTime>,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let added = sticker_file_tag::table
                     .inner_join(
@@ -182,7 +182,7 @@ impl Database {
         user_id: i64,
         start_date: Option<chrono::NaiveDateTime>,
     ) -> Result<i64, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let removed = sticker_file_tag_history::table
                     .select((count_star()))
@@ -204,7 +204,7 @@ impl Database {
         user_id: i64,
         start_date: Option<chrono::NaiveDateTime>,
     ) -> Result<i64, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let added = sticker_file_tag::table
                     .select((count_star()))
@@ -265,7 +265,7 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<UserStickerStat>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sql_query("select sticker_set.created_by_user_id as user_id, count(*) as set_count, username.tg_username as username, tag.id as linked_tag from sticker_set 
 left join username on username.tg_id = sticker_set.created_by_user_id 
@@ -282,7 +282,7 @@ order by set_count desc limit ?1 offset ?2;")
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_aggregated_user_stats(&self) -> Result<AggregatedUserStats, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let unique_sticker_owners = sticker_set::table
                     .select(count(sticker_set::created_by_user_id).aggregate_distinct())

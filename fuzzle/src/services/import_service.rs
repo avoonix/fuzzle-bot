@@ -1,10 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicUsize};
 
-use flume::Sender;
 use itertools::Itertools;
 use regex::Regex;
 use teloxide::{prelude::Requester, types::UserId};
-use tokio::task;
+use tokio::{sync::mpsc::unbounded_channel, task};
 use tracing::Instrument;
 
 use crate::{
@@ -28,8 +27,9 @@ pub struct ImportService {
     config: Arc<Config>,
     bot: Bot,
     vector_db: VectorDatabase,
-    tx: Sender<TracedMessage<StickerSetFetchRequest>>,
+    tx: tokio::sync::mpsc::UnboundedSender<TracedMessage<StickerSetFetchRequest>>,
     tg_service: ExternalTelegramService,
+    queue_len: Arc<AtomicUsize>,
 }
 
 struct StickerSetFetchRequest {
@@ -53,7 +53,7 @@ impl ImportService {
             metrics::Unit::Count,
             "Number of sticker sets in the import queue length"
         );
-        let (tx, rx) = flume::unbounded();
+        let (tx, mut rx) = unbounded_channel();
         let service = Self {
             database,
             config,
@@ -61,11 +61,13 @@ impl ImportService {
             vector_db,
             tx,
             tg_service,
+            queue_len: Arc::new(0.into()),
         };
         {
             let service = service.clone();
             tokio::spawn(async move {
-                while let Ok(received) = rx.recv_async().await {
+                while let Some(received) = rx.recv().await {
+                    service.queue_len.store(rx.len(), std::sync::atomic::Ordering::Relaxed);
                     metrics::gauge!("fuzzle_sticker_import_queue_length").set(rx.len() as f64);
                     // let span = tracing::info_span!(
                     //     parent: &received.span,
@@ -108,7 +110,7 @@ impl ImportService {
         numeric_set_id: Option<i64>,
     ) {
         self.tx
-            .send_async(TracedMessage {
+            .send(TracedMessage {
                 message: StickerSetFetchRequest {
                     set_id: set_id.to_string(),
                     ignore_last_fetched,
@@ -117,13 +119,12 @@ impl ImportService {
                 },
                 span: tracing::Span::current(),
             })
-            .await
             .expect("channel must be open");
     }
 
     /// avoid adding already imported sticker sets to the queue if busy
     pub fn is_busy(&self) -> bool {
-        self.tx.len() > 100
+        self.queue_len.load(std::sync::atomic::Ordering::Relaxed) > 100
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -174,10 +175,12 @@ impl ImportService {
             self.database.delete_sticker_set(&set.name).await?;
             return Ok(()); // ignore custom emojis as the bot is unable to send those
         }
-        
+
         if set_id != set.name {
             tracing::info!("set with (almost) same name got recreated");
-            self.database.upsert_sticker_set(&set.name, user_id.map(|id| id.0 as i64)).await?;
+            self.database
+                .upsert_sticker_set(&set.name, user_id.map(|id| id.0 as i64))
+                .await?;
             self.database.delete_sticker_set(set_id).await?;
         }
 
@@ -439,7 +442,10 @@ impl ImportService {
                     .update_sticker(sticker.id, s.file.id.clone())
                     .await?;
             }
-            let files = self.database.get_sticker_files_by_ids(&[sticker.sticker_file_id]).await?;
+            let files = self
+                .database
+                .get_sticker_files_by_ids(&[sticker.sticker_file_id])
+                .await?;
             assert!(files.len() <= 1);
             if let Some(file) = files.first() {
                 if file.thumbnail_file_id.is_none() && s.thumb.is_some() {
@@ -485,39 +491,45 @@ impl ImportService {
         Ok(())
     }
 
-        
-        async fn import_new_sticker(&self, sticker: teloxide::types::Sticker, set: teloxide::types::StickerSet) -> Result<(), InternalError> {
-            let result = self
-                .fetch_sticker_and_save_to_db(sticker.clone(), set.name.clone())
-                .await;
+    async fn import_new_sticker(
+        &self,
+        sticker: teloxide::types::Sticker,
+        set: teloxide::types::StickerSet,
+    ) -> Result<(), InternalError> {
+        let result = self
+            .fetch_sticker_and_save_to_db(sticker.clone(), set.name.clone())
+            .await;
 
-            match result {
-                Err(InternalError::Teloxide(teloxide::RequestError::Api(api_err)))
-                    if is_wrong_file_id_error(&api_err) =>
-                {
-                    tracing::warn!("invalid file_id for a sticker, continuing");
-                }
-                Err(InternalError::Database(DatabaseError::TryingToInsertRemovedSticker)) => {
-                    tracing::info!("trying to insert removed sticker")
-                }
-                Err(other) => {
-                    if other.is_timeout_error() {
-                        tracing::warn!("sticker fetch timed out, continuing");
-                    } else {
-                        return Err(other);
-                    }
-                }
-                Ok(()) => {}
+        match result {
+            Err(InternalError::Teloxide(teloxide::RequestError::Api(api_err)))
+                if is_wrong_file_id_error(&api_err) =>
+            {
+                tracing::warn!("invalid file_id for a sticker, continuing");
             }
-
-            if let Err(err) = self.analyze_sticker(sticker.file.unique_id.clone()).await {
-                tracing::error!(error = %err, "error during analyze");
+            Err(InternalError::Database(DatabaseError::TryingToInsertRemovedSticker)) => {
+                tracing::info!("trying to insert removed sticker")
             }
-            if let Err(err) = self.possibly_auto_ban_set(&set.name, set.stickers.len()).await {
-                tracing::error!(error = %err, "error during auto ban");
+            Err(other) => {
+                if other.is_timeout_error() {
+                    tracing::warn!("sticker fetch timed out, continuing");
+                } else {
+                    return Err(other);
+                }
             }
-            Ok(())
+            Ok(()) => {}
         }
+
+        if let Err(err) = self.analyze_sticker(sticker.file.unique_id.clone()).await {
+            tracing::error!(error = %err, "error during analyze");
+        }
+        if let Err(err) = self
+            .possibly_auto_ban_set(&set.name, set.stickers.len())
+            .await
+        {
+            tracing::error!(error = %err, "error during auto ban");
+        }
+        Ok(())
+    }
 
     #[tracing::instrument(skip(self), err(Debug))]
     async fn get_clip_embedding(
@@ -625,7 +637,7 @@ impl ImportService {
         }
         let matches = self
             .vector_db
-            .find_banned_stickers_given_vector(clip_vector.clone(), 5, Some(0.7))
+            .find_banned_stickers_given_vector(clip_vector.clone(), 5, Some(0.6))
             .await?;
         let Some(worst_score) = matches.iter().map(|m| m.score).fmax() else {
             return Ok(false);
@@ -639,43 +651,43 @@ impl ImportService {
         let mut should_ban = false;
         for m in matches {
             if let Some(banned_sticker) = self.database.get_banned_sticker(&m.file_hash).await? {
-                if m.score > 0.8 || m.score >= banned_sticker.clip_max_match_distance {
-                    let score_banned_sticker = m.score;
-                    // TODO: get rid of the magic number; goal is to not call this too often; also move the vector db call outside the loop?
+                // if m.score > 0.8 || m.score >= banned_sticker.clip_max_match_distance {
+                let score_banned_sticker = m.score;
+                // TODO: get rid of the magic number; goal is to not call this too often; also move the vector db call outside the loop?
 
-                    // if the sticker under consideration for a ban matches a banned sticker closer than
-                    // the best match from a different set, also ban
-                    for m in &best_regular_matches {
-                        let score_non_banned_sticker = m.score;
-                        if score_non_banned_sticker < score_banned_sticker {
-                            continue;
-                        }
-                        if let Some(matched_sticker) = self
-                            .database
-                            .get_some_sticker_by_file_id(&m.file_hash)
-                            .await?
-                        {
-                            if matched_sticker.sticker_set_id != sticker_set_id {
-                                tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, %sticker_set_id, "sparing sticker, good match from other set");
-                                return Ok(false);
-                            }
-                            let has_tags = !self
-                                .database
-                                .get_sticker_tags_by_file_id(&m.file_hash)
-                                .await?
-                                .is_empty();
-                            if has_tags {
-                                tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, "sparing sticker, got match with tags");
-                                return Ok(false);
-                            }
-                        } else {
-                            tracing::warn!(%m.file_hash, "could not find sticker");
-                        }
+                // if the sticker under consideration for a ban matches a banned sticker closer than
+                // the best match from a different set, also ban
+                for m in &best_regular_matches {
+                    let score_non_banned_sticker = m.score;
+                    if score_non_banned_sticker < score_banned_sticker {
+                        continue;
                     }
-                    tracing::info!(%banned_sticker.id, %banned_sticker.sticker_set_id, %score_banned_sticker, %best_regular_matches_len, %sticker_id, "sticker will be banned unless other matches are found");
-                    should_ban = true;
+                    if let Some(matched_sticker) = self
+                        .database
+                        .get_some_sticker_by_file_id(&m.file_hash)
+                        .await?
+                    {
+                        if matched_sticker.sticker_set_id != sticker_set_id {
+                            tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, %sticker_set_id, "sparing sticker, good match from other set");
+                            return Ok(false);
+                        }
+                        let has_tags = !self
+                            .database
+                            .get_sticker_tags_by_file_id(&m.file_hash)
+                            .await?
+                            .is_empty();
+                        if has_tags {
+                            tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, "sparing sticker, got match with tags");
+                            return Ok(false);
+                        }
+                    } else {
+                        tracing::warn!(%m.file_hash, "could not find sticker");
+                    }
                 }
+                tracing::info!(%banned_sticker.id, %banned_sticker.sticker_set_id, %score_banned_sticker, %best_regular_matches_len, %sticker_id, "sticker will be banned unless other matches are found");
+                should_ban = true;
             }
+            // }
         }
         if should_ban {
             tracing::info!(%sticker_id, "auto banning sticker");

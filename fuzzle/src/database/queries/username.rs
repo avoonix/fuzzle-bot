@@ -33,7 +33,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn add_username(&self, name: &str) -> Result<(), DatabaseError> {
         let name = name.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 insert_into(username::table)
                     .values((username::tg_username.eq(name),))
@@ -53,7 +53,7 @@ impl Database {
         telegram_id: i64,
     ) -> Result<(), DatabaseError> {
         let name = name.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 sql_query("INSERT INTO username (tg_username, kind, tg_id) 
                             VALUES (?1, ?2, ?3)
@@ -75,7 +75,7 @@ impl Database {
         kind: UsernameKind,
         telegram_id: i64,
     ) -> Result<Option<String>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(username::table
                     .select(username::tg_username)
@@ -93,7 +93,7 @@ impl Database {
         kind: UsernameKind,
         telegram_ids: Vec<i64>,
     ) -> Result<Vec<(i64, String)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(username::table
                     .select((username::tg_id.assume_not_null(), username::tg_username))

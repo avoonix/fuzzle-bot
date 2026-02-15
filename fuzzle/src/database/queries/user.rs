@@ -17,7 +17,7 @@ impl Database {
         dialog_state: &DialogState,
     ) -> Result<(), DatabaseError> {
         let dialog_state = dialog_state.clone();
-        self.pool
+        self
             .exec(move |conn| {
                 let updated_rows = update(user::table.find(user_id))
                     .set(user::dialog_state.eq(Some(dialog_state)))
@@ -36,7 +36,7 @@ impl Database {
         user_settings: &UserSettings,
     ) -> Result<(), DatabaseError> {
         let user_settings = user_settings.clone();
-        self.pool
+        self
             .exec(move |conn| {
                 let updated_rows = update(user::table.find(user_id))
                     .set(user::settings.eq(Some(user_settings)))
@@ -54,7 +54,7 @@ impl Database {
         user_id: i64,
         new_blacklist: StringVec,
     ) -> Result<(), DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let updated_rows = diesel::update(user::table.find(user_id))
                     .set(user::blacklist.eq(new_blacklist))
@@ -68,7 +68,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_user_by_id(&self, user_id: i64) -> Result<Option<User>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(user::table
                     .filter(user::id.eq(user_id))
@@ -85,7 +85,7 @@ impl Database {
         user_id: i64,
         default_blacklist: StringVec,
     ) -> Result<User, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(insert_into(user::table)
                     .values((user::id.eq(user_id), user::blacklist.eq(default_blacklist)))
@@ -102,7 +102,7 @@ impl Database {
         is_favorite: bool,
     ) -> Result<(), DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 insert_into(sticker_user::table)
                     .values((
@@ -129,7 +129,7 @@ impl Database {
         sticker_id: &str,
     ) -> Result<(), DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 insert_into(sticker_user::table)
                     .values((
@@ -147,7 +147,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn clear_recently_used_stickers(&self, user_id: i64) -> Result<(), DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 delete(
                     sticker_user::table

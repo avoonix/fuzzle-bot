@@ -131,7 +131,6 @@ diesel_migrations = "2.3.1"
 rust-embed = "8.11.0"
 mime_guess = "2.0.5"
 maud = { version = "0.27.0", features = ["actix-web"] }
-flume = "0.12.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
 tonic = { version = "0.14", features = []}
 tracing-actix-web = { version = "0.7" }
@@ -153,6 +152,8 @@ portable-atomic = { version = "1.13.1", features = ["float"] }
 pyroscope = "0.5.8"
 pyroscope_pprofrs = "0.2.10"
 tonic-prost = "0.14.3"
+deadpool-diesel = { version = "0.6.1", features = ["sqlite", "tracing"] }
+deadpool = { version = "0.12.3", features = ["rt_tokio_1"] }
 
 
 

@@ -10,7 +10,7 @@ impl Database {
     pub async fn export_file_tagged_tag_relationships(
         &self,
     ) -> Result<Vec<(String, String)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_file_tag::table
                     .select((sticker_file_tag::sticker_file_id, sticker_file_tag::tag))
@@ -24,7 +24,7 @@ impl Database {
     pub async fn export_sticker_is_a_file_relationship(
         &self,
     ) -> Result<Vec<(String, String)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker::table
                     .select((sticker::id, sticker::sticker_file_id))
@@ -37,7 +37,7 @@ impl Database {
     pub async fn export_set_contains_sticker_relationship(
         &self,
     ) -> Result<Vec<(String, String)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker::table
                     .select((sticker::sticker_set_id, sticker::id))

@@ -32,7 +32,7 @@ define_sql_function! {
 impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn update_last_fetched(&self, set_id: String) -> Result<(), DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         let changed = update(sticker_set::table)
             .filter(sticker_set::id.eq(set_id))
@@ -49,7 +49,7 @@ impl Database {
         sticker_set_id: &str,
     ) -> Result<Option<StickerSet>, DatabaseError> {
         let sticker_set_id = sticker_set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let set = sticker_set::table
             .filter(sticker_set::id.eq(sticker_set_id))
@@ -67,7 +67,7 @@ impl Database {
         sticker_id: String,
         file_id: String,
     ) -> Result<(), DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         let changed = update(sticker::table)
             .filter(sticker::id.eq(sticker_id))
@@ -86,7 +86,7 @@ impl Database {
         sticker_type: StickerType,
     ) -> Result<(), DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
                     Self::check_removed_sticker(&sticker_file_id, conn)?;
@@ -113,7 +113,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn find_canonical_sticker_file_id(&self, sticker_file_id: &str) -> Result<String, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let mut sticker_file_id = sticker_file_id.to_string();
         let mut iterations = 0;
@@ -152,7 +152,7 @@ impl Database {
         let file_id = file_id.to_string();
         let set_id = set_id.to_string();
         let sticker_file_id = sticker_file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         insert_into(sticker::table)
             .values((
@@ -176,7 +176,7 @@ impl Database {
         set_id: &str,
     ) -> Result<Vec<Sticker>, DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker::table
             .filter(sticker::sticker_set_id.eq(set_id))
@@ -192,7 +192,7 @@ impl Database {
         sticker_id: &str,
     ) -> Result<Option<Sticker>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker::table
             .filter(sticker::id.eq(sticker_id))
@@ -209,7 +209,7 @@ impl Database {
         sticker_file_id: &str,
     ) -> Result<Option<Sticker>, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker::table
             .filter(sticker::sticker_file_id.eq(sticker_file_id))
@@ -223,7 +223,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_tags_by_file_id(&self, sticker_file_id: &str) -> Result<Vec<String>, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker_file_tag::table
             .filter(sticker_file_tag::sticker_file_id.eq(sticker_file_id))
@@ -237,7 +237,7 @@ impl Database {
     #[deprecated(note = "use get_sticker_tags_by_file_id instead")]
     pub async fn get_sticker_tags(&self, sticker_id: &str) -> Result<Vec<String>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         // TODO: pass file_id instead
         Ok(sticker_file_tag::table
@@ -259,7 +259,7 @@ impl Database {
         &self,
         sticker_ids: Vec<String>,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker_file_tag::table
             .group_by((sticker_file_tag::tag))
@@ -286,7 +286,7 @@ impl Database {
         offset: i64,
         order: Order,
     ) -> Result<Vec<Sticker>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         let query = StickerTagQuery::new(tags, blacklist)
             .emoji(emoji)
@@ -310,7 +310,7 @@ impl Database {
         offset: i64,
         // order: Order,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         let query = StickerTagQuery::new(tags, blacklist)
             // .emoji(emoji)
@@ -327,7 +327,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_random_sticker_to_tag(&self) -> Result<Option<Sticker>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker::table
             .filter(
@@ -343,7 +343,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_random_sticker(&self) -> Result<Option<Sticker>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker::table
             .select(Sticker::as_select())
@@ -357,7 +357,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_files_by_ids(&self, sticker_file_ids: &[String]) -> Result<Vec<StickerFile>, DatabaseError> {
         let sticker_file_ids = sticker_file_ids.to_vec();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker_file::table
             .filter(
@@ -372,7 +372,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_file_by_sticker_id(&self, sticker_id: &str) -> Result<Option<StickerFile>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker_file::table
             .filter(
@@ -394,7 +394,7 @@ impl Database {
         &self,
         sticker_file_ids: Vec<String>,
     ) -> Result<Vec<StickerIdStickerFileId>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         let result: Vec<(String, String)> = sticker::table
             .group_by((sticker::sticker_file_id))
@@ -418,7 +418,7 @@ impl Database {
         sticker_ids: &[String],
     ) -> Result<Vec<String>, DatabaseError> {
         let sticker_ids = sticker_ids.to_vec();
-        self.pool
+        self
             .exec(move |conn| {
         let result: Vec<String> = sticker::table
             .select(sticker::sticker_file_id)
@@ -437,7 +437,7 @@ impl Database {
         set_id: &str,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let (sticker1, sticker2) = diesel::alias!(sticker as sticker1, sticker as sticker2);
         Ok(sticker1
@@ -463,7 +463,7 @@ impl Database {
         sticker_file_id: &str,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker_set::table
             .filter(
@@ -487,7 +487,7 @@ impl Database {
         locked: bool,
     ) -> Result<(), DatabaseError> {
         let file_id = file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let user_id = if locked { Some(user_id) } else { None };
         let updated_rows = diesel::update(sticker_file::table)
@@ -504,7 +504,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_emojis(&self, sticker_id: &str) -> Result<Vec<Emoji>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let (sticker1, sticker2) = diesel::alias!(sticker as sticker1, sticker as sticker2);
         let emojis: Vec<Option<String>> = sticker1
@@ -529,7 +529,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn delete_sticker(&self, sticker_id: &str) -> Result<(), DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         delete(sticker::table.filter(sticker::id.eq(sticker_id))).execute(conn)?;
         Ok(())
@@ -539,7 +539,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn clean_up_sticker_files_without_stickers_and_without_tags(&self) -> Result<Vec<String>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         let current_time = chrono::Utc::now().naive_utc(); // TODO: pass time as parameter?
         Ok(delete(
@@ -563,7 +563,7 @@ impl Database {
         user_id: i64,
     ) -> Result<Option<StickerUser>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         // TODO: sort by favorites (when favoriting is implemented)
         Ok(sticker_user::table
@@ -582,7 +582,7 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Sticker>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sticker::table
             .inner_join(sticker_user::table)
@@ -601,7 +601,7 @@ impl Database {
     pub async fn get_random_potential_merge_file_ids(
         &self,
     ) -> Result<Option<(String, String)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(potentially_similar_file::table
             .select((potentially_similar_file::file_id_a, potentially_similar_file::file_id_b))
@@ -623,7 +623,7 @@ impl Database {
     ) -> Result<(), DatabaseError> {
         let file_id_a = file_id_a.to_string();
         let file_id_b = file_id_b.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let (smaller, bigger) = min_max(file_id_a, file_id_b);
         insert_into(potentially_similar_file::table)
@@ -643,7 +643,7 @@ impl Database {
         file_id: &str,
     ) -> Result<Vec<String>, DatabaseError> {
         let file_id = file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(potentially_similar_file::table
             .select(potentially_similar_file::file_id_a)
@@ -667,7 +667,7 @@ impl Database {
     ) -> Result<(), DatabaseError> {
         let canonical_file_id = canonical_file_id.to_string();
         let duplicate_file_id = duplicate_file_id.to_string();
-              self.pool
+              self
             .exec(move |conn| { Ok( 
                     conn.immediate_transaction(|conn| {
             let stickers_affected_merge = sql_query("INSERT INTO merged_sticker (canonical_sticker_file_id, removed_sticker_file_id, removed_sticker_id, removed_sticker_set_id, created_by_user_id)
@@ -712,7 +712,7 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Sticker>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sql_query("SELECT * FROM sticker GROUP BY sticker.sticker_file_id ORDER BY count(*) DESC LIMIT ?1 OFFSET ?2")
                                 .bind::<BigInt, _>(limit)
@@ -730,7 +730,7 @@ impl Database {
         offset: i64,
     ) -> Result<Vec<Sticker>, DatabaseError> {
         let emoji = emoji.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         // TODO: does not support random sort
         Ok(sql_query("SELECT * FROM sticker WHERE emoji = ?1 GROUP BY sticker.sticker_file_id LIMIT ?2 OFFSET ?3")
@@ -748,7 +748,7 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<(Emoji, i64)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         let result: Vec<(Option<String>, i64)> = sticker::table
             .group_by((sticker::emoji))
@@ -767,7 +767,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn unban_sticker(&self, sticker_id: &str) -> Result<(String, String), DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 let res = delete(banned_sticker::table.filter(banned_sticker::id.eq(sticker_id))).returning((banned_sticker::sticker_set_id, banned_sticker::sticker_file_id)).get_result(conn)?;
                 Ok(res)
@@ -792,7 +792,7 @@ impl Database {
         let sticker_set_id = sticker_set_id.to_string();
         let sticker_file_id = sticker_file_id.to_string();
         let thumbnail_file_id = thumbnail_file_id.clone();
-        self.pool
+        self
             .exec(move |conn| {
                 insert_into(banned_sticker::table)
                     .values((
@@ -831,7 +831,7 @@ impl Database {
         sticker_id: &str,
     ) -> Result<bool, DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let res: i64 =banned_sticker::table
             .filter(banned_sticker::id.eq(sticker_id))
@@ -848,7 +848,7 @@ impl Database {
         file_id: &str
     ) -> Result<Option<f32>, DatabaseError> {
         let file_id = file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let result = banned_sticker::table
             .filter((banned_sticker::sticker_file_id.eq(file_id)))
@@ -865,7 +865,7 @@ impl Database {
         sticker_id: &str,
     ) -> Result<Option<BannedSticker>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         Ok(banned_sticker::table
             .filter(banned_sticker::id.eq(sticker_id))
@@ -881,7 +881,7 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<BannedSticker>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(banned_sticker::table
             .order_by(banned_sticker::created_at.desc())

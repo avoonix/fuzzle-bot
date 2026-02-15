@@ -37,7 +37,7 @@ impl Database {
     ) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
         let title = title.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
                     Self::check_removed(&set_id, conn)?;
@@ -67,7 +67,7 @@ impl Database {
         added_by_user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
                     Self::check_removed(&set_id, conn)?;
@@ -98,7 +98,7 @@ impl Database {
         added_by_user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
                     Self::check_removed(&set_id, conn)?;
@@ -135,7 +135,7 @@ impl Database {
         sticker_set_id: &str,
     ) -> Result<bool, DatabaseError> {
         let sticker_set_id = sticker_set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 let res: i64 = removed_set::table
                     .filter(removed_set::id.eq(sticker_set_id))
@@ -152,7 +152,7 @@ impl Database {
         sticker_id: &str,
     ) -> Result<Option<StickerSet>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .filter(
@@ -172,7 +172,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn unban_set(&self, set_id: &str) -> Result<Option<i64>, DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 let original_adder: Option<i64> = delete(removed_set::table.filter(removed_set::id.eq(set_id))).returning(removed_set::added_by_user_id).get_result(conn)?;
                 Ok(original_adder)
@@ -187,7 +187,7 @@ impl Database {
         added_by_user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 insert_into(removed_set::table)
                     .values((
@@ -204,7 +204,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn delete_sticker_set(&self, set_id: &str) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 delete(sticker_set::table.filter(sticker_set::id.eq(set_id))).execute(conn)?;
                 Ok(())
@@ -217,7 +217,7 @@ impl Database {
         &self,
         n: i64,
     ) -> Result<Vec<String>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .select(sticker_set::id)
@@ -231,7 +231,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     #[deprecated = "use get_latest_sticker_sets instead"]
     pub async fn get_n_latest_sets(&self, n: i64) -> Result<Vec<StickerSet>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let q = sticker_set::table
                     .select(StickerSet::as_select())
@@ -252,7 +252,7 @@ impl Database {
         limit: i64,
         before: NaiveDateTime,
     ) -> Result<Vec<Sticker>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker::table
                     .select(Sticker::as_select())
@@ -270,7 +270,7 @@ impl Database {
         limit: i64,
         before: NaiveDateTime,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .select(StickerSet::as_select())
@@ -290,7 +290,7 @@ impl Database {
         &self,
         n: i64,
     ) -> Result<Vec<StickerChange>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
         Ok(sql_query("select sticker.id AS sticker_id, sticker_set_id, count(case when julianday('now') - julianday(sticker_file.created_at) < 1 then true else null end) as today, count(case when julianday('now') - julianday(sticker_file.created_at) < 7 then true else null end) as this_week from sticker inner join sticker_file on sticker.sticker_file_id = sticker_file.id where julianday('now') - julianday(sticker_file.created_at) < 7 group by sticker_set_id order by max(sticker_file.created_at) desc limit 10;")
             .load(conn)?)
@@ -305,7 +305,7 @@ impl Database {
         user_id: i64,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
         let bot_username = bot_username.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .filter(sticker_set::created_by_user_id.eq(user_id))
@@ -323,7 +323,7 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .filter(sticker_set::created_by_user_id.eq(user_id))
@@ -342,7 +342,7 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .select(StickerSet::as_select())
@@ -360,7 +360,7 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .select(StickerSet::as_select())
@@ -375,7 +375,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_owned_sticker_set_count(&self, user_id: i64) -> Result<i64, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .filter(sticker_set::created_by_user_id.eq(user_id))
@@ -394,7 +394,7 @@ impl Database {
     ) -> Result<Option<String>, DatabaseError> {
         let set_id = set_id.to_string();
         let file_id = file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker::table
                     .filter(sticker::sticker_set_id.eq(set_id))
@@ -413,7 +413,7 @@ impl Database {
         set_ids: &[String],
     ) -> Result<Vec<String>, DatabaseError> {
         let set_ids = set_ids.to_vec();
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_set::table
                     .filter(sticker_set::id.eq_any(set_ids))
@@ -426,7 +426,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn set_sticker_set_pending(&self, set_id: &str, is_pending: bool) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
         let changed = update(sticker_set::table)
             .filter(sticker_set::id.eq(set_id))
@@ -440,6 +440,6 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_banned_sticker_count_for_set_id(&self, set_id: &str) -> Result<i64, DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool.exec(move |conn| Ok(banned_sticker::table.filter(banned_sticker::sticker_set_id.eq(set_id)).count().get_result(conn)?)).await
+        self.exec(move |conn| Ok(banned_sticker::table.filter(banned_sticker::sticker_set_id.eq(set_id)).count().get_result(conn)?)).await
     }
 }

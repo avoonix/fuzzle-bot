@@ -38,7 +38,7 @@ impl Database {
         created_by_user_id: i64,
     ) -> Result<(), DatabaseError> {
         let details = details.clone();
-        self.pool
+        self
             .exec(move |conn| {
                 insert_into(moderation_task::table)
                     .values((
@@ -58,7 +58,7 @@ impl Database {
         task_id: i64,
         status: ModerationTaskStatus,
     ) -> Result<ModerationTask, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(update(moderation_task::table)
                     .filter(moderation_task::id.eq(task_id))
@@ -71,7 +71,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_open_moderation_tasks(&self) -> Result<Vec<ModerationTask>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(moderation_task::table
                     .select(ModerationTask::as_select())
@@ -86,7 +86,7 @@ impl Database {
         &self,
         moderation_task_id: i64,
     ) -> Result<Option<ModerationTask>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(moderation_task::table
                     .select(ModerationTask::as_select())

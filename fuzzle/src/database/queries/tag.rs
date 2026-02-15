@@ -31,7 +31,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_tag_by_id(&self, tag_id: &str) -> Result<Option<Tag>, DatabaseError> {
         let tag_id = tag_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(tag::table
                     .filter(tag::id.eq(tag_id))
@@ -44,7 +44,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_all_tags(&self) -> Result<Vec<Tag>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| Ok(tag::table.select(Tag::as_select()).load(conn)?))
             .await
     }
@@ -54,7 +54,7 @@ impl Database {
         &self,
         user_id: i64,
     ) -> Result<Vec<Tag>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(tag::table
                     .filter(tag::linked_user_id.eq(user_id))
@@ -67,7 +67,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn delete_tag(&self, tag_id: &str) -> Result<(), DatabaseError> {
         let tag_id = tag_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 delete(tag::table.filter(tag::id.eq(tag_id))).execute(conn)?;
                 Ok(())
@@ -87,7 +87,7 @@ impl Database {
         implications: Vec<String>,
     ) -> Result<(), DatabaseError> {
         let tag_id = tag_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 let aliases = (!aliases.is_empty()).then(|| StringVec::from(aliases));
                 let implications =

@@ -32,7 +32,7 @@ impl Database {
     ) -> Result<(), DatabaseError> {
         let file_id = file_id.to_string();
         let tag_names = tag_names.to_vec();
-        self.pool
+        self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
                     for tag in tag_names {
@@ -61,7 +61,7 @@ impl Database {
     ) -> Result<(), DatabaseError> {
         let file_id = file_id.to_string();
         let tag_names = tag_names.to_vec();
-        self.pool
+        self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
                     for tag in &tag_names {
@@ -107,7 +107,7 @@ impl Database {
     ) -> Result<usize, DatabaseError> {
         let set_name = set_name.to_string();
         let tags = tags.to_vec();
-        self.pool
+        self
             .exec(move |conn| {
                   let affected =   conn.immediate_transaction(|conn| {
             let mut tags_affected = 0;
@@ -139,7 +139,7 @@ impl Database {
     ) -> Result<usize, DatabaseError> {
         let set_name = set_name.to_string();
         let tags = tags.to_vec();
-        self.pool
+        self
             .exec(move |conn| {
                 let affected = conn.immediate_transaction(|conn| {
                     let mut tags_affected = 0;
@@ -210,7 +210,7 @@ impl Database {
         set_id: &str,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
         let set_id = set_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_file_tag::table
                     .group_by(sticker_file_tag::tag)
@@ -234,7 +234,7 @@ impl Database {
         sticker_file_id: &str,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
-        self.pool
+        self
             .exec(move |conn| {
                 let (sticker1, sticker2) = diesel::alias!(sticker as sticker1, sticker as sticker2);
 
@@ -269,7 +269,7 @@ impl Database {
         &self,
         owner_id: i64,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_file_tag::table
                     .group_by(sticker_file_tag::tag)
@@ -295,7 +295,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_popular_tags(&self, limit: i64, offset: i64) -> Result<Vec<PopularTag>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let tags = sticker_file_tag::table
                     .group_by((sticker_file_tag::tag))
@@ -317,7 +317,7 @@ impl Database {
     pub async fn get_all_tag_emoji_pairs(
         &self,
     ) -> Result<Vec<(Emoji, String, i64)>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 let result: Vec<(String, String, i64)> = sticker_file_tag::table
                     .inner_join(
@@ -346,7 +346,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_used_tags(&self) -> Result<Vec<String>, DatabaseError> {
-        self.pool
+        self
             .exec(move |conn| {
                 Ok(sticker_file_tag::table
                     .select(sticker_file_tag::tag)

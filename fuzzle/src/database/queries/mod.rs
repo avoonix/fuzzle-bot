@@ -11,10 +11,15 @@ mod username;
 use std::any::Any;
 use std::{path::PathBuf, time::Duration};
 
+use deadpool_diesel::Runtime;
+use deadpool_diesel::sqlite::{Hook, HookError, Manager, Pool};
 use diesel::connection::SimpleConnection;
-use flume::Sender;
+use futures::channel::mpsc::channel;
 use futures::future::join_all;
+use tokio::sync::mpsc::{Sender, UnboundedSender, unbounded_channel};
 use tracing::{error, log::LevelFilter};
+
+use crate::bot::InternalError;
 
 use super::DatabaseError;
 use super::User;
@@ -22,7 +27,6 @@ use super::User;
 use diesel::prelude::*;
 use diesel::result::Error;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use flume;
 
 const KB: usize = 1024;
 const MB: usize = KB * 1024;
@@ -30,47 +34,43 @@ const GB: usize = MB * 1024;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
+pub type SqlitePool = deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::SqliteConnection>>;
+
 #[derive(Clone)]
 pub struct Database {
-    pool: DbWorker,
+    pool: SqlitePool,
 }
 
-struct Query {
-    operation: Box<dyn FnOnce(&mut SqliteConnection) -> Box<dyn Response> + Send>,
-    response: Sender<Box<dyn Response>>,
-}
-
-trait Response: Send + Any {
-    fn unwrap_box(self: Box<Self>) -> Box<dyn Any>;
-}
-
-impl<T, E> Response for Result<T, E>
-where
-    T: Send + 'static,
-    E: Send + 'static,
-{
-    fn unwrap_box(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-}
-
-#[derive(Clone)]
-pub struct DbWorker {
-    sender: Sender<Query>,
-}
-
-impl DbWorker {
-    pub fn new(path: PathBuf) -> Self {
-        let (tx, rx) = flume::unbounded();
-
-        for _ in 0..4 {
-            // TODO: add config parameter for number of threads
-            // TODO: get rid of unwrap
-
-            let rx = rx.clone();
-            let mut conn = SqliteConnection::establish(path.to_str().unwrap())
-                .unwrap_or_else(|_| panic!("Error connecting to {}", path.to_str().unwrap()));
-
+impl Database {
+    #[tracing::instrument(name = "Database::new", err(Debug))]
+    pub async fn new(path: PathBuf) -> Result::<Self, InternalError> {
+        let manager = Manager::new(path.to_str().unwrap(), Runtime::Tokio1);
+         let pool = Pool::builder(manager)
+        .max_size(69)
+        .pre_recycle(Hook::async_fn(|obj, metrics| {
+            Box::pin(async move {
+                if metrics.recycle_count % 1_000 == 0 {
+                    let res = obj.interact(|conn| conn.batch_execute("PRAGMA optimize;")).await;
+                match res {
+                    Ok(_) => Ok(()),
+                    // hopeless wrangling with error types here, idk how to get the diesel error
+                    // into a HookError
+                    Err(_err) => {
+                        print!("sqlite error!!!");
+                        Err(HookError::message("error configuring database connection"))
+                    }
+                }
+                } else {
+                    Ok(())
+                }
+            })
+        })) // TODO: add a hook that calls optimize before the connection is recycled
+        .recycle_timeout(Some(Duration::from_hours(1)))
+        .post_create(Hook::async_fn(|obj, _| {
+            Box::pin(async move {
+                let res = obj
+                    .interact(|conn| {
+                       
             conn.batch_execute(&format!(
                 "PRAGMA busy_timeout = {};",
                 Duration::from_secs(60).as_millis()
@@ -87,56 +87,22 @@ impl DbWorker {
             conn.batch_execute(&format!("PRAGMA mmap_size = {};", (4 * GB).to_string()))
                 .unwrap();
             conn.batch_execute("PRAGMA optimize=0x10002;").unwrap();
-            std::thread::spawn(move || {
-                let mut operations_count = 0;
-                while let Ok(Query {
-                    operation,
-                    response,
-                }) = rx.recv()
-                {
-                    // TODO: log if operation takes more than 100ms
-                    let result = operation(&mut conn);
-                    let _ = response.send(result);
-                    operations_count += 1;
-                    if operations_count % 10_000 == 0 {
-                        conn.batch_execute("PRAGMA optimize;"); // TODO: log errors
+                    })
+                    .await;
+                match res {
+                    Ok(_) => Ok(()),
+                    // hopeless wrangling with error types here, idk how to get the diesel error
+                    // into a HookError
+                    Err(_err) => {
+                        print!("sqlite error!!!");
+                        Err(HookError::message("error configuring database connection"))
                     }
                 }
-            });
-        }
-
-        DbWorker { sender: tx }
-    }
-
-    pub async fn exec<F, T, E>(&self, operation: F) -> Result<T, E>
-    where
-        F: FnOnce(&mut SqliteConnection) -> Result<T, E> + Send + 'static,
-        T: Send + 'static,
-        E: From<Error> + Send + 'static,
-    {
-        let (response_tx, response_rx) = flume::bounded(1);
-
-        self.sender
-            .send_async(Query {
-                operation: Box::new(move |conn| Box::new(operation(conn)) as Box<dyn Response>),
-                response: response_tx,
             })
-            .await
-            .expect("channel must be open");
-
-        let response = response_rx
-            .recv_async()
-            .await
-            .expect("response channel must be open");
-
-        *Box::<dyn Any>::downcast::<Result<T, E>>(response.unwrap_box()).unwrap()
-    }
-}
-
-impl Database {
-    #[tracing::instrument(name = "Database::new", err(Debug))]
-    pub async fn new(path: PathBuf) -> anyhow::Result<Self> {
-        let pool: DbWorker = DbWorker::new(path);
+        }))
+        .runtime(Runtime::Tokio1)
+        .build()
+        .expect("pool to be valid");
 
         let database = Self { pool };
 
@@ -147,10 +113,20 @@ impl Database {
         Ok(database)
     }
 
+    async fn exec<F, T, E>(&self, operation: F) -> Result<T, E>
+    where
+        F: FnOnce(&mut SqliteConnection) -> Result<T, E> + Send + 'static,
+        T: Send + 'static,
+        E: From<deadpool::managed::PoolError<deadpool_diesel::Error>> 
+            + From<deadpool_diesel::InteractError> 
+            + Send + 'static,
+    {
+        self.pool.get().await?.interact(operation).await?
+    }
+
     #[tracing::instrument(skip(self), err(Debug))]
     async fn health_check(&self) -> Result<(), DatabaseError> {
-        self.pool
-            .exec(|conn| {
+        self.exec(|conn| {
                 // ensures that the math extensions are activated
                 let result = diesel::sql_query("SELECT sin(0)").execute(conn)?;
                 Ok(())
@@ -160,8 +136,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     async fn vacuum(&self) -> Result<(), DatabaseError> {
-        self.pool
-            .exec(|conn| {
+        self.exec(|conn| {
                 let result = diesel::sql_query("VACUUM").execute(conn)?;
                 Ok(())
             })
@@ -170,8 +145,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     async fn run_migrations(&self) -> Result<(), DatabaseError> {
-        self.pool
-            .exec(|conn| {
+        self.exec(|conn| {
                 conn.run_pending_migrations(MIGRATIONS)
                     .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
