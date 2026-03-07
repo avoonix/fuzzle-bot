@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose, Engine};
 use chrono::NaiveDateTime;
 use diesel::{
-    debug_query, delete, dsl::{count_star, now, sql}, insert_into, prelude::*, query_builder::{BoxedSqlQuery, SqlQuery}, sql_query, sql_types::BigInt, sqlite::Sqlite, update, upsert::excluded
+    debug_query, delete, dsl::{count, count_star, now, sql}, insert_into, prelude::*, query_builder::{BoxedSqlQuery, SqlQuery}, sql_query, sql_types::BigInt, sqlite::Sqlite, update, upsert::excluded
 };
 use itertools::Itertools;
 use tracing::warn;
@@ -363,9 +363,13 @@ impl Database {
         self
             .exec(move |conn| {
                 Ok(sticker_set::table
+                    .left_join(banned_sticker::table.on(
+                        banned_sticker::sticker_set_id.eq(sticker_set::id),
+                    ))
                     .select(StickerSet::as_select())
                     .filter((sticker_set::is_pending.eq(true)))
-                    .order_by(sticker_set::created_at.desc())
+                    .group_by(sticker_set::id)
+                    .order_by((diesel::dsl::count(banned_sticker::id).desc(), sticker_set::created_at.desc()))
                     .limit(limit)
                     .offset(offset)
                     .load(conn)?)
