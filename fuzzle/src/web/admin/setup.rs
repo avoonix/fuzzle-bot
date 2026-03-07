@@ -105,6 +105,7 @@ pub fn setup_admin_server(
                 .service(service::scan_all_stickers_for_bans)
                 .service(service::get_banned_stickers)
                 .service(service::get_banned_sticker_thumbnail)
+                .service(service::recommend_stickers_for_ban)
                 .wrap(middleware::Compress::default())
         })
         .bind(addr)

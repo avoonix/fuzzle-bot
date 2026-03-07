@@ -14,6 +14,14 @@ watch(data, () => console.log(data))
 
 // const counter = useCounterStore();
 
+const approve = async (setId: string) => {
+    const { data, error } = await useFetch(`/api/sets/${setId}/approve`).post()
+    console.log(data, error)
+    if (error.value) {
+      alert(error.value)
+    }
+  }
+
 </script>
 
 <template>
@@ -31,6 +39,11 @@ watch(data, () => console.log(data))
                 <span>
                   {{ set.id }}
                 </span>
+                
+    <v-btn @click="approve(set.id)" color="success">
+      Approve
+    </v-btn>
+                
           </div>
 
         </div>

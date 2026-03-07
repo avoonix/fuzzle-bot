@@ -811,6 +811,19 @@ impl Database {
             })
             .await
     }
+    
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_random_banned_sticker(&self) -> Result<Option<BannedSticker>, DatabaseError> {
+        self
+            .exec(move |conn| {
+        Ok(banned_sticker::table
+            .select(BannedSticker::as_select())
+            .order(random())
+            .first(conn)
+            .optional()?)
+            })
+            .await
+    }
 
     fn check_removed_sticker(sticker_file_id: &str, conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
         let removed: Option<String> = banned_sticker::table

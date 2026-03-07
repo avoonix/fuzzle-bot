@@ -358,11 +358,27 @@ impl VectorDatabase {
         &self,
         file_hash: String,
     ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
+        self.get_sticker_clip_vector_from_collection(file_hash, STICKER_COLLECTION_NAME).await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_banned_sticker_clip_vector(
+        &self,
+        file_hash: String,
+    ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
+        self.get_sticker_clip_vector_from_collection(file_hash, BANNED_STICKER_COLLECTION_NAME).await
+    }
+
+    async fn get_sticker_clip_vector_from_collection(
+        &self,
+        file_hash: String,
+        collection_name: &str,
+    ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
         let point_uuid = file_hash_to_uuid(&file_hash).into();
         let search_result = self
             .client
             .get_points(
-                STICKER_COLLECTION_NAME,
+                collection_name,
                 None,
                 &[point_uuid],
                 Some(true),

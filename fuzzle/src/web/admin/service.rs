@@ -13,18 +13,13 @@ use actix_web_lab::{
     header::{CacheControl, CacheDirective},
 };
 use itertools::Itertools;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::Instrument;
 
 use crate::{
-    bot::{BotError, InternalError},
-    database::{BanReason, BannedSticker, Sticker, StickerSet},
-    services::Services,
-    sticker::{
-        create_historgram_image, create_sticker_thumbnail, fetch_sticker_file, generate_merge_image,
-    },
-    util::Required,
-    web::shared::{AppState, thumbnail_cache_control_header},
+    bot::{BotError, InternalError}, database::{BanReason, BannedSticker, Sticker, StickerSet}, services::Services, sticker::{
+        create_historgram_image, create_sticker_thumbnail, fetch_sticker_file, generate_merge_image, resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files,
+    }, tags::Category, util::Required, web::shared::{AppState, thumbnail_cache_control_header}
 };
 use web::Data;
 
@@ -199,6 +194,59 @@ async fn approve_set(
         .await?;
     Ok(HttpResponse::Ok().finish())
 }
+
+#[derive(Serialize)]
+struct BanRecommendationPub {
+    matches: Vec<StickerWithSimilarityPub>,
+    banned_sticker: StickerPub,
+}
+
+#[actix_web::get("/api/recommend-stickers-for-ban")]
+#[tracing::instrument(skip(data))]
+async fn recommend_stickers_for_ban(data: Data<AppState>) -> actix_web::Result<impl Responder> {
+    let mut rec = vec![];
+    for _ in 0..100 {
+        let Some(banned_sticker) = data.database.get_random_banned_sticker().await? else {
+            return Ok(actix_web::web::Json(vec![]))
+        };
+        let Some(clip_vector) = data.vector_db.get_banned_sticker_clip_vector(banned_sticker.sticker_file_id.clone()).await? else {
+            tracing::info!(%banned_sticker.id, "no vector for sticker");
+            continue;
+        };
+        let best_regular_matches = data
+            .vector_db
+            .find_stickers_given_vector(clip_vector, 100, 0, Some(0.8))
+            .await?;
+
+        let matches = resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files(
+            data.database.clone(),
+            data.vector_db.clone(),
+            best_regular_matches,
+        )
+        .await?;
+
+        let matches = data.services.similarity.matches_to_stickers(matches).await?;
+
+        let matches = matches
+            .into_iter()
+            .map(|(s, similarity)| StickerWithSimilarityPub {
+                sticker: StickerPub::from(s),
+                similarity,
+            })
+            .collect_vec();
+        
+        if matches.is_empty() {
+            continue;
+        }
+        
+        rec.push(BanRecommendationPub {
+            banned_sticker: banned_sticker.into(),
+            matches,
+        });
+    }
+    Ok(actix_web::web::Json(rec))
+}
+
 
 #[actix_web::post("/api/scan-all-stickers-for-bans")]
 #[tracing::instrument(skip(data))]

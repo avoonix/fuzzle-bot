@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BanRecommendations from '@/components/BanRecommendations.vue';
 import { useFetch } from '@vueuse/core';
 
 
@@ -20,6 +21,7 @@ const scanBans = async () => {
   <v-btn @click="scanBans">
     scan all stickers for bans
   </v-btn>
+  <ban-recommendations />
 </template>
 
 <style>
