@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BanSetStickersDialog from '@/components/BanSetStickersDialog.vue';
 import { useFetch } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -70,6 +71,8 @@ const toggleBan = async () => {
     <v-btn @click="approve" color="success">
       Approve
     </v-btn>
+    
+    <ban-set-stickers-dialog :set-id="String(route.params.setId)" />
 
     <div v-if="data">
       <div v-for="sticker of data">

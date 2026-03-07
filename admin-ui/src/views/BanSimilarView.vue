@@ -51,7 +51,7 @@ const toggleBan = async () => {
      <v-slider
         v-model="maxSimilarity"
         thumb-label
-        min="0.7"
+        min="0.6"
         max="1"
         step="0.005"
       ></v-slider>

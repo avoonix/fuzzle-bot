@@ -377,7 +377,6 @@ impl VectorDatabase {
             tracing::info!("retrieved points are empty");
             return Ok(None);
         };
-
         let clip_vector = result
             .vectors
             .clone()
@@ -387,7 +386,23 @@ impl VectorDatabase {
                         todo!()
                     }
                     qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => {
-                        v.vectors["clip"].data.clone()
+                        let vectors_old = v.vectors["clip"].data.clone();
+                        if !vectors_old.is_empty() {
+                            return vectors_old;
+                        }
+
+                        match v.vectors["clip"].vector.clone() {
+                            Some(v) => {
+                                match v {
+                                    qdrant_client::qdrant::vector_output::Vector::Dense(dense_vector) => {
+                                        dense_vector.data
+                                    },
+                                    qdrant_client::qdrant::vector_output::Vector::Sparse(sparse_vector) => todo!(),
+                                    qdrant_client::qdrant::vector_output::Vector::MultiDense(multi_dense_vector) => todo!(),
+                                }
+                            }
+                            None => todo!(),
+                        }
                     }
                 },
                 None => todo!(),
