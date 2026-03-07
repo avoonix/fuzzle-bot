@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useFetch } from '@vueuse/core';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 interface StickerPub {
   id: string,
@@ -8,7 +8,16 @@ interface StickerPub {
   // similarity: number
 }
 
-const url = computed(() => `/api/banned-stickers`)
+const offset = ref(0);
+
+const autoBan = ref(true);
+
+const nextPage = () => {
+  offset.value = offset.value + (stickers.value?.length ?? 0)
+  window.scrollTo({top: 0})
+}
+
+const url = computed(() => `/api/banned-stickers?offset=${offset.value}&autoBan=${autoBan.value}`)
 
 const { data: stickers, error, execute: refetch } = useFetch(url, { refetch: true, updateDataOnError: true }).json<StickerPub[]>()
 
@@ -23,6 +32,8 @@ const unbanSticker = async (stickerId: string) => {
 </script>
 
 <template>
+  <v-btn @click="autoBan = !autoBan">toggle auto ban (cur = {{ autoBan }})</v-btn>
+  offset = {{ offset }}
   <div class="asdf">
     <!-- <h1>This is an ban similar view</h1>
      <v-slider
@@ -56,6 +67,7 @@ const unbanSticker = async (stickerId: string) => {
             ban similar view
           </v-btn>
         </div>
+        <v-btn @click="nextPage">next page</v-btn>
       </div>
   </div>
 </template>

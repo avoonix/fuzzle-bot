@@ -880,10 +880,12 @@ impl Database {
         &self,
         limit: i64,
         offset: i64,
+        ban_reason: BanReason,
     ) -> Result<Vec<BannedSticker>, DatabaseError> {
         self
             .exec(move |conn| {
         Ok(banned_sticker::table
+            .filter(banned_sticker::ban_reason.eq(ban_reason))
             .order_by(banned_sticker::created_at.desc())
             .limit(limit)
             .offset(offset)

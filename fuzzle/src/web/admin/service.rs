@@ -242,10 +242,24 @@ async fn scan_all_stickers_for_bans(data: Data<AppState>) -> actix_web::Result<i
     Ok(HttpResponse::Ok().finish())
 }
 
+#[derive(Deserialize)]
+pub struct BannedStickersQuery {
+    offset: i64,
+    #[serde(rename = "autoBan")]
+    auto_ban: bool,
+}
+
 #[actix_web::get("/api/banned-stickers")]
-#[tracing::instrument(skip(data))]
-async fn get_banned_stickers(data: Data<AppState>) -> actix_web::Result<impl Responder> {
-    let stickers = data.database.get_banned_stickers(100, 0).await?;
+#[tracing::instrument(skip(data, filter))]
+async fn get_banned_stickers(data: Data<AppState>,
+    Query(filter): Query<BannedStickersQuery>,
+) -> actix_web::Result<impl Responder> {
+    let ban_reason = if filter.auto_ban {
+        BanReason::Automatic
+    } else {
+        BanReason::Manual
+    };
+    let stickers = data.database.get_banned_stickers(100, filter.offset, ban_reason).await?;
     Ok(actix_web::web::Json(
         stickers
             .into_iter()
