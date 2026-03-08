@@ -3,6 +3,7 @@ import HomeView from '../views/HomeView.vue'
 import BanSetView from '@/views/BanSetView.vue'
 import BanSimilarView from '@/views/BanSimilarView.vue'
 import BannedStickersView from '@/views/BannedStickersView.vue'
+import CreatorView from '@/views/CreatorView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -11,6 +12,11 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: HomeView,
+    },
+    {
+      path: '/unapproved-by-creator',
+      name: 'creator',
+      component: CreatorView,
     },
     {
       path: '/banned-stickers',

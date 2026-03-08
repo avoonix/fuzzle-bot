@@ -95,6 +95,7 @@ pub fn setup_admin_server(
                     services: services.clone(),
                 }))
                 .service(service::get_pending_sets)
+                .service(service::unapproved_by_creator)
                 .service(service::ban_set)
                 .service(service::unban_set)
                 .service(service::get_similar_stickers)

@@ -4,6 +4,7 @@
       <RouterLink to="/">Home</RouterLink>
       <RouterLink to="/about">About</RouterLink>
       <RouterLink to="/banned-stickers">Banned Stickers</RouterLink>
+      <RouterLink to="/unapproved-by-creator">unapproved-by-creator</RouterLink>
     </v-navigation-drawer>
 
     <v-app-bar>

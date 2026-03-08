@@ -8,7 +8,9 @@ interface StickerSetPub {
   title?: string,
 }
 
-const { data, error, execute: refetch } = useFetch('/api/pending-sets', { refetch: true, updateDataOnError: true }).json<StickerSetPub[]>()
+const userId = ref("");
+
+const { data, error, execute: refetch } = useFetch(() => `/api/unapproved-by-creator?userId=${userId.value}`, { refetch: true, updateDataOnError: true }).json<StickerSetPub[]>()
 
 watch(data, () => console.log(data))
 
@@ -42,14 +44,15 @@ const banSet = async (setId: string) => {
   <main>
     <div class="d-flex">
       <div>
+        <v-text-field label="user id" v-model="userId" />
         <!-- <span @click="counter.increment()">
           {{ counter.count }}
         </span> -->
         <div v-if="data">
           <div v-for="set of data">
-            <v-btn variant="plain" width="auto" height="auto" :to="{ name: 'banSetView', params: { setId: set.id } }">
+            <!-- <v-btn variant="plain" width="auto" height="auto" :to="{ name: 'banSetView', params: { setId: set.id } }"> -->
                 <img :src="`/thumbnails/sticker-set/${set.id}/image.png`" loading="lazy" width="128" height="128" />
-              </v-btn>
+              <!-- </v-btn> -->
                 
     <v-btn @click="approve(set.id)" color="success">
       Approve
@@ -74,8 +77,6 @@ const banSet = async (setId: string) => {
         </v-btn>
         {{ error }}
       </div>
-
-      <router-view />
     </div>
   </main>
 </template>

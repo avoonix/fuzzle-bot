@@ -68,6 +68,25 @@ impl From<BannedSticker> for StickerPub {
         }
     }
 }
+#[derive(Deserialize)]
+pub struct CreatorQuery {
+    #[serde(rename = "userId")]
+    user_id: i64
+}
+
+
+#[actix_web::get("/api/unapproved-by-creator")]
+#[tracing::instrument(skip(data, query))]
+async fn unapproved_by_creator(data: Data<AppState>,
+    Query(query): Query<CreatorQuery>,
+) -> actix_web::Result<impl Responder> {
+    let set = data.database.get_pending_sticker_sets_by_creator(100, 0, query.user_id).await?;
+    Ok(actix_web::web::Json(
+        set.into_iter()
+            .map(|s| StickerSetPub::from(s))
+            .collect_vec(),
+    ))
+}
 
 #[actix_web::get("/api/pending-sets")]
 #[tracing::instrument(skip(data))]

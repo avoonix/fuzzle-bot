@@ -68,6 +68,20 @@ const unbanSticker = async (stickerId: string) => {
     }
 }
 
+const unbanSet = async (setId: string) => {
+    const { data, error } = await useFetch(`/api/sets/${setId}/unban`).post()
+    if (error.value) {
+      alert(error.value)
+    }
+}
+
+const banSet = async (setId: string) => {
+    const { data, error } = await useFetch(`/api/sets/${setId}/ban`).post()
+    if (error.value) {
+      alert(error.value)
+    }
+}
+
 </script>
 
 <template>
@@ -90,6 +104,13 @@ const unbanSticker = async (stickerId: string) => {
             <!-- <v-btn variant="plain" width="auto" height="auto" :to="{ name: 'banSetView', params: { setId: set.setid } }"> -->
                 <img :src="`/thumbnails/sticker-set/${set.setId}/image.png`" loading="lazy" width="128" height="128" />
                 {{ set }}
+
+    <v-btn @click="unbanSet(set.setId)">
+      Unban set
+    </v-btn>
+    <v-btn @click="banSet(set.setId)" color="error">
+      Ban set
+    </v-btn>
               <!-- </v-btn> -->
         <ban-set-stickers-dialog :set-id="set.setId" />
       </v-card>

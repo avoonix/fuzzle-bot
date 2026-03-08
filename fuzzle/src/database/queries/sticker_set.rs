@@ -355,6 +355,31 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_pending_sticker_sets_by_creator(
+        &self,
+        limit: i64,
+        offset: i64,
+        created_by_user_id: i64,
+    ) -> Result<Vec<StickerSet>, DatabaseError> {
+        self
+            .exec(move |conn| {
+                Ok(sticker_set::table
+                    .left_join(banned_sticker::table.on(
+                        banned_sticker::sticker_set_id.eq(sticker_set::id),
+                    ))
+                    .select(StickerSet::as_select())
+                    .filter((sticker_set::is_pending.eq(true)))
+                    .filter((sticker_set::created_by_user_id.eq(created_by_user_id)))
+                    .group_by(sticker_set::id)
+                    .order_by((diesel::dsl::count(banned_sticker::id).desc(), sticker_set::created_at.desc()))
+                    .limit(limit)
+                    .offset(offset)
+                    .load(conn)?)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_pending_sticker_sets(
         &self,
         limit: i64,
