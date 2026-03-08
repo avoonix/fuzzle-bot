@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use itertools::Itertools;
 
-use crate::{background_tasks::{TagManagerService}, bot::{InternalError}, database::Database, qdrant::VectorDatabase};
+use crate::{background_tasks::TagManagerService, bot::InternalError, database::Database, qdrant::VectorDatabase, util::StickerFileId};
 
 use super::ScoredTagSuggestion;
 
@@ -11,7 +11,7 @@ pub async fn suggest_closest_tags(
     database: &Database,
     vector_db: &VectorDatabase,
     tag_manager: TagManagerService,
-    file_hash: &str,
+    file_hash: &StickerFileId,
 ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
     let Some(result) = vector_db.recommend_tags(file_hash).await? else {return Ok(vec![])}; // TODO: this might fail if the sticker is not indexed yet
     Ok(convert_vectordb_recommended_tags_to_suggestions(

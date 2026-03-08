@@ -10,7 +10,7 @@ use crate::{
     database::{
 Database, MergeStatus, StickerType
     },
-    qdrant::VectorDatabase, util::Required,
+    qdrant::VectorDatabase, util::{Required, StickerId},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,8 +39,8 @@ use super::download::fetch_sticker_file;
 
 #[tracing::instrument(skip(database, bot))]
 pub async fn generate_merge_image(
-    sticker_id_a: &str,
-    sticker_id_b: &str,
+    sticker_id_a: &StickerId,
+    sticker_id_b: &StickerId,
     database: Database,
     bot: Bot,
 ) -> Result<Vec<u8>, InternalError> {
@@ -68,7 +68,7 @@ pub async fn generate_merge_image(
 async fn get_sticker_file(
     database: Database,
     bot: Bot,
-    sticker_id: &str,
+    sticker_id: &StickerId,
 ) -> Result<Vec<u8>, InternalError> {
     let sticker_a = database.get_sticker_by_id(sticker_id).await?.required()?;
     let (buf, _) = fetch_sticker_file(sticker_a.telegram_file_identifier.clone(), bot.clone()).await?;
@@ -77,7 +77,7 @@ async fn get_sticker_file(
 
 #[tracing::instrument(skip(database, vector_db, bot))]
 pub async fn automerge(
-    sticker_id: &str,
+    sticker_id: &StickerId,
     database: Database,
     vector_db: VectorDatabase,
     bot: Bot,
@@ -170,7 +170,7 @@ pub async fn automerge(
         
         if within_thresholds {
             return determine_canonical_sticker_and_merge(
-                sticker_id.to_string(),
+                sticker_id.clone(),
                 sticker_id_b,
                 database,
             )
@@ -202,8 +202,8 @@ fn within_threshold(buf_a: Vec<u8>, buf_b: Vec<u8>) -> anyhow::Result<bool> {
 
 #[tracing::instrument(skip(database))]
 pub async fn determine_canonical_sticker_and_merge(
-    sticker_id_a: String,
-    sticker_id_b: String,
+    sticker_id_a: StickerId,
+    sticker_id_b: StickerId,
     database: Database,
 ) -> Result<(), InternalError> {
     let sticker_file_a = database

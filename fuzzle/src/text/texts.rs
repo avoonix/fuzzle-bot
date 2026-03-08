@@ -7,11 +7,10 @@ use crate::{
         Stats, StickerChange, StickerSet, Tag, UserSettings, UserStats, UserStickerStat,
     },
     message::{
-        admin_command_description, escape_sticker_unique_id_for_command, user_command_description,
-        PrivacyPolicy,
+        PrivacyPolicy, admin_command_description, escape_sticker_unique_id_for_command, user_command_description
     },
     tags::Category,
-    util::{format_relative_time, Emoji},
+    util::{Emoji, StickerSetId, format_relative_time},
 };
 use itertools::Itertools;
 use teloxide::{
@@ -107,7 +106,7 @@ Current Order: {order}
             .map(|set| {
                 let link = format_set_as_markdown_link(
                     &set.id,
-                    set.title.unwrap_or(set.id.clone()).as_ref(),
+                    &set.title_or_id()
                 );
                 let relative_time = escape(&format_relative_time(set.created_at));
 
@@ -171,7 +170,7 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
     }
 
     #[must_use]
-    pub fn get_set_operations_text(set_id: &str, set_title: &str) -> Markdown {
+    pub fn get_set_operations_text(set_id: &StickerSetId, set_title: &str) -> Markdown {
         Markdown::new(format!(
             "Tag or untag all stickers in the set {}",
             format_set_as_markdown_link(set_id, set_title)
@@ -179,7 +178,7 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
     }
 
     #[must_use]
-    pub fn get_processed_sticker_sets_text(queued_set_names: Vec<String>) -> Markdown {
+    pub fn get_processed_sticker_sets_text(queued_set_names: Vec<StickerSetId>) -> Markdown {
         let mut message = String::new();
         message.push_str("Queued sticker sets:\n");
         for (i, set_name) in queued_set_names.iter().enumerate() {
@@ -191,7 +190,7 @@ If you search stickers by emojis instead of tags, the blacklist is not in effect
     }
 
     #[must_use]
-    pub fn get_sticker_text(emoji: Option<Emoji>, set_is_new: bool, is_admin: bool, set_id: Option<String>) -> Markdown {
+    pub fn get_sticker_text(emoji: Option<Emoji>, set_is_new: bool, is_admin: bool, set_id: Option<StickerSetId>) -> Markdown {
         let value = if let Some(emoji) = emoji {
             if let Some(name) = emoji.name() {
                 format!(" {} {} ", name, emoji.to_string_with_variant())
@@ -402,7 +401,7 @@ Send stickers to apply these changes to them\\."
     }
 
     #[must_use]
-    pub fn untagged_set(set_name: &str, tags: &[String], count: usize) -> Markdown {
+    pub fn untagged_set(set_name: &StickerSetId, tags: &[String], count: usize) -> Markdown {
         let tags = tags.into_iter().map(|t| escape(t)).join(", ");
         let set = format_set_as_markdown_link(set_name, set_name);
         Markdown::new(format!(
@@ -411,7 +410,7 @@ Send stickers to apply these changes to them\\."
     }
 
     #[must_use]
-    pub fn tagged_set(set_name: &str, tags: &[String], count: usize) -> Markdown {
+    pub fn tagged_set(set_name: &StickerSetId, tags: &[String], count: usize) -> Markdown {
         let set = format_set_as_markdown_link(set_name, set_name);
         let tags = tags
             .iter()
@@ -432,7 +431,7 @@ Send stickers to apply these changes to them\\."
     }
 
     #[must_use]
-    pub fn get_set_article_link(set_id: &str, set_title: &str) -> Markdown {
+    pub fn get_set_article_link(set_id: &StickerSetId, set_title: &str) -> Markdown {
         Markdown::new(format_set_as_markdown_link(set_id, set_title))
     }
 

@@ -1,13 +1,13 @@
 use itertools::Itertools;
 
-use crate::{bot::InternalError, database::Database};
+use crate::{bot::InternalError, database::Database, util::{StickerFileId, StickerSetId}};
 
 use super::ScoredTagSuggestion;
 
 #[tracing::instrument(skip(database))]
 pub async fn suggest_tags_from_same_set(
     database: &Database,
-    set_id: &str,
+    set_id: &StickerSetId,
 ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
     let suggested_tags = database.get_all_sticker_set_tag_counts(set_id).await?;
     let max_count = suggested_tags.iter().map(|tag| tag.1).max().unwrap_or(1);
@@ -20,7 +20,7 @@ pub async fn suggest_tags_from_same_set(
 #[tracing::instrument(skip(database))]
 pub async fn suggest_tags_from_sets_with_same_sticker_file(
     database: &Database,
-    sticker_file_id: &str,
+    sticker_file_id: &StickerFileId,
 ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
     let suggested_tags = database
         .get_all_sticker_set_tag_counts_by_sticker_file_id(sticker_file_id)

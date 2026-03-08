@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use itertools::Itertools;
 
-use crate::{bot::InternalError, database::{Database, Sticker, StickerSet}, util::format_relative_time};
+use crate::{bot::InternalError, database::{Database, Sticker, StickerSet}, util::{StickerSetId, format_relative_time}};
 
 
 #[derive(Clone)]
@@ -16,7 +16,7 @@ impl StickerService {
 
     pub async fn get_sticker_set_timeline(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
     ) -> Result<Vec<(String, Vec<Sticker>)>, InternalError> {
         let stickers = self.database.get_all_stickers_in_set(set_id).await?;
 

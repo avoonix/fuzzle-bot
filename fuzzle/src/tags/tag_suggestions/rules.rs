@@ -1,5 +1,5 @@
 use super::tag_suggestion::ScoredTagSuggestion;
-use crate::util::{parse_emoji, tag_literal, Emoji};
+use crate::util::{Emoji, StickerSetId, parse_emoji, tag_literal};
 use itertools::Itertools;
 use nom::bytes::complete::{tag, take_till};
 use nom::character::complete::{alphanumeric1, multispace0, space0};
@@ -85,7 +85,7 @@ impl TagSuggestionRules {
         })
     }
 
-    fn apply_string_rules(&self, set_title: &str, set_name: &str) -> Vec<String> {
+    fn apply_string_rules(&self, set_title: &str, set_name: &StickerSetId) -> Vec<String> {
         let mut tags: Vec<String> = Vec::new();
         let combined = format!("{set_name} {set_title}").to_lowercase();
         for rule in &self.string_rules {
@@ -127,7 +127,7 @@ impl TagSuggestionRules {
         &self,
         emojis: Vec<Emoji>,
         set_title: &str,
-        set_name: &str,
+        set_name: &StickerSetId,
     ) -> Vec<ScoredTagSuggestion> {
         let mut tags: Vec<String> = Vec::new();
         for emoji in emojis {
@@ -264,7 +264,7 @@ mod tests {
         let suggestions = rules.suggest_tags(
             vec![Emoji::new_from_string_single("⁉️"), Emoji::new_from_string_single("‼️")],
             "Furry Paws Collection (NSFW)",
-            "PawsNsfw",
+            &StickerSetId::from("PawsNsfw"),
         );
         assert_suggested_tags_only_contain(
             suggestions,
@@ -277,7 +277,7 @@ mod tests {
             ],
         );
 
-        let suggestions = rules.suggest_tags(vec![Emoji::new_from_string_single("🔓"), Emoji::new_from_string_single("🧦")], "My Set", "set385972");
+        let suggestions = rules.suggest_tags(vec![Emoji::new_from_string_single("🔓"), Emoji::new_from_string_single("🧦")], "My Set", &StickerSetId::from("set385972"));
         assert_suggested_tags_only_contain(
             suggestions,
             &[
@@ -289,13 +289,13 @@ mod tests {
             ],
         );
 
-        let suggestions = rules.suggest_tags(vec![Emoji::new_from_string_single("😍")], "Fox Pack", "FoxByNaL");
+        let suggestions = rules.suggest_tags(vec![Emoji::new_from_string_single("😍")], "Fox Pack", &StickerSetId::from("FoxByNaL"));
         assert_suggested_tags_only_contain(suggestions, &["nowandlater"]);
 
-        let suggestions = rules.suggest_tags(vec![Emoji::new_from_string_single("😍")], "Fox and Friends", "foxfriends");
+        let suggestions = rules.suggest_tags(vec![Emoji::new_from_string_single("😍")], "Fox and Friends", &StickerSetId::from("foxfriends"));
         assert_suggested_tags_only_contain(suggestions, &["duo"]);
 
-        let suggestions = rules.suggest_tags(vec![Emoji::new_from_string_single("😵‍💫")], "FoxNsfw", "FoxNsfw");
+        let suggestions = rules.suggest_tags(vec![Emoji::new_from_string_single("😵‍💫")], "FoxNsfw", &StickerSetId::from("FoxNsfw"));
         assert_suggested_tags_only_contain(suggestions, &["explicit", "questionable"]);
 
         Ok(())

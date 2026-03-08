@@ -19,13 +19,13 @@ use tracing::Instrument;
 use crate::{
     bot::{BotError, InternalError}, database::{BanReason, BannedSticker, Sticker, StickerSet}, services::Services, sticker::{
         create_historgram_image, create_sticker_thumbnail, fetch_sticker_file, generate_merge_image, resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files,
-    }, tags::Category, util::Required, web::shared::{AppState, thumbnail_cache_control_header}
+    }, tags::Category, util::{Required, StickerId, StickerSetId}, web::shared::{AppState, thumbnail_cache_control_header}
 };
 use web::Data;
 
 #[derive(serde::Serialize)]
 struct StickerSetPub {
-    id: String,
+    id: StickerSetId,
     title: Option<String>,
 }
 
@@ -40,8 +40,8 @@ impl From<StickerSet> for StickerSetPub {
 
 #[derive(serde::Serialize)]
 struct StickerPub {
-    id: String,
-    set_id: String,
+    id: StickerId,
+    set_id: StickerSetId,
 }
 
 #[derive(serde::Serialize)]
@@ -68,6 +68,54 @@ impl From<BannedSticker> for StickerPub {
         }
     }
 }
+
+#[derive(Deserialize)]
+pub struct TagQuery {
+    search: String
+}
+
+#[derive(serde::Serialize)]
+pub struct TagPub {
+    tag: String,
+    category_name: Option<String>,
+    category_color: Option<String>
+}
+
+impl TagPub {
+    fn from(tag: String, category: Option<Category>) -> Self {
+        Self {
+            tag,
+            category_name: category.map(|c|c.to_human_name().to_string()),
+            category_color: category.map(|c| c.to_color_name().to_string()),
+        }
+    }
+}
+
+#[actix_web::get("/api/tags")]
+#[tracing::instrument(skip(data, query))]
+async fn get_tags(data: Data<AppState>,
+    Query(query): Query<TagQuery>,
+) -> actix_web::Result<impl Responder> {
+    let suggested_tags = data
+        .tag_manager
+        .find_tags(
+            &query
+                .search
+                .split(" ")
+                .map(|s| s.to_string())
+                .collect_vec(),
+        )
+        .await
+        .into_iter()
+        .take(20)
+        .collect_vec();
+    Ok(actix_web::web::Json(
+        suggested_tags.into_iter()
+            .map(|s| TagPub::from(s.clone(), data.tag_manager.get_category(&s)))
+            .collect_vec(),
+    ))
+}
+
 #[derive(Deserialize)]
 pub struct CreatorQuery {
     #[serde(rename = "userId")]
@@ -102,7 +150,7 @@ async fn get_pending_sets(data: Data<AppState>) -> actix_web::Result<impl Respon
 #[actix_web::post("/api/sets/{set_id}/ban")]
 #[tracing::instrument(skip(data))]
 async fn ban_set(
-    Path(set_id): Path<String>,
+    Path(set_id): Path<StickerSetId>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     data.services.import.ban_sticker_set(&set_id).await?;
@@ -112,7 +160,7 @@ async fn ban_set(
 #[actix_web::post("/api/sets/{set_id}/unban")]
 #[tracing::instrument(skip(data))]
 async fn unban_set(
-    Path(set_id): Path<String>,
+    Path(set_id): Path<StickerSetId>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     data.services.import.unban_sticker_set(&set_id).await?;
@@ -127,7 +175,7 @@ struct StickerBanBody {
 #[actix_web::get("/api/stickers/{sticker_id}/similar")]
 #[tracing::instrument(skip(data))]
 async fn get_similar_stickers(
-    Path(sticker_id): Path<String>,
+    Path(sticker_id): Path<StickerId>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     let (matches, _) = data
@@ -159,7 +207,7 @@ async fn get_similar_stickers(
 #[actix_web::post("/api/stickers/{sticker_id}/ban")]
 #[tracing::instrument(skip(data, body))]
 async fn ban_sticker(
-    Path(sticker_id): Path<String>,
+    Path(sticker_id): Path<StickerId>,
     body: Json<StickerBanBody>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
@@ -173,7 +221,7 @@ async fn ban_sticker(
 #[actix_web::post("/api/stickers/{sticker_id}/unban")]
 #[tracing::instrument(skip(data))]
 async fn unban_sticker(
-    Path(sticker_id): Path<String>,
+    Path(sticker_id): Path<StickerId>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     data.services.import.unban_sticker(&sticker_id).await?;
@@ -183,7 +231,7 @@ async fn unban_sticker(
 #[actix_web::get("/api/sets/{set_id}/stickers")]
 #[tracing::instrument(skip(data))]
 async fn get_stickers_in_set(
-    Path(set_id): Path<String>,
+    Path(set_id): Path<StickerSetId>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     let sticker_set = data.database.get_sticker_set_by_id(&set_id).await?;
@@ -205,7 +253,7 @@ async fn get_stickers_in_set(
 #[actix_web::post("/api/sets/{set_id}/approve")]
 #[tracing::instrument(skip(data))]
 async fn approve_set(
-    Path(set_id): Path<String>,
+    Path(set_id): Path<StickerSetId>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     data.database
@@ -307,7 +355,7 @@ async fn scan_all_stickers_for_bans(data: Data<AppState>) -> actix_web::Result<i
                 Err(err) => tracing::error!(error = %err, "periodic task error: {err:?}"),
             }
         }
-        .instrument(tracing::info_span!("scan_all_stickers_task")),
+        // .instrument(tracing::info_span!("scan_all_stickers_task")),
     );
     Ok(HttpResponse::Ok().finish())
 }
@@ -341,13 +389,13 @@ async fn get_banned_stickers(data: Data<AppState>,
 #[actix_web::get("/api/banned-sticker/{sticker_id}/thumbnail.png")]
 #[tracing::instrument(skip(data))]
 async fn get_banned_sticker_thumbnail(
-    Path(sticker_id): Path<String>,
+    Path(sticker_id): Path<StickerId>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     // TODO: deduplicate from other public service
     let sticker = data
         .database
-        .get_banned_sticker(&sticker_id)
+        .get_banned_sticker_by_sticker_id(&sticker_id)
         .await?
         .required()?;
     let file_id = sticker.thumbnail_file_id.required()?;

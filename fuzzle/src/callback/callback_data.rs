@@ -16,7 +16,7 @@ use crate::database::{ModerationTaskStatus, StickerOrder};
 
 use crate::message::PrivacyPolicy;
 use crate::tags::Category;
-use crate::util::{sticker_id_literal, tag_literal};
+use crate::util::{StickerId, StickerSetId, sticker_id_literal, tag_literal};
 
 fn parse_tag_operation(input: &str) -> IResult<&str, TagOperation> {
     alt((
@@ -87,43 +87,43 @@ pub enum CallbackData {
     Privacy(Option<PrivacyPolicy>),
 
     OwnerPage {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     StickerSetPage {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     DownloadSticker {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     StickerExplorePage {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     ToggleExampleSticker {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     ApplyTags {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
 
     Sticker {
-        sticker_id: String,
+        sticker_id: StickerId,
         operation: Option<TagOperation>,
     },
     FavoriteSticker {
-        sticker_id: String,
+        sticker_id: StickerId,
         operation: FavoriteAction,
     },
     SetLock {
-        sticker_id: String,
+        sticker_id: StickerId,
         lock: bool,
     },
     ToggleRecommendSticker {
-        sticker_id: String,
+        sticker_id: StickerId,
         positive: bool,
     },
 
     ChangeSetBannedStatus {
-        set_name: String,
+        set_name: StickerSetId,
         banned: bool,
         moderation_task_id: i64,
     },
@@ -140,29 +140,29 @@ pub enum CallbackData {
     },
 
     Merge {
-        sticker_id_a: String,
-        sticker_id_b: String,
+        sticker_id_a: StickerId,
+        sticker_id_b: StickerId,
         merge: bool,
     },
 }
 
 impl CallbackData {
-    pub fn tag_sticker(sticker_id: impl Into<String>, tag: impl Into<String>) -> Self {
+    pub fn tag_sticker(sticker_id: StickerId, tag: impl Into<String>) -> Self {
         Self::Sticker {
-            sticker_id: sticker_id.into(),
+            sticker_id,
             operation: Some(TagOperation::Tag(tag.into())),
         }
     }
-    pub fn untag_sticker(sticker_id: impl Into<String>, tag: impl Into<String>) -> Self {
+    pub fn untag_sticker(sticker_id: StickerId, tag: impl Into<String>) -> Self {
         Self::Sticker {
-            sticker_id: sticker_id.into(),
+            sticker_id,
             operation: Some(TagOperation::Untag(tag.into())),
         }
     }
-    pub fn change_set_status(set_name: impl Into<String>, banned: bool, moderation_task_id: i64) -> Self {
+    pub fn change_set_status(set_name: StickerSetId, banned: bool, moderation_task_id: i64) -> Self {
         Self::ChangeSetBannedStatus {
             banned,
-            set_name: set_name.into(),
+            set_name,
             moderation_task_id,
         }
     }
@@ -172,15 +172,11 @@ impl CallbackData {
     }
 
     pub fn merge(
-        sticker_id_a: impl Into<String>,
-        sticker_id_b: impl Into<String>,
+        sticker_id_a: StickerId,
+        sticker_id_b: StickerId,
         merge: bool,
     ) -> Self {
-        Self::Merge {
-            merge,
-            sticker_id_a: sticker_id_a.into(),
-            sticker_id_b: sticker_id_b.into(),
-        }
+        Self::Merge { merge, sticker_id_a, sticker_id_b, }
     }
 }
 
@@ -253,8 +249,8 @@ fn parse_merge_data(input: &str) -> IResult<&str, CallbackData> {
             alt((map(tag("true"), |_| true), map(tag("false"), |_| false))),
         )),
         |(_, sticker_id_a, _, sticker_id_b, _, merge)| CallbackData::Merge {
-            sticker_id_a: sticker_id_a.to_string(),
-            sticker_id_b: sticker_id_b.to_string(),
+            sticker_id_a: StickerId::from(sticker_id_a),
+            sticker_id_b: StickerId::from(sticker_id_b),
             merge,
         },
     ).parse(input)
@@ -294,7 +290,7 @@ fn parse_favorite_sticker_data(input: &str) -> IResult<&str, CallbackData> {
             )),
         )),
         |(_, sticker_id, _, operation)| CallbackData::FavoriteSticker {
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
             operation,
         },
     ).parse(input)
@@ -306,7 +302,7 @@ fn parse_owner_page(input: &str) -> IResult<&str, CallbackData> {
     Ok((
         input,
         CallbackData::OwnerPage {
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         },
     ))
 }
@@ -317,7 +313,7 @@ fn parse_sticker_set_page(input: &str) -> IResult<&str, CallbackData> {
     Ok((
         input,
         CallbackData::StickerSetPage {
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         },
     ))
 }
@@ -328,7 +324,7 @@ fn parse_download_sticker(input: &str) -> IResult<&str, CallbackData> {
     Ok((
         input,
         CallbackData::DownloadSticker {
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         },
     ))
 }
@@ -339,7 +335,7 @@ fn parse_sticker_explore_page(input: &str) -> IResult<&str, CallbackData> {
     Ok((
         input,
         CallbackData::StickerExplorePage {
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         },
     ))
 }
@@ -350,7 +346,7 @@ fn parse_toggle_example_sticker(input: &str) -> IResult<&str, CallbackData> {
     Ok((
         input,
         CallbackData::ToggleExampleSticker {
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         },
     ))
 }
@@ -361,7 +357,7 @@ fn parse_apply_tags(input: &str) -> IResult<&str, CallbackData> {
     Ok((
         input,
         CallbackData::ApplyTags {
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         },
     ))
 }
@@ -373,11 +369,11 @@ fn parse_recommend_sticker(input: &str) -> IResult<&str, CallbackData> {
     alt((
         map(tag("positive"), |_| CallbackData::ToggleRecommendSticker {
             positive: true,
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         }),
         map(tag("negative"), |_| CallbackData::ToggleRecommendSticker {
             positive: false,
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         }),
     )).parse(input)
 }
@@ -389,11 +385,11 @@ fn parse_lock_data(input: &str) -> IResult<&str, CallbackData> {
     alt((
         map(tag("lock"), |_| CallbackData::SetLock {
             lock: true,
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         }),
         map(tag("unlock"), |_| CallbackData::SetLock {
             lock: false,
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
         }),
     )).parse(input)
 }
@@ -445,7 +441,7 @@ fn parse_remove_set_data(input: &str) -> IResult<&str, CallbackData> {
         input,
         CallbackData::ChangeSetBannedStatus {
             banned,
-            set_name: set_name.to_string(),
+            set_name: StickerSetId::from(set_name),
             moderation_task_id: task_id,
         },
     ))
@@ -488,7 +484,7 @@ fn parse_sticker_data(input: &str) -> IResult<&str, CallbackData> {
     Ok((
         input,
         CallbackData::Sticker {
-            sticker_id: sticker_id.to_string(),
+            sticker_id: StickerId::from(sticker_id),
             operation,
         },
     ))
@@ -633,7 +629,7 @@ mod tests {
         let data = CallbackData::try_from("s;5uh33fj84;t;male".to_string())?;
         assert_eq!(
             CallbackData::Sticker {
-                sticker_id: "5uh33fj84".to_string(),
+                sticker_id: StickerId::from("5uh33fj84"),
                 operation: Some(TagOperation::Tag("male".to_string())),
             },
             data
@@ -646,7 +642,7 @@ mod tests {
         let data = CallbackData::try_from("s;5uh33fj84;u;male".to_string())?;
         assert_eq!(
             CallbackData::Sticker {
-                sticker_id: "5uh33fj84".to_string(),
+                sticker_id: StickerId::from("5uh33fj84"),
                 operation: Some(TagOperation::Untag("male".to_string())),
             },
             data

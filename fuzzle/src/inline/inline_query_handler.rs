@@ -15,7 +15,7 @@ use crate::sticker::{
     resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files, Match,
 };
 use crate::text::{Markdown, Text};
-use crate::util::{create_sticker_set_id, create_tag_id, format_relative_time, Emoji, Required};
+use crate::util::{Emoji, Required, StickerId, StickerSetId, create_sticker_set_id, create_tag_id, format_relative_time};
 use chrono::DateTime;
 use itertools::Itertools;
 use num_traits::ToPrimitive;
@@ -51,7 +51,7 @@ fn create_query_set(
     thumb_url: String,
 ) -> Result<InlineQueryResult, BotError> {
     // // TODO: do not rely on this service for images (base64 does not work)
-    let set_title = set.title.clone().unwrap_or(set.id.clone());
+    let set_title = set.title_or_id();
 
     let content = InputMessageContent::Text(InputMessageContentText::new(
         Text::get_set_article_link(&set.id, &set_title),
@@ -63,7 +63,7 @@ fn create_query_set(
         set_title,
         content,
     )
-    .description(info.map_or(set.id.clone(), |info| format!("{} • {}", set.id, info)));
+    .description(info.map_or_else(|| set.id.to_string(), |info| format!("{} • {}", set.id, info)));
     // let thumbnail_url =
     // format!("https://placehold.co/{THUMBNAIL_SIZE}/007f0e/black.png?text={thumb}");
     let thumbnail_url = Url::parse(&thumb_url)?;
@@ -156,7 +156,7 @@ async fn search_tags_for_sticker_set(
     current_offset: QueryPage,
     tags: Vec<Vec<String>>,
     operation: SetOperation,
-    set_name: String,
+    set_name: StickerSetId,
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
@@ -218,7 +218,7 @@ fn require_some_results(
 async fn search_tags_for_sticker(
     current_offset: QueryPage,
     tags: Vec<Vec<String>>,
-    unique_id: String,
+    unique_id: StickerId,
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
@@ -365,7 +365,7 @@ pub async fn query_stickers(
 async fn handle_similar_sticker_query(
     current_offset: QueryPage,
     query: InlineQueryData,
-    sticker_unique_id: String,
+    sticker_unique_id: StickerId,
     aspect: SimilarityAspect,
     q: InlineQuery,
     request_context: RequestContext,
@@ -699,7 +699,7 @@ pub async fn inline_query_handler(
 #[tracing::instrument(skip(q, request_context))]
 async fn handle_sticker_contained_query(
     current_offset: QueryPage,
-    sticker_id: String,
+    sticker_id: StickerId,
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
@@ -743,7 +743,7 @@ async fn handle_sticker_contained_query(
 #[tracing::instrument(skip(q, request_context))]
 async fn handle_all_set_tags(
     current_offset: QueryPage,
-    sticker_id: String,
+    sticker_id: StickerId,
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
@@ -785,7 +785,7 @@ async fn handle_all_set_tags(
 #[tracing::instrument(skip(q, request_context))]
 async fn handle_overlapping_sets(
     current_offset: QueryPage,
-    sticker_id: String,
+    sticker_id: StickerId,
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
@@ -1151,7 +1151,7 @@ pub async fn handle_tag_creator(
 #[tracing::instrument(skip(q, request_context))]
 async fn handle_user_sets(
     current_offset: QueryPage,
-    sticker_id: String,
+    sticker_id: StickerId,
     set_title: Option<String>,
     q: InlineQuery,
     request_context: RequestContext,
@@ -1195,7 +1195,7 @@ async fn handle_user_sets(
             "https://fuzzle-bot.avoonix.com/thumbnails/sticker-set/{}/image.png",
             &set.id
         );
-        let set_title = set.title.clone().unwrap_or(set.id.clone());
+        let set_title = set.title_or_id();
 
         let sticker_in_set = request_context
             .database
@@ -1275,7 +1275,7 @@ async fn handle_user_sets(
 #[tracing::instrument(skip(q, request_context))]
 async fn handle_stickers_by_date(
     current_offset: QueryPage,
-    sticker_id: String,
+    sticker_id: StickerId,
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
@@ -1424,7 +1424,7 @@ async fn handle_top_owners(
 #[tracing::instrument(skip(q, request_context))]
 async fn handle_report(
     current_offset: QueryPage,
-    set_id: String,
+    set_id: StickerSetId,
     q: InlineQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {

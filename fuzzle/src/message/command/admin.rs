@@ -5,7 +5,7 @@ use crate::message::Keyboard;
 use crate::services::{ Services};
 use crate::sticker::generate_merge_image;
 use crate::text::Markdown;
-use crate::util::Required;
+use crate::util::{Required, StickerSetId};
 
 use flate2::read::GzEncoder;
 use flate2::Compression;
@@ -50,7 +50,7 @@ impl AdminCommand {
     ) -> Result<(), BotError> {
         match self {
             Self::UnbanSet { set_name } => {
-                let set_name = set_name.trim();
+                let set_name = StickerSetId::from(set_name.trim());
                 if set_name.is_empty() {
                     request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("missing set name"))
                         .await?;
@@ -61,7 +61,7 @@ impl AdminCommand {
                 }
             }
             Self::BanSet { set_name } => {
-                let set_name = set_name.trim();
+                let set_name = StickerSetId::from(set_name.trim());
                 if set_name.is_empty() {
                     request_context.bot.send_markdown(msg.chat.id, Markdown::escaped("missing set name"))
                         .await?;

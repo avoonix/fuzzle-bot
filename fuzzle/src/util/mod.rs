@@ -3,6 +3,7 @@ mod emoji;
 mod parsers;
 mod required;
 mod float_ext;
+mod wrappers;
 
 pub use bot::*;
 use chrono::{Duration, NaiveDateTime, TimeDelta};
@@ -12,6 +13,7 @@ use rand::Rng;
 use regex::Regex;
 pub use required::*;
 pub use float_ext::*;
+pub use wrappers::*;
 
 pub fn format_relative_time(time: NaiveDateTime) -> String {
     let now = chrono::Utc::now().naive_utc();
@@ -56,7 +58,7 @@ pub fn create_tag_id(input: &str) -> String {
     consecutive_underscores.replace_all(&input, "_").into_owned()
 }
 
-pub fn create_sticker_set_id(set_title: &str, bot_username: &str) -> String {
+pub fn create_sticker_set_id(set_title: &str, bot_username: &str) -> StickerSetId {
     let invalid_characters = Regex::new(r"[^A-Za-z0-9_]").expect("hardcoded regex to compile");
     let set_title = invalid_characters.replace_all(&set_title, "_").into_owned();
 
@@ -68,5 +70,5 @@ pub fn create_sticker_set_id(set_title: &str, bot_username: &str) -> String {
 
     let mut rng = rand::rng();
     let number: u32 = rng.random_range(100_000..=999_999);
-    format!("pack{set_title}{number}_by_{bot_username}")
+    StickerSetId::from(format!("pack{set_title}{number}_by_{bot_username}"))
 }

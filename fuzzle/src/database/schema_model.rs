@@ -9,7 +9,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::{database::BanReason, tags::Category};
+use crate::{database::BanReason, tags::Category, util::{StickerFileId, StickerId, StickerSetId}};
 
 use super::{schema, DatabaseError, DialogState, ModerationTaskDetails, ModerationTaskStatus, StickerType, StringVec, UserSettings};
 
@@ -17,7 +17,7 @@ use super::{schema, DatabaseError, DialogState, ModerationTaskDetails, Moderatio
 #[diesel(table_name = schema::sticker_file)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct StickerFile {
-    pub id: String,
+    pub id: StickerFileId,
     pub created_at: chrono::NaiveDateTime,
     pub tags_locked_by_user_id: Option<i64>,
     pub thumbnail_file_id: Option<String>,
@@ -28,10 +28,10 @@ pub struct StickerFile {
 #[diesel(table_name = schema::banned_sticker)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct BannedSticker {
-    pub id: String,
-    pub sticker_set_id: String,
+    pub id: StickerId,
+    pub sticker_set_id: StickerSetId,
     pub telegram_file_identifier: String,
-    pub sticker_file_id: String,
+    pub sticker_file_id: StickerFileId,
     pub thumbnail_file_id: Option<String>,
     pub sticker_type: StickerType,
     pub clip_max_match_distance: f32,
@@ -43,12 +43,18 @@ pub struct BannedSticker {
 #[diesel(table_name = schema::sticker_set)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct StickerSet {
-    pub id: String,
+    pub id: StickerSetId,
     pub title: Option<String>,
     pub last_fetched: Option<chrono::NaiveDateTime>,
     pub created_at: chrono::NaiveDateTime,
     pub added_by_user_id: Option<i64>,
     pub created_by_user_id: Option<i64>,
+}
+
+impl StickerSet {
+    pub fn title_or_id(&self) -> String {
+        self.title.clone().unwrap_or_else(|| self.id.to_string())
+    }
 }
 
 #[derive(Queryable, Selectable, Debug, Clone)]
@@ -68,10 +74,10 @@ pub struct User {
 #[diesel(table_name = schema::sticker)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Sticker {
-    pub id: String,
-    pub sticker_set_id: String,
+    pub id: StickerId,
+    pub sticker_set_id: StickerSetId,
     pub telegram_file_identifier: String,
-    pub sticker_file_id: String,
+    pub sticker_file_id: StickerFileId,
     pub emoji: Option<String>, // TODO: custom `Emoji` type?
     pub created_at: chrono::NaiveDateTime,
 }
@@ -81,7 +87,7 @@ pub struct Sticker {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 #[diesel(primary_key(sticker_file_id, tag))]
 pub struct StickerFileTag {
-    pub sticker_file_id: String,
+    pub sticker_file_id: StickerFileId,
     pub tag: String,
     pub added_by_user_id: Option<i64>,
     pub created_at: chrono::NaiveDateTime,
@@ -92,7 +98,7 @@ pub struct StickerFileTag {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 #[diesel(primary_key(sticker_id, user_id))]
 pub struct StickerUser {
-    pub sticker_id: String,
+    pub sticker_id: StickerId,
     pub user_id: i64,
     pub is_favorite: bool,
     pub last_used: chrono::NaiveDateTime,

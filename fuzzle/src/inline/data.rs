@@ -25,6 +25,8 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 use crate::bot::UserError;
+use crate::util::StickerId;
+use crate::util::StickerSetId;
 use crate::util::{parse_emoji, set_name_literal, sticker_id_literal, tag_literal, Emoji};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -37,11 +39,11 @@ pub enum SetOperation {
 pub enum InlineQueryData {
     SearchTagsForSticker {
         tags: Vec<Vec<String>>,
-        unique_id: String,
+        unique_id: StickerId,
     },
     SearchTagsForStickerSet {
         tags: Vec<Vec<String>>,
-        set_name: String,
+        set_name: StickerSetId,
         operation: SetOperation,
     },
     SearchTagsForContinuousTagMode {
@@ -56,23 +58,23 @@ pub enum InlineQueryData {
         emoji: Vec<Emoji>,
     },
     ListAllTagsFromSet {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     AddToUserSet {
-        sticker_id: String,
+        sticker_id: StickerId,
         set_title: Option<String>,
     },
     ListAllSetsThatContainSticker {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     ListOverlappingSets {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     ListSetStickersByDate {
-        sticker_id: String,
+        sticker_id: StickerId,
     },
     ListSimilarStickers {
-        unique_id: String,
+        unique_id: StickerId,
         aspect: SimilarityAspect,
     },
     ListMostDuplicatedStickers,
@@ -91,7 +93,7 @@ pub enum InlineQueryData {
         kind: TagKind,
     },
     ReportSet {
-        set_id: String,
+        set_id: StickerSetId,
     },
 }
 
@@ -122,27 +124,18 @@ pub enum SimilarityAspect {
 
 impl InlineQueryData {
     #[must_use]
-    pub fn empty_sticker_query(sticker_unique_id: impl Into<String>) -> Self {
-        Self::SearchTagsForSticker {
-            unique_id: sticker_unique_id.into(),
-            tags: vec![],
-        }
+    pub fn empty_sticker_query(unique_id: StickerId) -> Self {
+        Self::SearchTagsForSticker { unique_id, tags: vec![], }
     }
 
     #[must_use]
-    pub fn sticker_query(sticker_unique_id: impl Into<String>, tags: Vec<Vec<String>>) -> Self {
-        Self::SearchTagsForSticker {
-            unique_id: sticker_unique_id.into(),
-            tags,
-        }
+    pub fn sticker_query(unique_id: StickerId, tags: Vec<Vec<String>>) -> Self {
+        Self::SearchTagsForSticker { unique_id, tags, }
     }
 
     #[must_use]
-    pub fn similar(sticker_unique_id: impl Into<String>, aspect: SimilarityAspect) -> Self {
-        Self::ListSimilarStickers {
-            unique_id: sticker_unique_id.into(),
-            aspect,
-        }
+    pub fn similar(unique_id: StickerId, aspect: SimilarityAspect) -> Self {
+        Self::ListSimilarStickers { unique_id, aspect, }
     }
 
     #[must_use]
@@ -157,12 +150,12 @@ impl InlineQueryData {
 
     #[must_use]
     pub fn set_operation(
-        set_name: impl Into<String>,
+        set_name: StickerSetId,
         tags: Vec<Vec<String>>,
         operation: SetOperation,
     ) -> Self {
         Self::SearchTagsForStickerSet {
-            set_name: set_name.into(),
+            set_name,
             operation,
             tags,
         }
@@ -192,22 +185,22 @@ impl InlineQueryData {
     }
 
     #[must_use]
-    pub fn sets(sticker_id: String) -> Self {
+    pub fn sets(sticker_id: StickerId) -> Self {
         Self::ListAllSetsThatContainSticker { sticker_id }
     }
 
     #[must_use]
-    pub fn overlapping_sets(sticker_id: String) -> Self {
+    pub fn overlapping_sets(sticker_id: StickerId) -> Self {
         Self::ListOverlappingSets { sticker_id }
     }
 
     #[must_use]
-    pub fn set_stickers_by_date(sticker_id: String) -> Self {
+    pub fn set_stickers_by_date(sticker_id: StickerId) -> Self {
         Self::ListSetStickersByDate { sticker_id }
     }
 
     #[must_use]
-    pub fn all_set_tags(sticker_id: String) -> Self {
+    pub fn all_set_tags(sticker_id: StickerId) -> Self {
         Self::ListAllTagsFromSet { sticker_id }
     }
 
@@ -227,7 +220,7 @@ impl InlineQueryData {
     }
 
     #[must_use]
-    pub fn add_to_user_set(sticker_id: String) -> Self {
+    pub fn add_to_user_set(sticker_id: StickerId) -> Self {
         Self::AddToUserSet {
             sticker_id,
             set_title: None,
@@ -315,7 +308,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                         parse_comma_separated_tags,
                     )),
                     |(unique_id, tags)| InlineQueryData::SearchTagsForSticker {
-                        unique_id: unique_id.to_string(),
+                        unique_id: StickerId::from(unique_id),
                         tags,
                     },
                 ),
@@ -330,7 +323,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                         parse_comma_separated_tags,
                     )),
                     |(operation, set_name, _, tags)| InlineQueryData::SearchTagsForStickerSet {
-                        set_name: set_name.to_string(),
+                        set_name: StickerSetId::from(set_name),
                         operation,
                         tags,
                     },
@@ -338,19 +331,19 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                 map(
                     terminated(preceded(tag("(contains:"), sticker_id_literal), tag(")")),
                     |sticker_id| InlineQueryData::ListAllSetsThatContainSticker {
-                        sticker_id: sticker_id.to_string(),
+                        sticker_id: StickerId::from(sticker_id),
                     },
                 ),
                 map(
                     terminated(preceded(tag("(overlap:"), sticker_id_literal), tag(")")),
                     |sticker_id| InlineQueryData::ListOverlappingSets {
-                        sticker_id: sticker_id.to_string(),
+                        sticker_id: StickerId::from(sticker_id),
                     },
                 ),
                 map(
                     terminated(preceded(tag("(dates:"), sticker_id_literal), tag(")")),
                     |sticker_id| InlineQueryData::ListSetStickersByDate {
-                        sticker_id: sticker_id.to_string(),
+                        sticker_id: StickerId::from(sticker_id),
                     },
                 ),
                 map(
@@ -363,7 +356,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                 map(
                     terminated(preceded(tag("(settags:"), sticker_id_literal), tag(")")),
                     |sticker_id| InlineQueryData::ListAllTagsFromSet {
-                        sticker_id: sticker_id.to_string(),
+                        sticker_id: StickerId::from(sticker_id),
                     },
                 ),
                 map(
@@ -374,7 +367,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                         take_while(|c| true),
                     )),
                     |(_, sticker_id, _, set_title)| InlineQueryData::AddToUserSet {
-                        sticker_id: sticker_id.to_string(),
+                        sticker_id: StickerId::from(sticker_id),
                         set_title: {
                             let title = set_title.trim();
                             if title.is_empty() {
@@ -436,7 +429,7 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                     terminated(preceded(tag("(color:"), sticker_id_literal), tag(")")),
                     |unique_id| InlineQueryData::ListSimilarStickers {
                         aspect: SimilarityAspect::Color,
-                        unique_id: unique_id.to_string(),
+                        unique_id: StickerId::from(unique_id),
                     },
                 ),
                 // map(
@@ -450,13 +443,13 @@ fn parse_inline_query_data(input: &str) -> IResult<&str, InlineQueryData> {
                     terminated(preceded(tag("(embed:"), sticker_id_literal), tag(")")),
                     |unique_id| InlineQueryData::ListSimilarStickers {
                         aspect: SimilarityAspect::Embedding,
-                        unique_id: unique_id.to_string(),
+                        unique_id: StickerId::from(unique_id),
                     },
                 ),
                 map(
                     terminated(preceded(tag("(reportset:"), set_name_literal), tag(")")),
                     |set_id| InlineQueryData::ReportSet {
-                        set_id: set_id.to_string(),
+                        set_id: StickerSetId::from(set_id),
                     },
                 ),
                 map(parse_tags_and_emojis, |(tags, emoji)| {
@@ -602,7 +595,7 @@ mod tests {
         assert_eq!(
             InlineQueryData::try_from("(se:asdf) dragon uwu".to_string())?,
             InlineQueryData::SearchTagsForStickerSet {
-                set_name: "asdf".to_string(),
+                set_name: StickerSetId::from("asdf"),
                 operation: SetOperation::Tag,
                 tags: vec![vec!["dragon".to_string(), "uwu".to_string()]],
             }
@@ -612,14 +605,14 @@ mod tests {
 
     #[test]
     fn stringify_query() {
-        let query = InlineQueryData::empty_sticker_query("asdf");
+        let query = InlineQueryData::empty_sticker_query(StickerId::from("asdf"));
         assert_eq!(query.to_string(), "(s:asdf) ");
     }
 
     #[test]
     fn stringify_tag_query() {
         let query = InlineQueryData::sticker_query(
-            "asdf",
+            StickerId::from("asdf"),
             vec![vec!["male".to_string(), "female".to_string()]],
         );
         assert_eq!(query.to_string(), "(s:asdf) male female");
@@ -628,7 +621,7 @@ mod tests {
     #[test]
     fn stringify_tag_query_multiple() {
         let query = InlineQueryData::sticker_query(
-            "asdf",
+            StickerId::from("asdf"),
             vec![
                 vec!["male".to_string(), "female".to_string()],
                 vec!["asdf".to_string()],

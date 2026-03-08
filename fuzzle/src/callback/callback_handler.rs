@@ -30,7 +30,7 @@ use crate::services::{ Services};
 use crate::sticker::{determine_canonical_sticker_and_merge, fetch_sticker_file, FileKind};
 use crate::tags::{suggest_tags, Category};
 use crate::text::{Markdown, Text};
-use crate::util::{create_tag_id, teloxide_error_can_safely_be_ignored, Emoji, Required};
+use crate::util::{Emoji, Required, StickerId, create_tag_id, teloxide_error_can_safely_be_ignored};
 
 use crate::callback::CallbackData;
 
@@ -39,7 +39,7 @@ use tracing::Instrument;
 #[tracing::instrument(skip(request_context, q))]
 async fn change_sticker_locked_status(
     lock: bool,
-    unique_id: &str,
+    unique_id: &StickerId,
     q: CallbackQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
@@ -64,7 +64,7 @@ async fn change_sticker_locked_status(
 #[tracing::instrument(skip(request_context, q))]
 async fn handle_sticker_tag_action(
     operation: Option<TagOperation>,
-    unique_id: String,
+    unique_id: StickerId,
     q: CallbackQuery,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
@@ -149,7 +149,7 @@ async fn handle_sticker_tag_action(
 async fn send_tagging_keyboard(
     request_context: RequestContext,
     notification: Option<String>,
-    unique_id: &str,
+    unique_id: &StickerId,
     q: CallbackQuery,
 ) -> Result<(), BotError> {
     // database: Database,
@@ -927,7 +927,7 @@ pub async fn callback_handler(
             sticker_id_a,
             sticker_id_b,
             merge,
-        } => handle_sticker_merge(sticker_id_a, sticker_id_b, merge, q, request_context).await,
+        } => handle_sticker_merge(sticker_id_a.into(), sticker_id_b.into(), merge, q, request_context).await,
         CallbackData::RemoveLinkedUser => {
             if handle_readonly(&request_context, &q).await? {
                 return Ok(());
@@ -1113,8 +1113,8 @@ pub async fn callback_handler(
 
 #[tracing::instrument(skip(request_context, q), err(Debug))]
 async fn handle_sticker_merge(
-    sticker_id_a: String,
-    sticker_id_b: String,
+    sticker_id_a: StickerId,
+    sticker_id_b: StickerId,
     merge: bool,
     q: CallbackQuery,
     request_context: RequestContext,
@@ -1213,7 +1213,7 @@ pub async fn exit_mode(
 
 #[tracing::instrument(skip(request_context, q), err(Debug))]
 async fn sticker_explore_page(
-    sticker_id: String,
+    sticker_id: StickerId,
     request_context: RequestContext,
     q: CallbackQuery,
 ) -> Result<(), BotError> {
@@ -1221,7 +1221,7 @@ async fn sticker_explore_page(
         request_context.clone(),
         q,
         None,
-        Some(sticker_explore_keyboard(sticker_id, request_context).await?),
+        Some(sticker_explore_keyboard(&sticker_id, request_context).await?),
         None,
     )
     .await
@@ -1229,7 +1229,7 @@ async fn sticker_explore_page(
 
 #[tracing::instrument(skip(request_context), err(Debug))]
 pub async fn sticker_explore_keyboard(
-    sticker_id: String,
+    sticker_id: &StickerId,
     request_context: RequestContext,
 ) -> Result<InlineKeyboardMarkup, InternalError> {
     let file = request_context

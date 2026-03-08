@@ -11,7 +11,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use crate::bot::{Bot, BotError, InternalError};
+use crate::{bot::{Bot, BotError, InternalError}, util::StickerFileId};
 
 #[derive(Debug, Clone, Copy)]
 pub enum FileKind {
@@ -41,10 +41,10 @@ impl From<&str> for FileKind {
 
 #[tracing::instrument(skip(bot))]
 pub async fn fetch_sticker_file(
-    file_id: String,
+    telegram_file_identifier: String,
     bot: Bot,
 ) -> Result<(Vec<u8>, teloxide::types::File), InternalError> {
-    let file = bot.get_file(file_id).await?;
+    let file = bot.get_file(telegram_file_identifier).await?;
     let mut buf = Vec::new();
     bot.download_file(&file.path, &mut buf).await?;
     if buf.len() == file.size as usize {

@@ -20,7 +20,7 @@ use crate::inline::{
 };
 use crate::services::Services;
 use crate::sticker::resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files;
-use crate::util::{format_relative_time, parse_first_emoji, Emoji, Required};
+use crate::util::{Emoji, Required, StickerId, StickerSetId, format_relative_time, parse_first_emoji};
 use crate::web::shared::AppState;
 
 use super::OptionalAuthenticatedUser;
@@ -176,7 +176,7 @@ pub async fn search_tags(
     })
 }
 
-pub fn sticker_list_item(sticker_id: &str) -> Markup {
+pub fn sticker_list_item(sticker_id: &StickerId) -> Markup {
     html! {
                     div {
                         a href={ "/sticker/" (sticker_id) } {
@@ -186,7 +186,7 @@ pub fn sticker_list_item(sticker_id: &str) -> Markup {
     }
 }
 
-pub fn sticker_set_list_item(set_id: &str) -> Markup {
+pub fn sticker_set_list_item(set_id: &StickerSetId) -> Markup {
     html! {
                         a class="set-grid-item" href={ "/set/" (set_id) } {
                             div class="set-thumbnail" {
@@ -206,7 +206,7 @@ pub fn sticker_set_list_item(set_id: &str) -> Markup {
 
 #[get("/set/{setId}")]
 async fn sticker_set(
-    Path(set_id): Path<String>,
+    Path(set_id): Path<StickerSetId>,
     data: Data<AppState>,
     req: HttpRequest,
 ) -> actix_web::Result<impl Responder> {
@@ -237,7 +237,7 @@ async fn sticker_set(
     let title = "fuzzle bot";
     let desc = "Hi there";
     let lang = "en";
-    let set_title = set.title.unwrap_or_else(|| set.id.clone());
+    let set_title = set.title_or_id();
 
     let content = html! {
         #content {
@@ -301,7 +301,7 @@ async fn sticker_set(
 
 #[get("/sticker/{stickerId}")]
 async fn sticker_page(
-    Path(sticker_id): Path<String>,
+    Path(sticker_id): Path<StickerId>,
     data: Data<AppState>,
     req: HttpRequest,
 ) -> actix_web::Result<impl Responder> {
@@ -351,7 +351,7 @@ async fn sticker_page(
     let title = "fuzzle bot";
     let desc = "Hi there";
     let lang = "en";
-    let set_title = set.title.unwrap_or_else(|| set.id.clone());
+    let set_title = set.title_or_id();
 
     let content = html! {
         #content {
@@ -487,7 +487,7 @@ pub async fn not_found() -> impl Responder {
 #[derive(Deserialize)]
 struct TagForm {
     query: String,
-    sticker_id: String,
+    sticker_id: StickerId,
 }
 
 #[derive(Deserialize)]
@@ -816,7 +816,7 @@ async fn emoji_page(
 
 #[get("/set/{setId}/timeline")]
 async fn sticker_set_timeline_page(
-    Path(set_id): Path<String>,
+    Path(set_id): Path<StickerSetId>,
     data: Data<AppState>,
     req: HttpRequest,
 ) -> actix_web::Result<impl Responder> {
@@ -847,7 +847,7 @@ async fn sticker_set_timeline_page(
     let title = "fuzzle bot";
     let desc = "Hi there";
     let lang = "en";
-    let set_title = set.title.unwrap_or_else(|| set.id.clone());
+    let set_title = set.title_or_id();
 
     let content = html! {
         #content {

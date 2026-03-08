@@ -15,7 +15,7 @@ use crate::{
     bot::InternalError,
     database::Database,
     tags::{ScoredTagSuggestion, Tfidf},
-    util::Emoji,
+    util::{Emoji, StickerId},
 };
 
 use super::TagManagerService;
@@ -118,7 +118,7 @@ impl TfIdfService {
 
     pub async fn suggest_tags_for_sticker(
         &self,
-        sticker_id: &str,
+        sticker_id: &StickerId,
     ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
         Ok(self
             .database

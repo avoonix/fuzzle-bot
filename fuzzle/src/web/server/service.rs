@@ -17,7 +17,7 @@ use crate::{
     sticker::{
         create_historgram_image, create_sticker_thumbnail, fetch_sticker_file, generate_merge_image,
     },
-    util::Required, web::{server::WebAppInitData, shared::{AppState, HOUR, thumbnail_cache_control_header}},
+    util::{Required, StickerId, StickerSetId}, web::{server::WebAppInitData, shared::{AppState, HOUR, thumbnail_cache_control_header}},
 };
 use web::Data;
 
@@ -29,7 +29,7 @@ use crate::web::server::{AuthData, AuthenticatedUser};
 #[actix_web::get("/files/stickers/{sticker_id}/thumbnail.png")]
 // #[tracing::instrument(skip(data, user))]
 async fn sticker_files(
-    Path(sticker_id): Path<String>,
+    Path(sticker_id): Path<StickerId>,
     data: Data<AppState>,
     // user: AuthenticatedUser,
 ) -> actix_web::Result<impl Responder> {
@@ -68,7 +68,7 @@ async fn sticker_files(
 #[actix_web::get("/thumbnails/sticker-set/{setId}/image.png")]
 #[tracing::instrument(skip(data))]
 async fn sticker_set_thumbnail(
-    Path(set_id): Path<String>,
+    Path(set_id): Path<StickerSetId>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     let set = data.database.get_sticker_set_by_id(&set_id).await?.required()?;
@@ -96,7 +96,7 @@ async fn sticker_set_thumbnail(
 #[actix_web::get("/thumbnails/compare-sticker-sets/{setId1}/{setId2}/image.png")]
 #[tracing::instrument(skip(data))]
 async fn sticker_comparison_thumbnail(
-    Path((set_id_a, set_id_b)): Path<(String, String)>,
+    Path((set_id_a, set_id_b)): Path<(StickerSetId, StickerSetId)>,
     data: Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
     let stickers_a = data.database.get_all_stickers_in_set(&set_id_a).await?;

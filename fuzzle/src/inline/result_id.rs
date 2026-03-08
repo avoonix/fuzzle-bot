@@ -7,11 +7,11 @@ use nom::combinator::{eof, map};
 use nom::sequence::{preceded, terminated};
 use nom::{branch::alt, IResult};
 
-use crate::util::{parse_emoji, set_name_literal, sticker_id_literal, tag_literal, Emoji};
+use crate::util::{Emoji, StickerId, parse_emoji, set_name_literal, sticker_id_literal, tag_literal};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub(super) enum InlineQueryResultId {
-    Sticker(String),
+    Sticker(StickerId),
     Tag(String),
     Emoji(Emoji),
     User(i64),
@@ -32,7 +32,7 @@ fn parse_result(input: &str) -> IResult<&str, InlineQueryResultId> {
     terminated(alt((
         map(
             preceded(tag("s:"), sticker_id_literal),
-            |sticker_unique_id| InlineQueryResultId::Sticker(sticker_unique_id.to_string()),
+            |sticker_unique_id| InlineQueryResultId::Sticker(StickerId::from(sticker_unique_id)),
         ),
         map(preceded(tag("t:"), tag_literal), |tag| {
             InlineQueryResultId::Tag(tag.to_string())

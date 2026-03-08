@@ -3,17 +3,17 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use tracing::info;
 
-use crate::database::Database;
+use crate::{database::Database, util::{StickerId, StickerSetId}};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct ExportedData {
-    pub sets: HashMap<String, Vec<String>>,
+    pub sets: HashMap<StickerSetId, Vec<StickerId>>,
     files: Vec<ExportedStickerFile>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 struct ExportedStickerFile {
-    sticker_ids: Vec<String>,
+    sticker_ids: Vec<StickerId>,
     tags: Vec<String>,
 }
 
@@ -25,7 +25,7 @@ impl ExportedStickerFile {
         }
     }
 
-    fn add_sticker(&mut self, sticker_unique_id: String) {
+    fn add_sticker(&mut self, sticker_unique_id: StickerId) {
         self.sticker_ids.push(sticker_unique_id);
     }
 

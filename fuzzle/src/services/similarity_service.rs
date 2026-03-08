@@ -8,7 +8,7 @@ use crate::{
     qdrant::VectorDatabase,
     services::ImportService,
     sticker::{Match, resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced_files},
-    util::{Required, format_relative_time},
+    util::{Required, StickerId, format_relative_time},
 };
 
 #[derive(Clone)]
@@ -30,7 +30,7 @@ impl SimilarityService {
     #[tracing::instrument(skip(self))]
     pub async fn find_similar_stickers(
         &self,
-        sticker_id: String,
+        sticker_id: StickerId,
         aspect: SimilarityAspect,
         limit: u64,
         offset: u64,

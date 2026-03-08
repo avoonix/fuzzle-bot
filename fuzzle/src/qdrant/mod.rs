@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use crate::inline::SimilarityAspect;
 use crate::sticker::{cosine_similarity, vec_u8_to_f32};
+use crate::util::StickerFileId;
 
 const TAG_COLLECTION_NAME: &str = "tag_v0";
 
@@ -203,7 +204,7 @@ impl VectorDatabase {
         &self,
         clip_vector: Vec<f32>,
         histogram_vector: Vec<u8>,
-        file_hash: String,
+        file_hash: StickerFileId,
     ) -> Result<(), VectorDatabaseError> {
         let id = file_hash_to_uuid(&file_hash);
         // TODO: add sticker_id + set_id + has_tags as payload
@@ -234,7 +235,7 @@ impl VectorDatabase {
     pub async fn insert_banned_sticker(
         &self,
         clip_vector: Vec<f32>,
-        file_hash: String,
+        file_hash: StickerFileId,
     ) -> Result<(), VectorDatabaseError> {
         let id = file_hash_to_uuid(&file_hash);
         let payload: Payload = json!( { "file_hash": file_hash, })
@@ -252,7 +253,7 @@ impl VectorDatabase {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn delete_stickers(&self, file_ids: Vec<String>) -> Result<(), VectorDatabaseError> {
+    pub async fn delete_stickers(&self, file_ids: Vec<StickerFileId>) -> Result<(), VectorDatabaseError> {
         self.delete_stickers_from_collection(file_ids, STICKER_COLLECTION_NAME)
             .await
     }
@@ -260,7 +261,7 @@ impl VectorDatabase {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn delete_banned_stickers(
         &self,
-        file_ids: Vec<String>,
+        file_ids: Vec<StickerFileId>,
     ) -> Result<(), VectorDatabaseError> {
         self.delete_stickers_from_collection(file_ids, BANNED_STICKER_COLLECTION_NAME)
             .await
@@ -268,7 +269,7 @@ impl VectorDatabase {
 
     async fn delete_stickers_from_collection(
         &self,
-        file_ids: Vec<String>,
+        file_ids: Vec<StickerFileId>,
         collection_name: &str,
     ) -> Result<(), VectorDatabaseError> {
         let ids = file_ids
@@ -294,7 +295,7 @@ impl VectorDatabase {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn recommend_tags(
         &self,
-        file_hash: &str,
+        file_hash: &StickerFileId,
     ) -> Result<Option<Vec<String>>, VectorDatabaseError> {
         let search_result = self
             .client
@@ -371,7 +372,7 @@ impl VectorDatabase {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_clip_vector(
         &self,
-        file_hash: String,
+        file_hash: StickerFileId,
     ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
         self.get_sticker_clip_vector_from_collection(file_hash, STICKER_COLLECTION_NAME)
             .await
@@ -380,7 +381,7 @@ impl VectorDatabase {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_banned_sticker_clip_vector(
         &self,
-        file_hash: String,
+        file_hash: StickerFileId,
     ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
         self.get_sticker_clip_vector_from_collection(file_hash, BANNED_STICKER_COLLECTION_NAME)
             .await
@@ -459,7 +460,7 @@ impl VectorDatabase {
 
     async fn get_sticker_clip_vector_from_collection(
         &self,
-        file_hash: String,
+        file_hash: StickerFileId,
         collection_name: &str,
     ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
         let point_uuid = file_hash_to_uuid(&file_hash).into();
@@ -497,7 +498,7 @@ impl VectorDatabase {
         &self,
         limit: u64,
         next_offset: Option<PointId>,
-    ) -> Result<(Vec<(Vec<f32>, Vec<u8>, String)>, Option<PointId>), VectorDatabaseError> {
+    ) -> Result<(Vec<(Vec<f32>, Vec<u8>, StickerFileId)>, Option<PointId>), VectorDatabaseError> {
         // TODO: this would probably be better as "stream"?
         let result = self
             .client
@@ -525,10 +526,10 @@ impl VectorDatabase {
                         .vectors
                         .map(|v| Self::vectors_options_to_hist_vec(&v.vectors_options))
                         .unwrap(),
-                    scored_point.payload["file_hash"]
+                    StickerFileId::from(scored_point.payload["file_hash"]
                         .as_str()
                         .unwrap()
-                        .to_string(),
+                        .to_string()),
                 )
             })
             .collect_vec();
@@ -598,8 +599,8 @@ impl VectorDatabase {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn find_similar_stickers(
         &self,
-        positive_file_ids: &[String],
-        negative_file_ids: &[String],
+        positive_file_ids: &[StickerFileId],
+        negative_file_ids: &[StickerFileId],
         similarity_aspect: SimilarityAspect,
         score_threshold: f32,
         limit: u64,
@@ -646,8 +647,8 @@ impl VectorDatabase {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn compare_sticker_similarities(
         &self,
-        file_hash_a: String,
-        file_hash_b: String,
+        file_hash_a: StickerFileId,
+        file_hash_b: StickerFileId,
     ) -> Result<StickerSimilarities, VectorDatabaseError> {
         let a = file_hash_to_uuid(&file_hash_a);
         let b = file_hash_to_uuid(&file_hash_b);
@@ -707,8 +708,8 @@ impl VectorDatabase {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn find_missing_stickers(
         &self,
-        file_hashes: Vec<String>,
-    ) -> Result<Vec<String>, VectorDatabaseError> {
+        file_hashes: Vec<StickerFileId>,
+    ) -> Result<Vec<StickerFileId>, VectorDatabaseError> {
         let point_uuids = file_hashes
             .iter()
             .map(|hash| file_hash_to_uuid(&hash).into())
@@ -753,7 +754,7 @@ pub struct StickerSimilarities {
 
 #[derive(Debug, Clone)]
 pub struct StickerMatch {
-    pub file_hash: String,
+    pub file_hash: StickerFileId,
     pub score: f32,
 }
 
@@ -776,8 +777,8 @@ fn convert_sticker_recommend_response(scored_points: Vec<ScoredPoint>) -> Vec<St
         .into_iter()
         .map(|scored_point| {
             scored_point.payload.get("file_hash").map(|val| {
-                val.as_str().map(|str| StickerMatch {
-                    file_hash: str.to_string(),
+                val.as_str().map(|file_hash| StickerMatch {
+                    file_hash: file_hash.as_str().into(),
                     score: scored_point.score,
                 })
             })
@@ -787,7 +788,7 @@ fn convert_sticker_recommend_response(scored_points: Vec<ScoredPoint>) -> Vec<St
         .collect_vec()
 }
 
-fn file_hash_to_uuid(file_hash: &str) -> String {
+fn file_hash_to_uuid(file_hash: &StickerFileId) -> String {
     create_uuid_v5(&format!("fuzzle:sticker-file:{file_hash}"))
 }
 

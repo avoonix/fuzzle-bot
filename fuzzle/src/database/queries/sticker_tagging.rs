@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use crate::database::model::PopularTag;
 use crate::database::UserStats;
 use crate::util::Emoji;
+use crate::util::StickerFileId;
+use crate::util::StickerSetId;
 
 use super::sticker::max;
 use super::DatabaseError;
@@ -26,7 +28,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn tag_file(
         &self,
-        file_id: &str,
+        file_id: &StickerFileId,
         tag_names: &[String],
         user: Option<i64>,
     ) -> Result<(), DatabaseError> {
@@ -55,11 +57,11 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn untag_file(
         &self,
-        file_id: &str,
+        file_id: &StickerFileId,
         tag_names: &[String],
         user_id: i64,
     ) -> Result<(), DatabaseError> {
-        let file_id = file_id.to_string();
+        let file_id = file_id.clone();
         let tag_names = tag_names.to_vec();
         self
             .exec(move |conn| {
@@ -101,7 +103,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn tag_all_files_in_set(
         &self,
-        set_name: &str,
+        set_name: &StickerSetId,
         tags: &[String],
         user: i64,
     ) -> Result<usize, DatabaseError> {
@@ -133,7 +135,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn untag_all_files_in_set(
         &self,
-        set_name: &str,
+        set_name: &StickerSetId,
         tags: &[String],
         user: i64,
     ) -> Result<usize, DatabaseError> {
@@ -144,7 +146,7 @@ impl Database {
                 let affected = conn.immediate_transaction(|conn| {
                     let mut tags_affected = 0;
                     for tag in &tags {
-                        let result: Vec<(String, Option<i64>)> = sticker_file_tag::table
+                        let result: Vec<(StickerFileId, Option<i64>)> = sticker_file_tag::table
                             .select((
                                 sticker_file_tag::sticker_file_id,
                                 sticker_file_tag::added_by_user_id,
@@ -191,7 +193,7 @@ impl Database {
     }
 
     fn delete_sticker_file_tag(
-        sticker_file_id: &str,
+        sticker_file_id: &StickerFileId,
         tag: &str,
         // conn: &mut PooledConnection<ConnectionManager<SqliteConnection>>,
         conn: &mut SqliteConnection,
@@ -207,7 +209,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_all_sticker_set_tag_counts(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
         let set_id = set_id.to_string();
         self
@@ -231,7 +233,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_all_sticker_set_tag_counts_by_sticker_file_id(
         &self,
-        sticker_file_id: &str,
+        sticker_file_id: &StickerFileId,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
         self

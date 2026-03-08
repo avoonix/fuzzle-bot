@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use crate::{bot::InternalError, database::Database, qdrant::VectorDatabase};
+use crate::{bot::InternalError, database::Database, qdrant::VectorDatabase, util::{StickerFileId, StickerId}};
 
 use super::ScoredTagSuggestion;
 
@@ -8,11 +8,11 @@ use super::ScoredTagSuggestion;
 pub async fn suggest_tags_from_similar_stickers(
     database: &Database,
     vector_db: &VectorDatabase,
-    file_hash: &str,
+    file_hash: &StickerFileId,
     score_threshold: f32,
     limit: u64,
 ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
-    let result = vector_db.find_similar_stickers(&[file_hash.to_string()], &[], crate::inline::SimilarityAspect::Embedding, score_threshold, limit, 0).await;
+    let result = vector_db.find_similar_stickers(&[file_hash.clone()], &[], crate::inline::SimilarityAspect::Embedding, score_threshold, limit, 0).await;
     let Some(result) = (match result {
         Ok(res) => res,
         Err(err) => {
@@ -27,7 +27,7 @@ pub async fn suggest_tags_from_similar_stickers(
 }
 
 async fn get_all_tags_from_stickers(
-    sticker_unique_ids: Vec<String>,
+    sticker_unique_ids: Vec<StickerId>,
     database: Database,
 ) -> Result<Vec<ScoredTagSuggestion>, InternalError> {
     let tag_res = database.get_multiple_sticker_tags(sticker_unique_ids).await?;

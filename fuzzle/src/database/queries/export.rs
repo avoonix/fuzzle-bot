@@ -1,3 +1,7 @@
+use crate::util::StickerFileId;
+use crate::util::StickerId;
+use crate::util::StickerSetId;
+
 use super::super::schema::*;
 use super::Database;
 use super::DatabaseError;
@@ -9,7 +13,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn export_file_tagged_tag_relationships(
         &self,
-    ) -> Result<Vec<(String, String)>, DatabaseError> {
+    ) -> Result<Vec<(StickerFileId, String)>, DatabaseError> {
         self
             .exec(move |conn| {
                 Ok(sticker_file_tag::table
@@ -23,7 +27,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn export_sticker_is_a_file_relationship(
         &self,
-    ) -> Result<Vec<(String, String)>, DatabaseError> {
+    ) -> Result<Vec<(StickerId, StickerFileId)>, DatabaseError> {
         self
             .exec(move |conn| {
                 Ok(sticker::table
@@ -36,7 +40,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn export_set_contains_sticker_relationship(
         &self,
-    ) -> Result<Vec<(String, String)>, DatabaseError> {
+    ) -> Result<Vec<(StickerSetId, StickerId)>, DatabaseError> {
         self
             .exec(move |conn| {
                 Ok(sticker::table

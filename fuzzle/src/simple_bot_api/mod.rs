@@ -4,7 +4,7 @@ use itertools::Itertools;
 use serde_json::{json, Map, Value};
 use teloxide::types::{StickerFormat, UserId};
 
-use crate::bot::{BotError, InternalError};
+use crate::{bot::{BotError, InternalError}, util::StickerSetId};
 
 const TELEGRAM_BOT_API_URL: &str = "https://api.telegram.org";
 
@@ -65,7 +65,7 @@ pub async fn set_my_description(
 pub async fn create_new_sticker_set(
     token: &str,
     user_id: UserId,
-    set_id: &str,
+    set_id: &StickerSetId,
     title: &str,
     sticker_file_id: &str,
     format: &str,
@@ -94,7 +94,7 @@ pub async fn create_new_sticker_set(
 pub async fn add_sticker_to_set(
     token: &str,
     user_id: UserId,
-    set_id: &str,
+    set_id: &StickerSetId,
     sticker_file_id: &str,
     format: &str,
     emoji_list: &[String],

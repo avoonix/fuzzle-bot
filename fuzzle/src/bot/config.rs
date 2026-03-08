@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use teloxide::types::UserId;
 
+use crate::util::StickerId;
+
 #[derive(Deserialize, Clone)]
 pub struct Config {
     pub cache_dir_path: String,
@@ -11,7 +13,7 @@ pub struct Config {
     pub periodic_refetch_batch_size: u64,
 
     pub bot_display_name: String, // TODO: use this instead of hardcoding
-    pub greeting_sticker_id: Option<String>,
+    pub greeting_sticker_id: Option<StickerId>,
     pub default_blacklist: Vec<String>,
     pub is_readonly: bool,
 

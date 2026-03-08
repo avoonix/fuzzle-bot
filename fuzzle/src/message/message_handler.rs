@@ -22,6 +22,8 @@ use tracing::{Instrument, info};
 use url::Url;
 
 use crate::fmetrics::TracedMessage;
+use crate::util::StickerId;
+use crate::util::StickerSetId;
 use crate::{
     bot::{
         Bot, BotError, BotExt, RequestContext, UserError, report_bot_error, report_internal_error,
@@ -69,21 +71,21 @@ fn get_all_urls_from_entities(entities: Vec<MessageEntityRef<'_>>) -> Vec<Url> {
         .collect_vec()
 }
 
-fn get_sticker_set_name_from_url(url: &Url) -> Option<String> {
+fn get_sticker_set_name_from_url(url: &Url) -> Option<StickerSetId> {
     match url.host_str() {
         Some("t.me") => {
             let path = url.path();
             path.starts_with("/addstickers/").then(|| {
                 path.trim_start_matches("/addstickers/")
                     .trim_end_matches('/')
-                    .to_string()
+                    .into()
             })
         }
         _ => None,
     }
 }
 
-fn find_sticker_set_urls(msg: &Message) -> Vec<String> {
+fn find_sticker_set_urls(msg: &Message) -> Vec<StickerSetId> {
     let entities = get_all_entities_from_message(msg);
     let urls = get_all_urls_from_entities(entities);
     urls.iter()
@@ -93,7 +95,7 @@ fn find_sticker_set_urls(msg: &Message) -> Vec<String> {
 
 async fn handle_sticker_sets(
     msg: &Message,
-    potential_sticker_set_names: Vec<String>,
+    potential_sticker_set_names: Vec<StickerSetId>,
     request_context: RequestContext,
 ) -> Result<(), BotError> {
     if potential_sticker_set_names.len() == 1 {
@@ -377,7 +379,7 @@ pub async fn handle_readonly(
         if let Some(ref set_id) = sticker.set_name {
             request_context
                 .database
-                .upsert_sticker_set(set_id, Some(request_context.user.id))
+                .upsert_sticker_set(&StickerSetId::from(set_id), Some(request_context.user.id))
                 .await?;
         }
     }
@@ -515,12 +517,13 @@ async fn handle_sticker_message(
     // };
     // TODO: make return value indicate if the set is new or not -> message admin + tell user that set is new
 
+    let sticker_id = StickerId::from(&sticker.file.unique_id);
     match request_context.dialog_state() {
         DialogState::Normal => handle_sticker_1(msg, sticker, request_context, false).await?,
         DialogState::ContinuousTag(continuous_tag) => {
             let file = request_context
                 .database
-                .get_sticker_file_by_sticker_id(&sticker.file.unique_id)
+                .get_sticker_file_by_sticker_id(&sticker_id)
                 .await?
                 .required()?;
             request_context
@@ -549,7 +552,7 @@ async fn handle_sticker_message(
         } => {
             let sticker = request_context
                 .database
-                .get_sticker_by_id(&sticker.file.unique_id)
+                .get_sticker_by_id(&sticker_id)
                 .await?
                 .required()?;
             let sticker_user = request_context
@@ -576,7 +579,7 @@ async fn handle_sticker_message(
         DialogState::TagCreator(mut tag_creator) => {
             let sticker = request_context
                 .database
-                .get_sticker_by_id(&sticker.file.unique_id)
+                .get_sticker_by_id(&sticker_id)
                 .await?
                 .required()?;
             // let sticker_user = request_context
@@ -620,16 +623,17 @@ async fn handle_sticker_1(
     request_context: RequestContext,
     is_continuous_tag: bool,
 ) -> Result<(), BotError> {
+    let sticker_id = StickerId::from(&sticker.file.unique_id);
     let tags: Vec<String> = request_context
         .database
-        .get_sticker_tags(&sticker.file.unique_id)
+        .get_sticker_tags(&sticker_id)
         .await?;
     let set = request_context
         .database
-        .get_sticker_set_by_sticker_id(&sticker.file.unique_id)
+        .get_sticker_set_by_sticker_id(&sticker_id)
         .await?;
     let suggested_tags = suggest_tags(
-        &sticker.file.unique_id,
+        &sticker_id,
         request_context.bot.clone(),
         request_context.tag_manager.clone(),
         request_context.database.clone(),
@@ -644,7 +648,7 @@ async fn handle_sticker_1(
         .map(|e| Emoji::new_from_string_single(e));
     let is_locked = request_context
         .database
-        .get_sticker_file_by_sticker_id(&sticker.file.unique_id)
+        .get_sticker_file_by_sticker_id(&sticker_id)
         .await?
         .map_or(false, |file| file.tags_locked_by_user_id.is_some());
     request_context
@@ -664,7 +668,7 @@ async fn handle_sticker_1(
         )
         .reply_markup(Keyboard::tagging(
             &tags,
-            &sticker.file.unique_id.clone(),
+            &sticker_id,
             &suggested_tags,
             is_locked,
             is_continuous_tag,

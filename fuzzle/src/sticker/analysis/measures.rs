@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+use crate::util::StickerId;
+
 #[derive(PartialEq, PartialOrd, Serialize, Deserialize, Debug, Clone)]
 pub struct Match {
     pub distance: f32,
-    pub sticker_id: String,
+    pub sticker_id: StickerId,
 }
 
 impl Eq for Match {

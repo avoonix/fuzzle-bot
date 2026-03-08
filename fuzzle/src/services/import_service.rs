@@ -18,7 +18,7 @@ use crate::{
         Histogram, automerge, calculate_color_histogram, calculate_sticker_file_hash,
         fetch_sticker_file,
     },
-    util::{Emoji, FloatIteratorExt, Required, decode_sticker_set_id, is_wrong_file_id_error},
+    util::{Emoji, FloatIteratorExt, Required, StickerFileId, StickerId, StickerSetId, decode_sticker_set_id, is_wrong_file_id_error},
 };
 
 #[derive(Clone)]
@@ -33,7 +33,7 @@ pub struct ImportService {
 }
 
 struct StickerSetFetchRequest {
-    set_id: String,
+    set_id: StickerSetId,
     ignore_last_fetched: bool,
     added_by_user_id: Option<UserId>,
     numeric_set_id: Option<i64>,
@@ -104,7 +104,7 @@ impl ImportService {
     #[tracing::instrument(skip(self))]
     pub async fn queue_sticker_set_import(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
         ignore_last_fetched: bool,
         added_by_user_id: Option<UserId>,
         numeric_set_id: Option<i64>,
@@ -112,7 +112,7 @@ impl ImportService {
         self.tx
             .send(TracedMessage {
                 message: StickerSetFetchRequest {
-                    set_id: set_id.to_string(),
+                    set_id: set_id.clone(),
                     ignore_last_fetched,
                     added_by_user_id,
                     numeric_set_id,
@@ -130,7 +130,7 @@ impl ImportService {
     #[tracing::instrument(skip(self), err(Debug))]
     async fn import_all_stickers_from_set(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
         ignore_last_fetched: bool,
         user_id: Option<UserId>,
         numeric_set_id: Option<i64>,
@@ -153,7 +153,7 @@ impl ImportService {
 
         let set = self
             .bot
-            .get_sticker_set(set_id)
+            .get_sticker_set(set_id.to_string())
             .into_future()
             .instrument(tracing::info_span!("telegram_bot_get_sticker_set"))
             .await;
@@ -170,16 +170,17 @@ impl ImportService {
                 return Err(e.into());
             }
         };
-
+        let has_been_renamed = set_id.to_string() != set.name;
+        let set_id = &StickerSetId::from(&set.name);
         if !set.is_regular() {
-            self.database.delete_sticker_set(&set.name).await?;
+            self.database.delete_sticker_set(set_id).await?;
             return Ok(()); // ignore custom emojis as the bot is unable to send those
         }
 
-        if set_id != set.name {
+        if has_been_renamed {
             tracing::info!("set with (almost) same name got recreated");
             self.database
-                .upsert_sticker_set(&set.name, user_id.map(|id| id.0 as i64))
+                .upsert_sticker_set(set_id, user_id.map(|id| id.0 as i64))
                 .await?;
             self.database.delete_sticker_set(set_id).await?;
         }
@@ -210,7 +211,9 @@ impl ImportService {
         let set_id = sticker
             .set_name
             .clone()
-            .ok_or_else(|| UserError::StickerNotPartOfSet)?;
+            .ok_or_else(|| UserError::StickerNotPartOfSet)?
+            .into();
+        let sticker_id = StickerId::from(&sticker.file.unique_id);
 
         if !sticker.is_regular() {
             return Err(UserError::UnsupportedStickerType.into());
@@ -218,7 +221,7 @@ impl ImportService {
 
         let sticker_in_database = self
             .database
-            .get_sticker_by_id(&sticker.file.unique_id)
+            .get_sticker_by_id(&sticker_id)
             .await?
             .is_some();
         if sticker_in_database {
@@ -241,7 +244,7 @@ impl ImportService {
 
         if self
             .database
-            .is_sticker_banned(&sticker.file.unique_id)
+            .is_sticker_banned(&sticker_id)
             .await?
         {
             return Err(UserError::StickerBanned.into()); // TODO: handle this even further up?
@@ -257,14 +260,14 @@ impl ImportService {
         self.queue_sticker_set_import(&set_id, true, Some(added_by_user_id), None)
             .await;
 
-        self.analyze_sticker_background(sticker.file.unique_id.clone())
+        self.analyze_sticker_background(sticker_id.clone())
             .await;
 
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    async fn analyze_sticker_background(&self, sticker_unique_id: String) {
+    async fn analyze_sticker_background(&self, sticker_unique_id: StickerId) {
         let service = self.clone();
         let background_span =
             tracing::info_span!(parent: tracing::Span::none(), "analyze_sticker_background_task");
@@ -304,7 +307,7 @@ impl ImportService {
     async fn fetch_sticker_and_save_to_db(
         &self,
         sticker: teloxide::types::Sticker,
-        set_name: String,
+        set_name: StickerSetId,
     ) -> Result<(), InternalError> {
         let emoji = sticker.emoji.map(|e| Emoji::new_from_string_single(&e));
 
@@ -335,8 +338,8 @@ impl ImportService {
             .await?;
         self.database
             .create_sticker(
-                &sticker.file.unique_id,
-                &sticker.file.id,
+                &sticker.file.unique_id.into(),
+                &StickerFileId::from(sticker.file.id),
                 emoji,
                 &set_name,
                 &canonical_file_hash,
@@ -353,14 +356,15 @@ impl ImportService {
         numeric_set_id: Option<i64>,
     ) -> Result<(), InternalError> {
         // TODO: result should be how many stickers were added/removed/updated
+        let set_id = StickerSetId::from(&set.name);
 
         self.database
-            .upsert_sticker_set_with_title(&set.name, &set.title, user_id.map(|id| id.0 as i64))
+            .upsert_sticker_set_with_title(&set_id, &set.title, user_id.map(|id| id.0 as i64))
             .await?;
 
         if self
             .database
-            .get_sticker_set_by_id(&set.name)
+            .get_sticker_set_by_id(&set_id)
             .await?
             .is_some_and(|set| set.created_by_user_id.is_none())
         {
@@ -377,7 +381,7 @@ impl ImportService {
                 let creator_id = decode_sticker_set_id(telegram_pack_id)?.owner_id;
                 self.database
                     .upsert_sticker_set_with_creator(
-                        &set.name,
+                        &set_id,
                         creator_id,
                         user_id.map(|id| id.0 as i64),
                     )
@@ -385,7 +389,7 @@ impl ImportService {
             }
         }
 
-        let saved_stickers = self.database.get_all_stickers_in_set(&set.name).await?;
+        let saved_stickers = self.database.get_all_stickers_in_set(&set_id).await?;
 
         let re = Regex::new(r"(\W|^)@([_a-zA-Z0-9]+)\b").expect("static regex to compile");
         for (_, [_, username]) in re.captures_iter(&set.title).map(|c| c.extract()) {
@@ -394,7 +398,7 @@ impl ImportService {
 
         let all_saved_sticker_file_hashes = saved_stickers
             .iter()
-            .map(|s| s.sticker_file_id.to_string())
+            .map(|s| s.sticker_file_id.clone())
             .collect_vec();
         let missing_file_hashes = self
             .vector_db
@@ -420,7 +424,7 @@ impl ImportService {
         let stickers_not_in_database_yet = set.stickers.clone().into_iter().filter(|sticker| {
             saved_stickers
                 .iter()
-                .all(|s| s.id != sticker.file.unique_id)
+                .all(|s| *s.id != sticker.file.unique_id)
         });
         // TODO: find out which stickers are missing embeddings; find out which stickers need to be updated (is_animated)?
 
@@ -433,13 +437,13 @@ impl ImportService {
             self.import_new_sticker(sticker, set.clone()).await?;
         }
         for sticker in saved_stickers.clone() {
-            let Some(s) = set.stickers.iter().find(|s| s.file.unique_id == sticker.id) else {
+            let Some(s) = set.stickers.iter().find(|s| s.file.unique_id == *sticker.id) else {
                 continue;
             };
             if s.file.id != sticker.telegram_file_identifier {
                 // TODO: might be updated too frequently
                 self.database
-                    .update_sticker(sticker.id, s.file.id.clone())
+                    .update_sticker(sticker.id, StickerFileId::from(&s.file.id))
                     .await?;
             }
             let files = self
@@ -459,7 +463,7 @@ impl ImportService {
 
         let deleted_stickers = saved_stickers
             .iter()
-            .filter(|s| !set.stickers.iter().any(|s2| s2.file.unique_id == s.id))
+            .filter(|s| !set.stickers.iter().any(|s2| s2.file.unique_id == *s.id))
             .collect_vec();
 
         for sticker in deleted_stickers {
@@ -469,7 +473,7 @@ impl ImportService {
 
         for sticker in set.stickers.iter().filter(|s| s.is_raster()) {
             let result = automerge(
-                &sticker.file.unique_id,
+                &StickerId::from(&sticker.file.unique_id),
                 self.database.clone(),
                 self.vector_db.clone(),
                 self.bot.clone(),
@@ -483,10 +487,10 @@ impl ImportService {
             }
         }
 
-        self.possibly_auto_ban_set(&set.name, set.stickers.len())
+        self.possibly_auto_ban_set(&set_id, set.stickers.len())
             .await?;
 
-        self.database.update_last_fetched(set.name.clone()).await?;
+        self.database.update_last_fetched(set_id).await?;
 
         Ok(())
     }
@@ -496,8 +500,10 @@ impl ImportService {
         sticker: teloxide::types::Sticker,
         set: teloxide::types::StickerSet,
     ) -> Result<(), InternalError> {
+        let set_id = StickerSetId::from(&set.name);
+
         let result = self
-            .fetch_sticker_and_save_to_db(sticker.clone(), set.name.clone())
+            .fetch_sticker_and_save_to_db(sticker.clone(), set_id.clone())
             .await;
 
         match result {
@@ -519,11 +525,11 @@ impl ImportService {
             Ok(()) => {}
         }
 
-        if let Err(err) = self.analyze_sticker(sticker.file.unique_id.clone()).await {
+        if let Err(err) = self.analyze_sticker(sticker.file.unique_id.into()).await {
             tracing::error!(error = %err, "error during analyze");
         }
         if let Err(err) = self
-            .possibly_auto_ban_set(&set.name, set.stickers.len())
+            .possibly_auto_ban_set(&set_id, set.stickers.len())
             .await
         {
             tracing::error!(error = %err, "error during auto ban");
@@ -564,7 +570,7 @@ impl ImportService {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    async fn analyze_sticker(&self, sticker_unique_id: String) -> Result<bool, InternalError> {
+    async fn analyze_sticker(&self, sticker_unique_id: StickerId) -> Result<bool, InternalError> {
         let file_info = self
             .database
             .get_sticker_file_by_sticker_id(&sticker_unique_id)
@@ -606,7 +612,7 @@ impl ImportService {
     #[tracing::instrument(skip(self), err(Debug))]
     async fn possibly_auto_ban_set(
         &self,
-        sticker_set_id: &str,
+        sticker_set_id: &StickerSetId,
         set_sticker_count: usize,
     ) -> Result<bool, InternalError> {
         let banned_sticker_count = self
@@ -627,8 +633,8 @@ impl ImportService {
     pub async fn possibly_auto_ban_sticker(
         &self,
         clip_vector: Vec<f32>,
-        sticker_id: &str,
-        sticker_set_id: &str,
+        sticker_id: &StickerId,
+        sticker_set_id: &StickerSetId,
     ) -> Result<bool, InternalError> {
         // do not auto ban already tagged stickers
         let has_tags = !self.database.get_sticker_tags(sticker_id).await?.is_empty();
@@ -639,7 +645,7 @@ impl ImportService {
             .vector_db
             .find_banned_stickers_given_vector(clip_vector.clone(), 5, Some(0.6))
             .await?;
-        let Some(worst_score) = matches.iter().map(|m| m.score).fmax() else {
+        let Some(worst_score) = matches.iter().map(|m| m.score).fmin() else {
             return Ok(false);
         };
         let best_regular_matches = self
@@ -650,7 +656,7 @@ impl ImportService {
 
         let mut should_ban = false;
         for m in matches {
-            if let Some(banned_sticker) = self.database.get_banned_sticker(&m.file_hash).await? {
+            if let Some(banned_sticker) = self.database.get_banned_sticker_by_sticker_file_id(&m.file_hash).await? {
                 // if m.score > 0.8 || m.score >= banned_sticker.clip_max_match_distance {
                 let score_banned_sticker = m.score;
                 // TODO: get rid of the magic number; goal is to not call this too often; also move the vector db call outside the loop?
@@ -667,7 +673,7 @@ impl ImportService {
                         .get_some_sticker_by_file_id(&m.file_hash)
                         .await?
                     {
-                        if matched_sticker.sticker_set_id != sticker_set_id {
+                        if matched_sticker.sticker_set_id != *sticker_set_id {
                             tracing::info!(%score_banned_sticker, %score_non_banned_sticker, %sticker_id, %m.file_hash, %sticker_set_id, "sparing sticker, good match from other set");
                             return Ok(false);
                         }
@@ -700,7 +706,7 @@ impl ImportService {
 
     /// ban set and record who is to blame for adding it
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn ban_sticker_set(&self, set_id: &str) -> Result<(), DatabaseError> {
+    pub async fn ban_sticker_set(&self, set_id: &StickerSetId) -> Result<(), DatabaseError> {
         let set = self.database.get_sticker_set_by_id(set_id).await?;
         self.database.delete_sticker_set(set_id).await?;
         self.database
@@ -710,7 +716,7 @@ impl ImportService {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn unban_sticker_set(&self, set_id: &str) -> Result<(), DatabaseError> {
+    pub async fn unban_sticker_set(&self, set_id: &StickerSetId) -> Result<(), DatabaseError> {
         let original_adder = self.database.unban_set(&set_id).await?;
         self.database
             .upsert_sticker_set(&set_id, original_adder)
@@ -729,7 +735,7 @@ impl ImportService {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn ban_sticker(
         &self,
-        sticker_id: &str,
+        sticker_id: &StickerId,
         clip_max_match_distance: f32,
         ban_reason: BanReason,
     ) -> Result<(), InternalError> {
@@ -786,7 +792,7 @@ impl ImportService {
         Ok(())
     }
 
-    pub async fn unban_sticker(&self, sticker_id: &str) -> Result<(), InternalError> {
+    pub async fn unban_sticker(&self, sticker_id: &StickerId) -> Result<(), InternalError> {
         let (set_id, sticker_file_id) = self.database.unban_sticker(sticker_id).await?;
         self.vector_db
             .delete_banned_stickers(vec![sticker_file_id.clone()])

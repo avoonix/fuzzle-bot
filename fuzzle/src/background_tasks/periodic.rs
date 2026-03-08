@@ -332,9 +332,9 @@ async fn refetch_stickers(
     if importer.is_busy() {
         return Ok(());
     }
-    for (i, set_name) in set_names.into_iter().enumerate() {
+    for (i, set_id) in set_names.into_iter().enumerate() {
         importer
-            .queue_sticker_set_import(&set_name, false, None, None)
+            .queue_sticker_set_import(&set_id, false, None, None)
             .await;
     }
     let stats = database.get_stats().await?;

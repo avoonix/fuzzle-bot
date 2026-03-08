@@ -4,7 +4,7 @@ use crate::database::Database;
 
 use crate::qdrant::VectorDatabase;
 use crate::tags::Category;
-use crate::util::{Emoji, Required};
+use crate::util::{Emoji, Required, StickerId};
 use itertools::Itertools;
 use teloxide::requests::Requester;
 use tracing::Instrument;
@@ -30,7 +30,7 @@ use super::ScoredTagSuggestion;
 
 #[tracing::instrument(skip(bot, tag_manager, database, tfidf_service, vector_db))]
 pub async fn suggest_tags(
-    sticker_id: &str,
+    sticker_id: &StickerId,
     bot: Bot,
     tag_manager: TagManagerService,
     database: Database,

@@ -2,6 +2,7 @@ use diesel::dsl::now;
 use diesel::{delete, insert_into, prelude::*, update};
 
 use crate::database::{DialogState, StringVec, User, UserSettings, UserStats};
+use crate::util::StickerId;
 
 use super::DatabaseError;
 
@@ -98,7 +99,7 @@ impl Database {
     pub async fn set_recently_used_sticker_favorite(
         &self,
         user_id: i64,
-        sticker_id: &str,
+        sticker_id: &StickerId,
         is_favorite: bool,
     ) -> Result<(), DatabaseError> {
         let sticker_id = sticker_id.to_string();
@@ -126,7 +127,7 @@ impl Database {
     pub async fn add_recently_used_sticker(
         &self,
         user_id: i64,
-        sticker_id: &str,
+        sticker_id: &StickerId,
     ) -> Result<(), DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self

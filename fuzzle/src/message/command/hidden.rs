@@ -16,7 +16,7 @@ use crate::sticker::resolve_file_hashes_to_sticker_ids_and_clean_up_unreferenced
 use crate::tags::suggest_tags;
 use crate::text::{Markdown, Text};
 use crate::util::{
-    create_sticker_set_id, create_tag_id, set_name_literal, sticker_id_literal, Required,
+    Required, StickerFileId, StickerId, StickerSetId, create_sticker_set_id, create_tag_id, set_name_literal, sticker_id_literal
 };
 use futures::future::try_join_all;
 use itertools::Itertools;
@@ -154,7 +154,7 @@ fn new_sticker_set_custom_parser(input: String) -> Result<(String, String), Pars
 
 async fn set_editor_keyboard(
     request_context: RequestContext,
-    sticker_id: &str,
+    sticker_id: &StickerId,
 ) -> Result<InlineKeyboardMarkup, InternalError> {
     match request_context.dialog_state() {
         DialogState::StickerRecommender {
@@ -175,7 +175,7 @@ async fn set_editor_keyboard(
                 is_favorited,
             ))
         }
-        _ => sticker_explore_keyboard(sticker_id.to_string(), request_context).await,
+        _ => sticker_explore_keyboard(sticker_id, request_context).await,
     }
 }
 
@@ -194,7 +194,7 @@ impl HiddenCommand {
                     .database
                     .create_moderation_task(
                         &crate::database::ModerationTaskDetails::ReportStickerSet {
-                            set_id,
+                            set_id: set_id.into(),
                             reason,
                         },
                         request_context.user.id,
@@ -255,6 +255,7 @@ impl HiddenCommand {
                     .await?;
             }
             Self::RemoveSticker { set_id, sticker_id } => {
+                let sticker_id = sticker_id.into();
                 let sticker = request_context
                     .database
                     .get_sticker_by_id(&sticker_id)
@@ -304,6 +305,7 @@ impl HiddenCommand {
                 }
             }
             Self::AddSticker { set_id, sticker_id } => {
+                let sticker_id = sticker_id.into();
                 let sticker = request_context
                     .database
                     .get_sticker_by_id(&sticker_id)
@@ -316,6 +318,7 @@ impl HiddenCommand {
                     .into_iter()
                     .take(20)
                     .collect_vec();
+                let set_id = set_id.into();
 
                 simple_bot_api::add_sticker_to_set(
                     &request_context.config.telegram_bot_token,
@@ -360,6 +363,7 @@ impl HiddenCommand {
                     &set_title,
                     &request_context.config.telegram_bot_username,
                 );
+                let sticker_id = sticker_id.into();
 
                 let sticker = request_context
                     .database
@@ -474,6 +478,7 @@ impl HiddenCommand {
                 sticker_unique_id,
                 tag,
             } => {
+                let sticker_unique_id = sticker_unique_id.into();
                 if handle_readonly(&request_context, &msg).await? { return Ok(()); }
                 if !request_context.can_tag_stickers() {
                     return Err(anyhow::anyhow!(
@@ -570,11 +575,11 @@ impl HiddenCommand {
             }
             Self::TagSet { set_name, tag } => {
                 if handle_readonly(&request_context, &msg).await? { return Ok(()); }
-                set_tag_operation(tag.0, set_name, SetOperation::Tag, msg, request_context).await?;
+                set_tag_operation(tag.0, set_name.into(), SetOperation::Tag, msg, request_context).await?;
             }
             Self::UntagSet { set_name, tag } => {
                 if handle_readonly(&request_context, &msg).await? { return Ok(()); }
-                set_tag_operation(tag.0, set_name, SetOperation::Untag, msg, request_context)
+                set_tag_operation(tag.0, set_name.into(), SetOperation::Untag, msg, request_context)
                     .await?;
             }
             Self::TagContinuous { tag } => {
@@ -684,7 +689,7 @@ async fn pick_sticker(
     database: Database,
     stickers_similar_to_already_tagged: &[StickerMatch],
     selected_tags: &[String],
-    already_recommended_file_ids: &[String],
+    already_recommended_file_ids: &[StickerFileId],
 ) -> Result<Option<Sticker>, InternalError> {
     for StickerMatch { file_hash, .. } in stickers_similar_to_already_tagged {
         if already_recommended_file_ids.contains(file_hash) {
@@ -824,7 +829,7 @@ async fn modify_continuous_tag(
 
 async fn set_tag_operation(
     tags: Vec<String>,
-    set_name: String,
+    set_name: StickerSetId,
     operation: SetOperation,
     msg: Message,
     request_context: RequestContext,
@@ -995,8 +1000,8 @@ async fn suggest_sticker_continuous_tag(
 }
 
 async fn suggest_sticker_recommender(
-    positive: Vec<String>,
-    negative: Vec<String>,
+    positive: Vec<StickerId>,
+    negative: Vec<StickerId>,
     request_context: &RequestContext,
     msg: &Message,
 ) -> Result<(), BotError> {

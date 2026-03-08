@@ -9,8 +9,8 @@ use crate::{
         UserStickerStat,
     },
     inline::{InlineQueryData, SetOperation, TagKind},
-    tags::{self, all_count_tags, all_rating_tags, character_count, rating, Category, Characters},
-    util::{format_relative_time, Emoji},
+    tags::{self, Category, Characters, all_count_tags, all_rating_tags, character_count, rating},
+    util::{Emoji, StickerId, StickerSetId, format_relative_time},
 };
 use chrono::NaiveDateTime;
 use itertools::Itertools;
@@ -25,7 +25,7 @@ impl Keyboard {
     #[must_use]
     pub fn tagging(
         current_tags: &[String],
-        sticker_unique_id: &str,
+        sticker_unique_id: &StickerId,
         suggested_tags: &[String],
         tagging_locked: bool,
         is_continuous_tag: bool,
@@ -136,7 +136,7 @@ impl Keyboard {
         keyboard.push(vec![
             InlineKeyboardButton::switch_inline_query_current_chat(
                 "Add more tags to this sticker",
-                InlineQueryData::empty_sticker_query(sticker_unique_id).to_string(),
+                InlineQueryData::empty_sticker_query(sticker_unique_id.clone()).to_string(),
             ),
         ]);
 
@@ -149,7 +149,7 @@ impl Keyboard {
                     "🔒 Bulk Tagging Locked",
                     CallbackData::SetLock {
                         lock: false,
-                        sticker_id: sticker_unique_id.to_string(),
+                        sticker_id: sticker_unique_id.clone(),
                     },
                 )
             } else {
@@ -157,7 +157,7 @@ impl Keyboard {
                     "🔓 Bulk Tagging Unlocked",
                     CallbackData::SetLock {
                         lock: true,
-                        sticker_id: sticker_unique_id.to_string(),
+                        sticker_id: sticker_unique_id.clone(),
                     },
                 )
             }]);
@@ -300,7 +300,7 @@ impl Keyboard {
         status: ModerationTaskStatus,
         creator_id: i64,
         task_id: i64,
-        set_name: &str,
+        set_name: &StickerSetId,
         banned: bool,
     ) -> Result<InlineKeyboardMarkup, InternalError> {
         Ok(InlineKeyboardMarkup::new(vec![
@@ -310,12 +310,12 @@ impl Keyboard {
                 if banned {
                     InlineKeyboardButton::callback(
                         format!("Unban {}", set_name),
-                        CallbackData::change_set_status(set_name, false, task_id),
+                        CallbackData::change_set_status(set_name.clone(), false, task_id),
                     )
                 } else {
                     InlineKeyboardButton::callback(
                         format!("Ban {}", set_name),
-                        CallbackData::change_set_status(set_name, true, task_id),
+                        CallbackData::change_set_status(set_name.clone(), true, task_id),
                     )
                 },
             ],
@@ -327,8 +327,8 @@ impl Keyboard {
         status: ModerationTaskStatus,
         creator_id: i64,
         task_id: i64,
-        added_sets: &[String],
-        indexed_sets: &[String],
+        added_sets: &[StickerSetId],
+        indexed_sets: &[StickerSetId],
     ) -> Result<InlineKeyboardMarkup, InternalError> {
         let mut markup = InlineKeyboardMarkup::new(vec![Self::moderation_task_common(
             status, creator_id, task_id,
@@ -341,12 +341,12 @@ impl Keyboard {
                     if indexed_sets.contains(set_name) {
                         InlineKeyboardButton::callback(
                             format!("Ban {}", set_name),
-                            CallbackData::change_set_status(set_name, true, task_id),
+                            CallbackData::change_set_status(set_name.clone(), true, task_id),
                         )
                     } else {
                         InlineKeyboardButton::callback(
                             format!("Unban {}", set_name),
-                            CallbackData::change_set_status(set_name, false, task_id),
+                            CallbackData::change_set_status(set_name.clone(), false, task_id),
                         )
                     }
                 } else {
@@ -439,9 +439,9 @@ impl Keyboard {
 
     #[must_use]
     pub fn recommender(
-        sticker_id: &str,
-        similar: &[String],
-        dissimilar: &[String],
+        sticker_id: &StickerId,
+        similar: &[StickerId],
+        dissimilar: &[StickerId],
         is_favorite: bool,
     ) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![
@@ -453,7 +453,7 @@ impl Keyboard {
                         "More like this"
                     },
                     CallbackData::ToggleRecommendSticker {
-                        sticker_id: sticker_id.to_string(),
+                        sticker_id: sticker_id.clone(),
                         positive: true,
                     },
                 ),
@@ -464,7 +464,7 @@ impl Keyboard {
                         "Less like this"
                     },
                     CallbackData::ToggleRecommendSticker {
-                        sticker_id: sticker_id.to_string(),
+                        sticker_id: sticker_id.clone(),
                         positive: false,
                     },
                 ),
@@ -473,24 +473,24 @@ impl Keyboard {
                 favorite_button(is_favorite, sticker_id),
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     "🔧 Add to your set",
-                    InlineQueryData::add_to_user_set(sticker_id.to_string()),
+                    InlineQueryData::add_to_user_set(sticker_id.clone()),
                 ),
             ],
             vec![
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     "🎨 Color",
-                    InlineQueryData::similar(sticker_id, crate::inline::SimilarityAspect::Color),
+                    InlineQueryData::similar(sticker_id.clone(), crate::inline::SimilarityAspect::Color),
                 ),
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     "🦄 Similar",
                     InlineQueryData::similar(
-                        sticker_id,
+                        sticker_id.clone(),
                         crate::inline::SimilarityAspect::Embedding,
                     ),
                 ),
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     format!("🪞 Sets"),
-                    InlineQueryData::overlapping_sets(sticker_id.to_string()),
+                    InlineQueryData::overlapping_sets(sticker_id.clone()),
                 ),
             ],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
@@ -535,7 +535,7 @@ impl Keyboard {
     }
 
     #[must_use]
-    pub fn make_set_keyboard(set_name: String) -> InlineKeyboardMarkup {
+    pub fn make_set_keyboard(set_name: StickerSetId) -> InlineKeyboardMarkup {
         // TODO: maybe check which tags exist across all stickers in the set
         // and show those (with a remove button)
         let keyboard: Vec<Vec<InlineKeyboardButton>> = vec![vec![
@@ -778,10 +778,10 @@ impl Keyboard {
 
     #[must_use]
     pub fn merge(
-        sticker_id_a: &str,
-        sticker_id_b: &str,
-        set_id_a: &str,
-        set_id_b: &str,
+        sticker_id_a: &StickerId,
+        sticker_id_b: &StickerId,
+        set_id_a: &StickerSetId,
+        set_id_b: &StickerSetId,
     ) -> Result<InlineKeyboardMarkup, InternalError> {
         Ok(InlineKeyboardMarkup::new(vec![
             if set_id_a == set_id_b {
@@ -792,11 +792,11 @@ impl Keyboard {
             vec![
                 InlineKeyboardButton::callback(
                     "👍 Merge",
-                    CallbackData::merge(sticker_id_a, sticker_id_b, true),
+                    CallbackData::merge(sticker_id_a.clone(), sticker_id_b.clone(), true),
                 ),
                 InlineKeyboardButton::callback(
                     "👎 Don't Merge",
-                    CallbackData::merge(sticker_id_a, sticker_id_b, false),
+                    CallbackData::merge(sticker_id_a.clone(), sticker_id_b.clone(), false),
                 ),
             ],
         ]))
@@ -804,8 +804,8 @@ impl Keyboard {
 
     #[must_use]
     pub fn merge_done(
-        set_id_a: &str,
-        set_id_b: &str,
+        set_id_a: &StickerSetId,
+        set_id_b: &StickerSetId,
     ) -> Result<InlineKeyboardMarkup, InternalError> {
         Ok(InlineKeyboardMarkup::new(vec![if set_id_a == set_id_b {
             vec![set_button(set_id_a)?]
@@ -816,8 +816,8 @@ impl Keyboard {
 
     #[must_use]
     pub fn sticker_set_page(
-        sticker_id: &str,
-        set_id: &str,
+        sticker_id: &StickerId,
+        set_id: &StickerSetId,
         created_at: NaiveDateTime,
     ) -> InlineKeyboardMarkup {
         let now = chrono::Utc::now().naive_utc();
@@ -832,31 +832,31 @@ impl Keyboard {
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     format!("🚩 Report Set"),
                     InlineQueryData::ReportSet {
-                        set_id: set_id.to_string(),
+                        set_id: set_id.clone(),
                     },
                 ),
             ],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("🪞 Set overlaps"),
-                InlineQueryData::overlapping_sets(sticker_id.to_string()),
+                InlineQueryData::overlapping_sets(sticker_id.clone()),
             )],
             vec![
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     format!("🏷️ All tags"),
-                    InlineQueryData::all_set_tags(sticker_id.to_string()),
+                    InlineQueryData::all_set_tags(sticker_id.clone()),
                 ),
                 InlineKeyboardButton::switch_inline_query_current_chat(
                     format!("🗓️ All stickers by date added"),
-                    InlineQueryData::set_stickers_by_date(sticker_id.to_string()),
+                    InlineQueryData::set_stickers_by_date(sticker_id.clone()),
                 ),
             ],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("➕ Add tags to all stickers in the set \"{set_id}\""),
-                InlineQueryData::set_operation(set_id, vec![], SetOperation::Tag),
+                InlineQueryData::set_operation(set_id.clone(), vec![], SetOperation::Tag),
             )],
             vec![InlineKeyboardButton::switch_inline_query_current_chat(
                 format!("➖ Remove tags from all stickers in the set \"{set_id}\""),
-                InlineQueryData::set_operation(set_id, vec![], SetOperation::Untag),
+                InlineQueryData::set_operation(set_id.clone(), vec![], SetOperation::Untag),
             )],
         ])
     }
@@ -963,7 +963,7 @@ impl Keyboard {
 
     #[must_use]
     pub fn owner_page(
-        sticker_id: &str,
+        sticker_id: &StickerId,
         sticker_pack_owner_user_id: Option<i64>,
         set_count: i64,
         owner_username: Option<String>,
@@ -1004,7 +1004,7 @@ impl Keyboard {
 
     #[must_use]
     pub fn sticker_explore_page(
-        sticker_id: &str,
+        sticker_id: &StickerId,
         set_count: usize,
         created_at: NaiveDateTime,
         is_favorite: bool,
@@ -1030,7 +1030,7 @@ impl Keyboard {
                         InlineKeyboardButton::callback(
                             format!("📥 Download file"),
                             CallbackData::DownloadSticker {
-                                sticker_id: sticker_id.to_string(),
+                                sticker_id: sticker_id.clone(),
                             },
                         ),
                     ],
@@ -1052,7 +1052,7 @@ impl Keyboard {
                     vec![InlineKeyboardButton::switch_inline_query_current_chat(
                         "🎨 Similarly colored stickers (⚠️ ignores blacklist)",
                         InlineQueryData::similar(
-                            sticker_id,
+                            sticker_id.clone(),
                             crate::inline::SimilarityAspect::Color,
                         ),
                     )],
@@ -1063,18 +1063,18 @@ impl Keyboard {
                     vec![InlineKeyboardButton::switch_inline_query_current_chat(
                         "🦄 Similar stickers (⚠️ ignores blacklist)",
                         InlineQueryData::similar(
-                            sticker_id,
+                            sticker_id.clone(),
                             crate::inline::SimilarityAspect::Embedding,
                         ),
                     )],
                     vec![
                         InlineKeyboardButton::switch_inline_query_current_chat(
                             format!("🗂️ {set_count} {set_text} this sticker"),
-                            InlineQueryData::sets(sticker_id.to_string()),
+                            InlineQueryData::sets(sticker_id.clone()),
                         ),
                         InlineKeyboardButton::switch_inline_query_current_chat(
                             "🔧 Add to your set",
-                            InlineQueryData::add_to_user_set(sticker_id.to_string()),
+                            InlineQueryData::add_to_user_set(sticker_id.clone()),
                         ),
                     ],
                 ],
@@ -1088,11 +1088,11 @@ impl Keyboard {
         InlineKeyboardMarkup::new(privacy_tabs(section))
     }
 
-    pub fn continuous_tag_confirm(sticker_id: &str) -> InlineKeyboardMarkup {
+    pub fn continuous_tag_confirm(sticker_id: &StickerId) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new([[InlineKeyboardButton::callback(
             format!("Apply selected tags"),
             CallbackData::ApplyTags {
-                sticker_id: sticker_id.to_string(),
+                sticker_id: sticker_id.clone(),
             },
         )]])
     }
@@ -1106,14 +1106,14 @@ enum StickerTab {
     Tags,
 }
 
-fn sticker_tabs(active: StickerTab, sticker_id: &str) -> Vec<InlineKeyboardButton> {
+fn sticker_tabs(active: StickerTab, sticker_id: &StickerId) -> Vec<InlineKeyboardButton> {
     let tabs = vec![
         (
             StickerTab::Tags,
             InlineKeyboardButton::callback(
                 "🏷 Tags",
                 CallbackData::Sticker {
-                    sticker_id: sticker_id.to_string(),
+                    sticker_id: sticker_id.clone(),
                     operation: None,
                 },
             ),
@@ -1123,7 +1123,7 @@ fn sticker_tabs(active: StickerTab, sticker_id: &str) -> Vec<InlineKeyboardButto
             InlineKeyboardButton::callback(
                 "✨️ Sticker",
                 CallbackData::StickerExplorePage {
-                    sticker_id: sticker_id.to_string(),
+                    sticker_id: sticker_id.clone(),
                 },
             ),
         ),
@@ -1132,7 +1132,7 @@ fn sticker_tabs(active: StickerTab, sticker_id: &str) -> Vec<InlineKeyboardButto
             InlineKeyboardButton::callback(
                 "️🗂️ Set",
                 CallbackData::StickerSetPage {
-                    sticker_id: sticker_id.to_string(),
+                    sticker_id: sticker_id.clone(),
                 },
             ),
         ),
@@ -1141,7 +1141,7 @@ fn sticker_tabs(active: StickerTab, sticker_id: &str) -> Vec<InlineKeyboardButto
             InlineKeyboardButton::callback(
                 "️👤 Owner",
                 CallbackData::OwnerPage {
-                    sticker_id: sticker_id.to_string(),
+                    sticker_id: sticker_id.clone(),
                 },
             ),
         ),
@@ -1208,7 +1208,7 @@ fn stat_tabs(active: StatTab) -> Vec<InlineKeyboardButton> {
 }
 
 fn add_sticker_main_menu(
-    sticker_id: &str,
+    sticker_id: &StickerId,
     other_buttons: Vec<Vec<InlineKeyboardButton>>,
 ) -> Vec<Vec<InlineKeyboardButton>> {
     vec![sticker_tabs(StickerTab::Tags, sticker_id)]
@@ -1224,7 +1224,7 @@ fn user_button(user_id: UserId) -> InlineKeyboardButton {
     )
 }
 
-fn set_button(set_id: &str) -> Result<InlineKeyboardButton, InternalError> {
+fn set_button(set_id: &StickerSetId) -> Result<InlineKeyboardButton, InternalError> {
     Ok(InlineKeyboardButton::url(
         "Open Set",
         Url::parse(format!("https://t.me/addstickers/{set_id}").as_str())?,
@@ -1234,7 +1234,7 @@ fn set_button(set_id: &str) -> Result<InlineKeyboardButton, InternalError> {
 fn button_layout_to_keyboard_layout(
     button_layout: Vec<Vec<String>>,
     current_tags: &[String],
-    sticker_unique_id: &str,
+    sticker_unique_id: &StickerId,
     tag_manager: TagManagerService,
 ) -> Result<Vec<Vec<InlineKeyboardButton>>, InternalError> {
     let keyboard = button_layout
@@ -1251,14 +1251,14 @@ fn button_layout_to_keyboard_layout(
 fn tag_to_button(
     tag: &str,
     current_tags: &[String],
-    sticker_unique_id: &str,
+    sticker_unique_id: &StickerId,
     tag_manager: TagManagerService,
 ) -> InlineKeyboardButton {
     let is_already_tagged = current_tags.contains(&tag.to_string());
     let callback_data = if is_already_tagged {
-        CallbackData::untag_sticker(sticker_unique_id, tag.to_string())
+        CallbackData::untag_sticker(sticker_unique_id.clone(), tag.to_string())
     } else {
-        CallbackData::tag_sticker(sticker_unique_id, tag.to_string())
+        CallbackData::tag_sticker(sticker_unique_id.clone(), tag.to_string())
     };
     let text = if is_already_tagged {
         let emoji = tag_manager
@@ -1272,12 +1272,12 @@ fn tag_to_button(
     InlineKeyboardButton::callback(text, callback_data.to_string())
 }
 
-fn favorite_button(is_favorite: bool, sticker_id: &str) -> InlineKeyboardButton {
+fn favorite_button(is_favorite: bool, sticker_id: &StickerId) -> InlineKeyboardButton {
     if is_favorite {
         InlineKeyboardButton::callback(
             "⭐ Favorite",
             CallbackData::FavoriteSticker {
-                sticker_id: sticker_id.to_string(),
+                sticker_id: sticker_id.clone(),
                 operation: crate::callback::FavoriteAction::Unfavorite,
             },
         )
@@ -1285,7 +1285,7 @@ fn favorite_button(is_favorite: bool, sticker_id: &str) -> InlineKeyboardButton 
         InlineKeyboardButton::callback(
             "⚫ Mark as favorite",
             CallbackData::FavoriteSticker {
-                sticker_id: sticker_id.to_string(),
+                sticker_id: sticker_id.clone(),
                 operation: crate::callback::FavoriteAction::Favorite,
             },
         )

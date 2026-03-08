@@ -20,6 +20,7 @@ use std::{
 use teloxide::types::{ChatId, UserId};
 use teloxide::{requests::Requester, types::InputSticker};
 
+use crate::util::{StickerFileId, StickerId, StickerSetId};
 use crate::{bot::Bot, tags::Category, util::Emoji};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -90,8 +91,8 @@ pub enum StickerOrder {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StickerIdStickerFileId {
-    pub sticker_id: String,
-    pub sticker_file_id: String,
+    pub sticker_id: StickerId,
+    pub sticker_file_id: StickerFileId,
 }
 
 macro_rules! json_wrapper {
@@ -169,17 +170,17 @@ pub enum ModerationTaskDetails {
         linked_channel: Option<i64>,
         linked_user: Option<i64>,
         category: Category,
-        example_sticker_id: Vec<String>,
+        example_sticker_id: Vec<StickerId>,
         aliases: Vec<String>,
         implications: Vec<String>,
     },
     ReportStickerSet {
-        set_id: String,
+        set_id: StickerSetId,
         reason: ReportReason,
     },
     #[deprecated]
     ReviewNewSets {
-        set_ids: Vec<String>,
+        set_ids: Vec<StickerSetId>,
     },
 }
 
@@ -285,9 +286,9 @@ pub enum DialogState {
     ContinuousTag(ContinuousTag),
     StickerRecommender {
         #[serde(default)]
-        positive_sticker_id: Vec<String>,
+        positive_sticker_id: Vec<StickerId>,
         #[serde(default)]
-        negative_sticker_id: Vec<String>,
+        negative_sticker_id: Vec<StickerId>,
     },
     TagCreator(TagCreator),
     // TODO: use
@@ -302,7 +303,7 @@ pub struct ContinuousTag {
     #[serde(default)]
     pub remove_tags: Vec<String>,
     #[serde(default)]
-    pub already_recommended_sticker_file_ids: Vec<String>,
+    pub already_recommended_sticker_file_ids: Vec<StickerFileId>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -317,7 +318,7 @@ pub struct TagCreator {
     #[serde(default)]
     pub category: Option<Category>,
     #[serde(default)]
-    pub example_sticker_id: Vec<String>,
+    pub example_sticker_id: Vec<StickerId>,
     #[serde(default)]
     pub aliases: Vec<String>,
     // TODO: when transitioning from/to other modes, keep some of the data
@@ -331,9 +332,9 @@ pub struct TagCreator {
 #[derive(QueryableByName, Debug, Clone)]
 pub struct StickerChange {
     #[diesel(sql_type = diesel::sql_types::Text)]
-    pub sticker_id: String,
+    pub sticker_id: StickerId,
     #[diesel(sql_type = diesel::sql_types::Text)]
-    pub sticker_set_id: String,
+    pub sticker_set_id: StickerSetId,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub today: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]

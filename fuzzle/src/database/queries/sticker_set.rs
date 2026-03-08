@@ -8,11 +8,9 @@ use tracing::warn;
 
 use crate::{
     database::{
-        query_builder::StickerTagQuery,
-        schema_model::{StickerFile, StickerSet},
-        Order, Sticker, StickerChange, StickerIdStickerFileId,
+        Order, Sticker, StickerChange, StickerIdStickerFileId, query_builder::StickerTagQuery, schema_model::{StickerFile, StickerSet}
     },
-    util::Emoji,
+    util::{Emoji, StickerFileId, StickerId, StickerSetId},
 };
 
 use super::DatabaseError;
@@ -31,11 +29,11 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn upsert_sticker_set_with_title(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
         title: &str,
         added_by_user_id: Option<i64>, // only set if the set is new, not updated
     ) -> Result<(), DatabaseError> {
-        let set_id = set_id.to_string();
+        let set_id = set_id.clone();
         let title = title.to_string();
         self
             .exec(move |conn| {
@@ -62,11 +60,11 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn upsert_sticker_set_with_creator(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
         created_by_user_id: i64,
         added_by_user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
-        let set_id = set_id.to_string();
+        let set_id = set_id.clone();
         self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
@@ -94,10 +92,10 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn upsert_sticker_set(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
         added_by_user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
-        let set_id = set_id.to_string();
+        let set_id = set_id.clone();
         self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
@@ -116,7 +114,7 @@ impl Database {
             .await
     }
 
-    fn check_removed(set_id: &str, conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
+    fn check_removed(set_id: &StickerSetId, conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
         let removed: Option<String> = removed_set::table
             .filter(removed_set::id.eq(set_id))
             .select((removed_set::id))
@@ -132,7 +130,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn is_sticker_set_banned(
         &self,
-        sticker_set_id: &str,
+        sticker_set_id: &StickerSetId,
     ) -> Result<bool, DatabaseError> {
         let sticker_set_id = sticker_set_id.to_string();
         self
@@ -149,7 +147,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_set_by_sticker_id(
         &self,
-        sticker_id: &str,
+        sticker_id: &StickerId,
     ) -> Result<Option<StickerSet>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self
@@ -170,7 +168,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn unban_set(&self, set_id: &str) -> Result<Option<i64>, DatabaseError> {
+    pub async fn unban_set(&self, set_id: &StickerSetId) -> Result<Option<i64>, DatabaseError> {
         let set_id = set_id.to_string();
         self
             .exec(move |conn| {
@@ -183,7 +181,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn ban_set(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
         added_by_user_id: Option<i64>,
     ) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
@@ -202,7 +200,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn delete_sticker_set(&self, set_id: &str) -> Result<(), DatabaseError> {
+    pub async fn delete_sticker_set(&self, set_id: &StickerSetId) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
         self
             .exec(move |conn| {
@@ -216,7 +214,7 @@ impl Database {
     pub async fn get_n_least_recently_fetched_set_ids(
         &self,
         n: i64,
-    ) -> Result<Vec<String>, DatabaseError> {
+    ) -> Result<Vec<StickerSetId>, DatabaseError> {
         self
             .exec(move |conn| {
                 Ok(sticker_set::table
@@ -418,8 +416,8 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn sticker_set_contains_file(
         &self,
-        set_id: &str,
-        file_id: &str,
+        set_id: &StickerSetId,
+        file_id: &StickerFileId,
     ) -> Result<Option<String>, DatabaseError> {
         let set_id = set_id.to_string();
         let file_id = file_id.to_string();
@@ -439,8 +437,8 @@ impl Database {
     /// only returns the known set ids
     pub async fn get_set_ids_by_set_ids(
         &self,
-        set_ids: &[String],
-    ) -> Result<Vec<String>, DatabaseError> {
+        set_ids: &[StickerSetId],
+    ) -> Result<Vec<StickerSetId>, DatabaseError> {
         let set_ids = set_ids.to_vec();
         self
             .exec(move |conn| {
@@ -453,7 +451,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn set_sticker_set_pending(&self, set_id: &str, is_pending: bool) -> Result<(), DatabaseError> {
+    pub async fn set_sticker_set_pending(&self, set_id: &StickerSetId, is_pending: bool) -> Result<(), DatabaseError> {
         let set_id = set_id.to_string();
         self
             .exec(move |conn| {
@@ -467,7 +465,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_banned_sticker_count_for_set_id(&self, set_id: &str) -> Result<i64, DatabaseError> {
+    pub async fn get_banned_sticker_count_for_set_id(&self, set_id: &StickerSetId) -> Result<i64, DatabaseError> {
         let set_id = set_id.to_string();
         self.exec(move |conn| Ok(banned_sticker::table.filter(banned_sticker::sticker_set_id.eq(set_id)).count().get_result(conn)?)).await
     }

@@ -9,7 +9,7 @@ use crate::{
     database::{
         BanReason, BannedSticker, MergeStatus, Order, Sticker, StickerFile, StickerIdStickerFileId, StickerSet, StickerType, StickerUser, min_max, query_builder::StickerTagQuery
     },
-    util::Emoji,
+    util::{Emoji, StickerFileId, StickerId, StickerSetId},
 };
 
 use super::DatabaseError;
@@ -31,7 +31,7 @@ define_sql_function! {
 
 impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn update_last_fetched(&self, set_id: String) -> Result<(), DatabaseError> {
+    pub async fn update_last_fetched(&self, set_id: StickerSetId) -> Result<(), DatabaseError> {
         self
             .exec(move |conn| {
         let changed = update(sticker_set::table)
@@ -46,7 +46,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_set_by_id(
         &self,
-        sticker_set_id: &str,
+        sticker_set_id: &StickerSetId,
     ) -> Result<Option<StickerSet>, DatabaseError> {
         let sticker_set_id = sticker_set_id.to_string();
         self
@@ -64,8 +64,8 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn update_sticker(
         &self,
-        sticker_id: String,
-        file_id: String,
+        sticker_id: StickerId,
+        file_id: StickerFileId,
     ) -> Result<(), DatabaseError> {
         self
             .exec(move |conn| {
@@ -81,11 +81,11 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn create_file(
         &self,
-        sticker_file_id: &str,
+        sticker_file_id: &StickerFileId,
         thumbnail_file_id: Option<String>,
         sticker_type: StickerType,
     ) -> Result<(), DatabaseError> {
-        let sticker_file_id = sticker_file_id.to_string();
+        let sticker_file_id = sticker_file_id.clone();
         self
             .exec(move |conn| {
                 conn.immediate_transaction(|conn| {
@@ -111,11 +111,11 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn find_canonical_sticker_file_id(&self, sticker_file_id: &str) -> Result<String, DatabaseError> {
-        let sticker_file_id = sticker_file_id.to_string();
+    pub async fn find_canonical_sticker_file_id(&self, sticker_file_id: &StickerFileId) -> Result<StickerFileId, DatabaseError> {
+        let sticker_file_id = sticker_file_id.clone();
         self
             .exec(move |conn| {
-        let mut sticker_file_id = sticker_file_id.to_string();
+        let mut sticker_file_id = sticker_file_id.clone();
         let mut iterations = 0;
         loop {
             let merged_sticker_file_id = merged_sticker::table
@@ -142,11 +142,11 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn create_sticker(
         &self,
-        sticker_id: &str,
-        file_id: &str,
+        sticker_id: &StickerId,
+        file_id: &StickerFileId,
         emoji: Option<Emoji>,
-        set_id: &str,
-        sticker_file_id: &str,
+        set_id: &StickerSetId,
+        sticker_file_id: &StickerFileId,
     ) -> Result<(), DatabaseError> {
         let sticker_id = sticker_id.to_string();
         let file_id = file_id.to_string();
@@ -173,7 +173,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_all_stickers_in_set(
         &self,
-        set_id: &str,
+        set_id: &StickerSetId,
     ) -> Result<Vec<Sticker>, DatabaseError> {
         let set_id = set_id.to_string();
         self
@@ -189,7 +189,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_by_id(
         &self,
-        sticker_id: &str,
+        sticker_id: &StickerId,
     ) -> Result<Option<Sticker>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self
@@ -206,7 +206,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_some_sticker_by_file_id(
         &self,
-        sticker_file_id: &str,
+        sticker_file_id: &StickerFileId,
     ) -> Result<Option<Sticker>, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
         self
@@ -221,7 +221,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_sticker_tags_by_file_id(&self, sticker_file_id: &str) -> Result<Vec<String>, DatabaseError> {
+    pub async fn get_sticker_tags_by_file_id(&self, sticker_file_id: &StickerFileId) -> Result<Vec<String>, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
         self
             .exec(move |conn| {
@@ -235,7 +235,7 @@ impl Database {
 
     #[tracing::instrument(skip(self), err(Debug))]
     #[deprecated(note = "use get_sticker_tags_by_file_id instead")]
-    pub async fn get_sticker_tags(&self, sticker_id: &str) -> Result<Vec<String>, DatabaseError> {
+    pub async fn get_sticker_tags(&self, sticker_id: &StickerId) -> Result<Vec<String>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self
             .exec(move |conn| {
@@ -257,7 +257,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_multiple_sticker_tags(
         &self,
-        sticker_ids: Vec<String>,
+        sticker_ids: Vec<StickerId>,
     ) -> Result<Vec<(String, i64)>, DatabaseError> {
         self
             .exec(move |conn| {
@@ -355,7 +355,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_sticker_files_by_ids(&self, sticker_file_ids: &[String]) -> Result<Vec<StickerFile>, DatabaseError> {
+    pub async fn get_sticker_files_by_ids(&self, sticker_file_ids: &[StickerFileId]) -> Result<Vec<StickerFile>, DatabaseError> {
         let sticker_file_ids = sticker_file_ids.to_vec();
         self
             .exec(move |conn| {
@@ -370,7 +370,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_sticker_file_by_sticker_id(&self, sticker_id: &str) -> Result<Option<StickerFile>, DatabaseError> {
+    pub async fn get_sticker_file_by_sticker_id(&self, sticker_id: &StickerId) -> Result<Option<StickerFile>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self
             .exec(move |conn| {
@@ -392,11 +392,11 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_some_sticker_ids_for_sticker_file_ids(
         &self,
-        sticker_file_ids: Vec<String>,
+        sticker_file_ids: Vec<StickerFileId>,
     ) -> Result<Vec<StickerIdStickerFileId>, DatabaseError> {
         self
             .exec(move |conn| {
-        let result: Vec<(String, String)> = sticker::table
+        let result: Vec<(StickerFileId, StickerId)> = sticker::table
             .group_by((sticker::sticker_file_id))
             .select((sticker::sticker_file_id, max(sticker::id)))
             .filter(sticker::sticker_file_id.eq_any(sticker_file_ids))
@@ -415,12 +415,12 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_file_ids_by_sticker_id(
         &self,
-        sticker_ids: &[String],
-    ) -> Result<Vec<String>, DatabaseError> {
+        sticker_ids: &[StickerId],
+    ) -> Result<Vec<StickerFileId>, DatabaseError> {
         let sticker_ids = sticker_ids.to_vec();
         self
             .exec(move |conn| {
-        let result: Vec<String> = sticker::table
+        let result: Vec<StickerFileId> = sticker::table
             .select(sticker::sticker_file_id)
             .distinct()
             .filter(sticker::id.eq_any(sticker_ids))
@@ -434,8 +434,8 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_overlapping_sets(
         &self,
-        set_id: &str,
-    ) -> Result<Vec<(String, i64)>, DatabaseError> {
+        set_id: &StickerSetId,
+    ) -> Result<Vec<(StickerSetId, i64)>, DatabaseError> {
         let set_id = set_id.to_string();
         self
             .exec(move |conn| {
@@ -460,7 +460,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sets_containing_file(
         &self,
-        sticker_file_id: &str,
+        sticker_file_id: &StickerFileId,
     ) -> Result<Vec<StickerSet>, DatabaseError> {
         let sticker_file_id = sticker_file_id.to_string();
         self
@@ -482,7 +482,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn update_file_lock(
         &self,
-        file_id: &str,
+        file_id: &StickerFileId,
         user_id: i64,
         locked: bool,
     ) -> Result<(), DatabaseError> {
@@ -502,7 +502,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_sticker_emojis(&self, sticker_id: &str) -> Result<Vec<Emoji>, DatabaseError> {
+    pub async fn get_sticker_emojis(&self, sticker_id: &StickerId) -> Result<Vec<Emoji>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self
             .exec(move |conn| {
@@ -527,7 +527,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn delete_sticker(&self, sticker_id: &str) -> Result<(), DatabaseError> {
+    pub async fn delete_sticker(&self, sticker_id: &StickerId) -> Result<(), DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self
             .exec(move |conn| {
@@ -538,7 +538,7 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn clean_up_sticker_files_without_stickers_and_without_tags(&self) -> Result<Vec<String>, DatabaseError> {
+    pub async fn clean_up_sticker_files_without_stickers_and_without_tags(&self) -> Result<Vec<StickerFileId>, DatabaseError> {
         self
             .exec(move |conn| {
         let current_time = chrono::Utc::now().naive_utc(); // TODO: pass time as parameter?
@@ -559,7 +559,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_sticker_user(
         &self,
-        sticker_id: &str,
+        sticker_id: &StickerId,
         user_id: i64,
     ) -> Result<Option<StickerUser>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
@@ -600,7 +600,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_random_potential_merge_file_ids(
         &self,
-    ) -> Result<Option<(String, String)>, DatabaseError> {
+    ) -> Result<Option<(StickerFileId, StickerFileId)>, DatabaseError> {
         self
             .exec(move |conn| {
         Ok(potentially_similar_file::table
@@ -640,8 +640,8 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_all_merge_candidate_file_ids(
         &self,
-        file_id: &str,
-    ) -> Result<Vec<String>, DatabaseError> {
+        file_id: &StickerFileId,
+    ) -> Result<Vec<StickerFileId>, DatabaseError> {
         let file_id = file_id.to_string();
         self
             .exec(move |conn| {
@@ -765,7 +765,7 @@ impl Database {
 
     /// returns the set id of the now unbanned sticker; error if it was not banned
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn unban_sticker(&self, sticker_id: &str) -> Result<(String, String), DatabaseError> {
+    pub async fn unban_sticker(&self, sticker_id: &StickerId) -> Result<(StickerSetId, StickerFileId), DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self
             .exec(move |conn| {
@@ -778,10 +778,10 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn ban_sticker(
         &self,
-        sticker_id: &str,
+        sticker_id: &StickerId,
         telegram_file_identifier: &str,
-        sticker_set_id: &str,
-        sticker_file_id: &str,
+        sticker_set_id: &StickerSetId,
+        sticker_file_id: &StickerFileId,
         thumbnail_file_id: &Option<String>,
         sticker_type: StickerType,
         clip_max_match_distance: f32,
@@ -825,7 +825,7 @@ impl Database {
             .await
     }
 
-    fn check_removed_sticker(sticker_file_id: &str, conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
+    fn check_removed_sticker(sticker_file_id: &StickerFileId, conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
         let removed: Option<String> = banned_sticker::table
             .filter(banned_sticker::sticker_file_id.eq(sticker_file_id))
             .select((banned_sticker::id))
@@ -841,7 +841,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn is_sticker_banned(
         &self,
-        sticker_id: &str,
+        sticker_id: &StickerId,
     ) -> Result<bool, DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self
@@ -858,7 +858,7 @@ impl Database {
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn get_banned_sticker_max_match_distance(
         &self,
-        file_id: &str
+        file_id: &StickerFileId
     ) -> Result<Option<f32>, DatabaseError> {
         let file_id = file_id.to_string();
         self
@@ -873,9 +873,25 @@ impl Database {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn get_banned_sticker(
+    pub async fn get_banned_sticker_by_sticker_file_id(
         &self,
-        sticker_id: &str,
+        sticker_file_id: &StickerFileId,
+    ) -> Result<Option<BannedSticker>, DatabaseError> {
+        let sticker_file_id = sticker_file_id.to_string();
+        self
+            .exec(move |conn| {
+        Ok(banned_sticker::table
+            .filter(banned_sticker::sticker_file_id.eq(sticker_file_id))
+            .select(BannedSticker::as_select())
+            .first(conn).optional()?)
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip(self), err(Debug))]
+    pub async fn get_banned_sticker_by_sticker_id(
+        &self,
+        sticker_id: &StickerId,
     ) -> Result<Option<BannedSticker>, DatabaseError> {
         let sticker_id = sticker_id.to_string();
         self

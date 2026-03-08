@@ -4,7 +4,7 @@ use reqwest::{Client, Error, Response};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
-use crate::fmetrics::TracedRequest;
+use crate::{fmetrics::TracedRequest, util::StickerSetId};
 
 struct Inner {
     http_client: Client,
@@ -123,7 +123,7 @@ pub struct StickerPacksResponse {
 
 #[derive(Deserialize, Debug)]
 pub struct StickerPackResponseEntry {
-    pub short_name: String,
+    pub short_name: StickerSetId,
     pub title: String,
     pub telegram_pack_id: Option<i64>,
 }
