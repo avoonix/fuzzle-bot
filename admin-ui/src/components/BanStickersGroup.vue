@@ -3,6 +3,8 @@
                         <div class="flex-0-1-0 flex-grow-1">
                             {{ selected }}
                             <v-btn @click="selectRandom(20)">select 20 at random</v-btn>
+                            <v-btn @click="selectRandom(0)">select 0</v-btn>
+                            <v-btn @click="selectRandom(sortedStickers.length)">select all</v-btn>
                             <v-item-group multiple v-model="selected">
                                 <v-container>
                                     <v-row>

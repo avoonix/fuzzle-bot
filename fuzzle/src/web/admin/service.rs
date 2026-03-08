@@ -274,9 +274,10 @@ async fn scan_all_stickers_for_bans(data: Data<AppState>) -> actix_web::Result<i
         async move {
             let result: Result<(), InternalError> = async {
                 let mut next_offset = None;
+                let mut completed = 0;
                 loop {
                     let (stickers, new_next_offset) =
-                        data.vector_db.scroll_stickers(500, next_offset).await?;
+                        data.vector_db.scroll_stickers(100, next_offset).await?;
                     for (clip_vec, histogram_vec, file_id) in stickers {
                         let sticker = data.database.get_some_sticker_by_file_id(&file_id).await?;
                         if let Some(sticker) = sticker {
@@ -289,7 +290,9 @@ async fn scan_all_stickers_for_bans(data: Data<AppState>) -> actix_web::Result<i
                                 )
                                 .await?;
                         }
+                        completed += 1;
                     }
+                    tracing::info!(%completed, "scan batch progress");
                     if new_next_offset == None {
                         break;
                     } else {

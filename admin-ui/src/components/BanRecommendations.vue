@@ -31,7 +31,7 @@ const setData = computed(() => {
       sets[sticker.set_id] = (sets[sticker.set_id] ?? 0) + 1;
     }
   }
-  return Object.entries(sets).map(([setId, count]) => ({setId, count})).toSorted((a,b) => b.count - a.count);
+  return Object.entries(sets).map(([setId, count]) => ({setId, count})).filter(s => s.count > 5).toSorted((a,b) => b.count - a.count);
 })
 
 // const maxSimilarity = ref(0.9)

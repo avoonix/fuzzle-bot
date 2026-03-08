@@ -8,9 +8,13 @@ use error::SensibleQdrantErrorExt;
 pub use error::VectorDatabaseError;
 use itertools::Itertools;
 use qdrant_client::prelude::*;
+use qdrant_client::qdrant::vector_output::Vector;
 use qdrant_client::qdrant::vectors_config::Config;
+use qdrant_client::qdrant::vectors_output::VectorsOptions;
 use qdrant_client::qdrant::{
-    Condition, CreateCollection, Datatype, Filter, LookupLocation, PayloadIncludeSelector, PointId, PointsIdsList, RecommendPoints, RecommendResponse, RecommendStrategy, ScoredPoint, ScrollPoints, SearchPoints, VectorParams, VectorParamsMap, VectorsConfig, WithPayloadSelector
+    Condition, CreateCollection, Datatype, Filter, LookupLocation, PayloadIncludeSelector, PointId,
+    PointsIdsList, RecommendPoints, RecommendResponse, RecommendStrategy, ScoredPoint,
+    ScrollPoints, SearchPoints, VectorParams, VectorParamsMap, VectorsConfig, WithPayloadSelector,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -149,16 +153,14 @@ impl VectorDatabase {
                     collection_name: BANNED_STICKER_COLLECTION_NAME.to_string(),
                     vectors_config: Some(VectorsConfig {
                         config: Some(Config::ParamsMap(VectorParamsMap {
-                            map: [
-                                (
-                                    "clip".to_string(),
-                                    VectorParams {
-                                        size: STICKER_COLLECTION_SIZE,
-                                        distance: STICKER_COLLECTION_DISTANCE.into(),
-                                        ..Default::default()
-                                    },
-                                ),
-                            ]
+                            map: [(
+                                "clip".to_string(),
+                                VectorParams {
+                                    size: STICKER_COLLECTION_SIZE,
+                                    distance: STICKER_COLLECTION_DISTANCE.into(),
+                                    ..Default::default()
+                                },
+                            )]
                             .into(),
                         })),
                     }),
@@ -235,27 +237,40 @@ impl VectorDatabase {
         file_hash: String,
     ) -> Result<(), VectorDatabaseError> {
         let id = file_hash_to_uuid(&file_hash);
-        let payload: Payload = json!( { "file_hash": file_hash, }).try_into().expect("valid conversion");
+        let payload: Payload = json!( { "file_hash": file_hash, })
+            .try_into()
+            .expect("valid conversion");
         let points = vec![PointStruct::new(
             id,
-            HashMap::from([ ("clip".to_string(), clip_vector), ]),
+            HashMap::from([("clip".to_string(), clip_vector)]),
             payload,
         )];
-        self.client.upsert_points_blocking(BANNED_STICKER_COLLECTION_NAME, None, points, None).await?;
+        self.client
+            .upsert_points_blocking(BANNED_STICKER_COLLECTION_NAME, None, points, None)
+            .await?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
     pub async fn delete_stickers(&self, file_ids: Vec<String>) -> Result<(), VectorDatabaseError> {
-        self.delete_stickers_from_collection(file_ids, STICKER_COLLECTION_NAME).await
+        self.delete_stickers_from_collection(file_ids, STICKER_COLLECTION_NAME)
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn delete_banned_stickers(&self, file_ids: Vec<String>) -> Result<(), VectorDatabaseError> {
-        self.delete_stickers_from_collection(file_ids, BANNED_STICKER_COLLECTION_NAME).await
+    pub async fn delete_banned_stickers(
+        &self,
+        file_ids: Vec<String>,
+    ) -> Result<(), VectorDatabaseError> {
+        self.delete_stickers_from_collection(file_ids, BANNED_STICKER_COLLECTION_NAME)
+            .await
     }
 
-    async fn delete_stickers_from_collection(&self, file_ids: Vec<String>, collection_name: &str) -> Result<(), VectorDatabaseError> {
+    async fn delete_stickers_from_collection(
+        &self,
+        file_ids: Vec<String>,
+        collection_name: &str,
+    ) -> Result<(), VectorDatabaseError> {
         let ids = file_ids
             .into_iter()
             .map(|id| file_hash_to_uuid(&id).into())
@@ -358,7 +373,8 @@ impl VectorDatabase {
         &self,
         file_hash: String,
     ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
-        self.get_sticker_clip_vector_from_collection(file_hash, STICKER_COLLECTION_NAME).await
+        self.get_sticker_clip_vector_from_collection(file_hash, STICKER_COLLECTION_NAME)
+            .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -366,7 +382,79 @@ impl VectorDatabase {
         &self,
         file_hash: String,
     ) -> Result<Option<Vec<f32>>, VectorDatabaseError> {
-        self.get_sticker_clip_vector_from_collection(file_hash, BANNED_STICKER_COLLECTION_NAME).await
+        self.get_sticker_clip_vector_from_collection(file_hash, BANNED_STICKER_COLLECTION_NAME)
+            .await
+    }
+
+    /// panics if invalid
+    fn vectors_options_to_hist_vec(opt: &Option<VectorsOptions>) -> Vec<u8> {
+        match opt {
+            Some(options) => match options.clone() {
+                qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(v) => {
+                    todo!()
+                }
+                qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => {
+                    let vectors_old = v.vectors["histogram"].data.clone();
+                    if !vectors_old.is_empty() {
+                        return vectors_old
+                        
+                                    .iter()
+                                    .map(|entry| entry.round().min(255.0) as u8)
+                                    .collect_vec()
+                        ;
+                    }
+
+                    match v.vectors["histogram"].clone().into_vector() {
+                            qdrant_client::qdrant::vector_output::Vector::Dense(dense_vector) => {
+                                assert!(dense_vector.data.len() > 0);
+                                dense_vector.data
+                                    .iter()
+                                    .map(|entry| entry.round().min(255.0) as u8)
+                                    .collect_vec()
+                            }
+                            _ => todo!(),
+                    }
+                }
+            },
+            None => todo!(),
+        }
+    }
+
+    /// panics if invalid
+    fn vectors_options_to_clip_vec(opt: &Option<VectorsOptions>) -> Vec<f32> {
+        match opt {
+            Some(options) => match options.clone() {
+                qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(v) => {
+                    todo!()
+                }
+                qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => {
+                    let vectors_old = v.vectors["clip"].data.clone();
+                    if !vectors_old.is_empty() {
+                        return vectors_old;
+                    }
+
+                    match v.vectors["clip"].clone().into_vector() {
+                            qdrant_client::qdrant::vector_output::Vector::Dense(dense_vector) => {
+                                assert!(dense_vector.data.len() > 0);
+                                dense_vector.data
+                            }
+                            _ => todo!(),
+                    }
+                }
+            },
+            None => todo!(),
+        }
+    }
+    
+    /// panics if invalid
+    fn vector_into_f32_vec(v: Vector) -> Vec<f32> {
+        match v {
+                qdrant_client::qdrant::vector_output::Vector::Dense(dense_vector) => {
+                    assert!(dense_vector.data.len() > 0);
+                    dense_vector.data
+                }
+                _ => todo!(),
+        }
     }
 
     async fn get_sticker_clip_vector_from_collection(
@@ -387,7 +475,9 @@ impl VectorDatabase {
             )
             .await
             .convert_to_sensible_error()?;
-        let Some(search_result) = search_result else {return Ok(None)};
+        let Some(search_result) = search_result else {
+            return Ok(None);
+        };
 
         let Some(result) = search_result.result.first() else {
             tracing::info!("retrieved points are empty");
@@ -396,34 +486,9 @@ impl VectorDatabase {
         let clip_vector = result
             .vectors
             .clone()
-            .map(|v| match v.vectors_options {
-                Some(options) => match options.clone() {
-                    qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(v) => {
-                        todo!()
-                    }
-                    qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => {
-                        let vectors_old = v.vectors["clip"].data.clone();
-                        if !vectors_old.is_empty() {
-                            return vectors_old;
-                        }
+            .map(|v| Self::vectors_options_to_clip_vec(&v.vectors_options))
+            .unwrap();
 
-                        match v.vectors["clip"].vector.clone() {
-                            Some(v) => {
-                                match v {
-                                    qdrant_client::qdrant::vector_output::Vector::Dense(dense_vector) => {
-                                        dense_vector.data
-                                    },
-                                    qdrant_client::qdrant::vector_output::Vector::Sparse(sparse_vector) => todo!(),
-                                    qdrant_client::qdrant::vector_output::Vector::MultiDense(multi_dense_vector) => todo!(),
-                                }
-                            }
-                            None => todo!(),
-                        }
-                    }
-                },
-                None => todo!(),
-            }).unwrap();
-        
         Ok(Some(clip_vector))
     }
 
@@ -454,35 +519,11 @@ impl VectorDatabase {
                     scored_point
                         .vectors
                         .clone()
-                        .map(|v| match v.vectors_options {
-                            Some(options) => match options.clone() {
-                                qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(v) => {
-                                    todo!()
-                                }
-                                qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => {
-                                    v.vectors["clip"].data.clone()
-                                }
-                            },
-                            None => todo!(),
-                        })
+                        .map(|v| Self::vectors_options_to_clip_vec(&v.vectors_options))
                         .unwrap(),
                     scored_point
                         .vectors
-                        .map(|v| match v.vectors_options {
-                            Some(options) => match options.clone() {
-                                qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(v) => {
-                                    todo!()
-                                }
-                                qdrant_client::qdrant::vectors_output::VectorsOptions::Vectors(v) => v
-                                    .vectors["histogram"]
-                                    .data
-                                    .clone()
-                                    .into_iter()
-                                    .map(|entry| entry.round().min(255.0) as u8)
-                                    .collect_vec(),
-                            },
-                            None => todo!(),
-                        })
+                        .map(|v| Self::vectors_options_to_hist_vec(&v.vectors_options))
                         .unwrap(),
                     scored_point.payload["file_hash"]
                         .as_str()
@@ -502,7 +543,14 @@ impl VectorDatabase {
         offset: u64,
         score_threshold: Option<f32>,
     ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
-        self.find_stickers_given_vector_using_collection(clip_vector, limit, offset, STICKER_COLLECTION_NAME, score_threshold).await
+        self.find_stickers_given_vector_using_collection(
+            clip_vector,
+            limit,
+            offset,
+            STICKER_COLLECTION_NAME,
+            score_threshold,
+        )
+        .await
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
@@ -512,7 +560,14 @@ impl VectorDatabase {
         limit: u64,
         score_threshold: Option<f32>,
     ) -> Result<Vec<StickerMatch>, VectorDatabaseError> {
-        self.find_stickers_given_vector_using_collection(clip_vector, limit, 0, BANNED_STICKER_COLLECTION_NAME, score_threshold).await
+        self.find_stickers_given_vector_using_collection(
+            clip_vector,
+            limit,
+            0,
+            BANNED_STICKER_COLLECTION_NAME,
+            score_threshold,
+        )
+        .await
     }
 
     async fn find_stickers_given_vector_using_collection(
@@ -644,8 +699,8 @@ impl VectorDatabase {
             .ok_or_else(|| VectorDatabaseError::MissingVector("histogram".to_string()))?;
 
         Ok(StickerSimilarities {
-            clip: cosine_similarity(clip_a.data.clone(), clip_b.data.clone()),
-            histogram: cosine_similarity(hist_a.data.clone(), hist_b.data.clone()),
+            clip: cosine_similarity(Self::vector_into_f32_vec(clip_a.clone().into_vector()), Self::vector_into_f32_vec(clip_b.clone().into_vector())),
+            histogram: cosine_similarity(Self::vector_into_f32_vec(hist_a.clone().into_vector()), Self::vector_into_f32_vec(hist_b.clone().into_vector())),
         })
     }
 
