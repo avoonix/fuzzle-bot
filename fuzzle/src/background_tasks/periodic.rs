@@ -206,7 +206,7 @@ async fn discover_stickers(
     database: Database,
     importer: ImportService,
 ) -> Result<(usize, usize), InternalError> {
-    let limit = 20;
+    let limit = 100;
     if importer.is_busy() {
         tracing::info!("importer is busy, skipping import");
         return Ok((offset, 0));
